@@ -1,0 +1,24 @@
+{
+  "name": "agent-race-control",
+  "productName": "Race Control",
+  "version": "0.1.0",
+  "description": "aRC — a session-aware terminal cockpit for Claude Code on native Windows",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit && svelte-check --tsconfig ./src/renderer/tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@types/node": "^24.9.0",
+    "electron": "43.1.0",
+    "electron-vite": "5.0.0",
+    "svelte": "5.56.4",
+    "svelte-check": "4.7.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  }
+}
