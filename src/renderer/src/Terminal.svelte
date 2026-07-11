@@ -13,7 +13,8 @@
     active = false,
     theme,
     onSpawned,
-    onExited
+    onExited,
+    onTitle
   }: {
     type?: 'shell' | 'claude'
     cwd?: string
@@ -22,6 +23,7 @@
     theme: ITheme
     onSpawned?: (ptyId: string, claudeSessionId?: string) => void
     onExited?: (exitCode: number) => void
+    onTitle?: (title: string) => void
   } = $props()
 
   let container: HTMLDivElement
@@ -90,6 +92,10 @@
         void navigator.clipboard.readText().then((text) => t.paste(text))
       }
     })
+
+    // Surface the terminal title (OSC 0/2) — Claude Code keeps it set to the
+    // conversation name; Git Bash sets it to the cwd.
+    t.onTitleChange((title) => onTitle?.(title))
 
     const offData = window.arc.pty.onData((id, data) => {
       if (id === ptyId) t.write(data)

@@ -10,8 +10,16 @@
     cycleColor,
     applyStatus,
     restoreState,
-    snapshotState
+    snapshotState,
+    cleanTitle
   } from './sessions.svelte'
+
+  let draggingRail = $state(false)
+
+  function railDrag(event: PointerEvent): void {
+    if (!draggingRail) return
+    ui.railWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
+  }
 
   const MODES: Mode[] = ['system', 'light', 'dark']
 
@@ -67,7 +75,7 @@
   style:--attention={palette.chrome.attention}
   style:--danger={palette.chrome.danger}
 >
-  <aside class="rail">
+  <aside class="rail" style:width={`${ui.railWidth}px`}>
     <header class="rail-title">Agent Race Control</header>
 
     <div class="rail-body">
@@ -113,6 +121,10 @@
             >
           {/if}
 
+          <span class="title" title={cleanTitle(session.title)}
+            >{cleanTitle(session.title)}</span
+          >
+
           <span class="status {session.status}" title={session.status}></span>
 
           <button
@@ -143,6 +155,22 @@
     </footer>
   </aside>
 
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="splitter"
+    class:dragging={draggingRail}
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize session rail"
+    onpointerdown={(e) => {
+      draggingRail = true
+      e.currentTarget.setPointerCapture(e.pointerId)
+    }}
+    onpointermove={railDrag}
+    onpointerup={() => (draggingRail = false)}
+    onpointercancel={() => (draggingRail = false)}
+  ></div>
+
   <main class="pane">
     {#each sessions as session (session.key)}
       <div class="host" style:display={ui.focused === session.key ? 'block' : 'none'}>
@@ -157,6 +185,7 @@
             session.claudeSessionId = claudeSessionId ?? null
           }}
           onExited={() => (session.status = 'exited')}
+          onTitle={(title) => (session.title = title)}
         />
       </div>
     {/each}
@@ -185,10 +214,23 @@
   .rail {
     display: flex;
     flex-direction: column;
-    width: 240px;
     flex-shrink: 0;
-    border-right: 1px solid var(--border);
     background: var(--bg-subtle);
+  }
+
+  .splitter {
+    width: 5px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: var(--border);
+    background-clip: content-box;
+    padding: 0 2px;
+    touch-action: none;
+  }
+
+  .splitter:hover,
+  .splitter.dragging {
+    background-color: var(--accent);
   }
 
   .rail-title {
@@ -205,7 +247,9 @@
   }
 
   .row {
-    display: flex;
+    /* columns: dot | name | claude title | status | close */
+    display: grid;
+    grid-template-columns: 10px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
@@ -234,7 +278,6 @@
   }
 
   .name {
-    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -242,8 +285,16 @@
     font-size: 13px;
   }
 
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
   .rename {
-    flex: 1;
     min-width: 0;
     font-size: 13px;
     font-family: inherit;

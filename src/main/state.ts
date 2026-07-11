@@ -15,6 +15,7 @@ export interface PersistedSession {
 export interface AppState {
   version: 1
   mode: 'system' | 'light' | 'dark'
+  railWidth?: number
   focusedIndex: number
   sessions: PersistedSession[]
   lastPickedDir?: string

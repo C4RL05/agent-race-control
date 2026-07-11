@@ -5,6 +5,7 @@
 interface PersistedState {
   version: 1
   mode: 'system' | 'light' | 'dark'
+  railWidth?: number
   focusedIndex: number
   sessions: Array<{
     type: 'shell' | 'claude'

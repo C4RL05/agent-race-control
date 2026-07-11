@@ -8,6 +8,9 @@ export interface Session {
   color: string
   // Claude sessions use the full set; shell sessions only running/exited.
   status: 'running' | 'waiting' | 'idle' | 'exited'
+  // Live terminal title (OSC 0/2) — Claude Code keeps it set to the
+  // conversation's name; Git Bash sets it to the cwd. Observation only.
+  title: string
   ptyId: string | null
   claudeSessionId: string | null
   // Set on sessions restored from the state JSON: spawn with --resume.
@@ -19,10 +22,17 @@ let colorIndex = 0
 
 export const sessions = $state<Session[]>([])
 
-export const ui = $state<{ focused: number | null; mode: Mode }>({
+export const ui = $state<{ focused: number | null; mode: Mode; railWidth: number }>({
   focused: null,
-  mode: 'system'
+  mode: 'system',
+  railWidth: 240
 })
+
+// Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
+// it works — strip it for the rail's name column.
+export function cleanTitle(title: string): string {
+  return title.replace(/^[✳✶✻✽·∴※+*●○◐◑]+\s*/u, '')
+}
 
 export async function newSession(type: 'shell' | 'claude'): Promise<void> {
   const cwd = await window.arc.pickFolder()
@@ -36,6 +46,7 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
     color: DOT_COLORS[colorIndex++ % DOT_COLORS.length],
     // Claude starts at its prompt (idle); a shell is simply alive (running).
     status: type === 'claude' ? 'idle' : 'running',
+    title: '',
     ptyId: null,
     claudeSessionId: null,
     resumeId: null
@@ -63,6 +74,7 @@ export async function restoreState(): Promise<void> {
       name: s.name,
       color: s.color,
       status: s.type === 'claude' ? 'idle' : 'running',
+      title: '',
       ptyId: null,
       claudeSessionId: null,
       // Claude sessions resume their conversation; shells just reopen fresh.
@@ -70,6 +82,7 @@ export async function restoreState(): Promise<void> {
     })
     colorIndex++
   }
+  if (saved.railWidth) ui.railWidth = saved.railWidth
   ui.focused = sessions[saved.focusedIndex]?.key ?? sessions[0]?.key ?? null
 }
 
@@ -83,6 +96,7 @@ export function snapshotState(): PersistedState {
   return {
     version: 1,
     mode: ui.mode,
+    railWidth: ui.railWidth,
     focusedIndex,
     sessions: alive.map((s) => ({
       type: s.type,
