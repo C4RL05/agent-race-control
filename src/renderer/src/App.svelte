@@ -108,6 +108,28 @@
   let renaming = $state<number | null>(null)
   let renamingFolder = $state<number | null>(null)
 
+  // Rail filter: text matches name/title/cwd; chips narrow by session type.
+  // Transient UI state — deliberately not persisted.
+  let filterText = $state('')
+  let filterClaude = $state(false)
+  let filterShell = $state(false)
+  const filterActive = $derived(filterText.trim() !== '' || filterClaude || filterShell)
+
+  function sessionMatches(session: (typeof sessions)[number]): boolean {
+    // exactly one chip on → only that type; both/neither → all types
+    if (filterClaude !== filterShell) {
+      if (filterClaude && session.type !== 'claude') return false
+      if (filterShell && session.type !== 'shell') return false
+    }
+    const query = filterText.trim().toLowerCase()
+    if (!query) return true
+    return (
+      session.name.toLowerCase().includes(query) ||
+      cleanTitle(session.title).toLowerCase().includes(query) ||
+      session.cwd.toLowerCase().includes(query)
+    )
+  }
+
   function commitRename(key: number, value: string): void {
     const session = sessions.find((s) => s.key === key)
     if (session && value.trim()) session.name = value.trim()
@@ -156,8 +178,55 @@
   style:--danger={palette.chrome.danger}
 >
   <aside class="rail" style:width={`${ui.railWidth}px`}>
+    <div class="rail-filter">
+      <div class="search">
+        <span class="material-symbols-outlined">search</span>
+        <input
+          placeholder="Filter"
+          bind:value={filterText}
+          onkeydown={(e) => {
+            if (e.key === 'Escape') {
+              filterText = ''
+              e.currentTarget.blur()
+            }
+          }}
+        />
+        {#if filterText}
+          <button class="clear" aria-label="Clear filter" onclick={() => (filterText = '')}
+            >×</button
+          >
+        {/if}
+      </div>
+      <button
+        class="chip"
+        class:active={filterClaude}
+        title="Show Claude sessions"
+        aria-label="Filter Claude sessions"
+        onclick={() => {
+          filterClaude = !filterClaude
+          if (filterClaude) filterShell = false
+        }}
+      >
+        <span class="material-symbols-outlined">asterisk</span>
+      </button>
+      <button
+        class="chip"
+        class:active={filterShell}
+        title="Show shell sessions"
+        aria-label="Filter shell sessions"
+        onclick={() => {
+          filterShell = !filterShell
+          if (filterShell) filterClaude = false
+        }}
+      >
+        <span class="material-symbols-outlined">terminal_2</span>
+      </button>
+    </div>
+
     <div class="rail-body">
       {#each folders as folder (folder.id)}
+        {@const visible = sessions.filter((s) => s.folderId === folder.id && sessionMatches(s))}
+        {#if !filterActive || visible.length > 0}
         <div
           class="folder-header"
           class:drop-hint={dropHint === `folder-${folder.id}`}
@@ -211,7 +280,7 @@
           {/if}
         </div>
 
-        {#each sessions.filter((s) => s.folderId === folder.id) as session (session.key)}
+        {#each visible as session (session.key)}
           <div
             class="row"
             class:focused={ui.focused === session.key}
@@ -305,6 +374,7 @@
           >
           </div>
         {/each}
+        {/if}
       {/each}
     </div>
 
@@ -733,6 +803,88 @@
     gap: 6px;
     padding: 8px;
     border-top: 1px solid var(--border);
+  }
+
+  .rail-filter {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .search {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+
+  .search:focus-within {
+    border-color: var(--accent);
+  }
+
+  .search .material-symbols-outlined {
+    font-size: 14px;
+    color: var(--fg-muted);
+  }
+
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    color: var(--fg);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .search .clear {
+    border: none;
+    background: none;
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .search .clear:hover {
+    color: var(--danger);
+  }
+
+  .chip {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+
+  .chip .material-symbols-outlined {
+    font-size: 15px;
+  }
+
+  .chip:hover {
+    border-color: var(--accent);
+  }
+
+  .chip.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--bg-subtle);
   }
 
   .theme-btn {

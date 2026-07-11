@@ -51,7 +51,8 @@
   onMount(() => {
     const t = new Terminal({
       fontFamily: '"Cascadia Mono", Consolas, monospace',
-      fontSize: 14,
+      // Match the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
+      fontSize: 12,
       theme
     })
     const f = new FitAddon()

@@ -40,9 +40,12 @@ export const ui = $state<{ focused: number | null; mode: Mode; railWidth: number
 })
 
 // Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
-// it works — strip it for the rail's name column.
+// it works; Git Bash prefixes the cwd with the MSYS system name (MINGW64:).
+// Strip both — the rail wants the conversation name / the path, nothing else.
 export function cleanTitle(title: string): string {
-  return title.replace(/^[✳✶✻✽·∴※+*●○◐◑]+\s*/u, '')
+  return title
+    .replace(/^[✳✶✻✽·∴※+*●○◐◑]+\s*/u, '')
+    .replace(/^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/, '')
 }
 
 export async function newSession(type: 'shell' | 'claude'): Promise<void> {
