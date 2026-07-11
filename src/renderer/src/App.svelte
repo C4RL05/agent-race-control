@@ -27,6 +27,8 @@
   let colorMenu = $state<{ key: number; x: number; y: number } | null>(null)
   // Right-click context menu for a session row.
   let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
+  // The + button's create dropdown (opens upward from the bottom toolbar).
+  let addMenu = $state<{ x: number; bottom: number } | null>(null)
 
   let draggingRail = $state(false)
 
@@ -154,39 +156,6 @@
   style:--danger={palette.chrome.danger}
 >
   <aside class="rail" style:width={`${ui.railWidth}px`}>
-    <div class="rail-toolbar">
-      <span class="add-label material-symbols-outlined">add</span>
-      <div class="add-group">
-        <button
-          class="group-btn"
-          title="New Claude session"
-          aria-label="New Claude session"
-          onclick={() => newSession('claude')}
-        >
-          <span class="material-symbols-outlined">asterisk</span>
-        </button>
-        <button
-          class="group-btn"
-          title="New shell session"
-          aria-label="New shell session"
-          onclick={() => newSession('shell')}
-        >
-          <span class="material-symbols-outlined">terminal_2</span>
-        </button>
-        <button class="group-btn" title="New folder" aria-label="New folder" onclick={addFolder}>
-          <span class="material-symbols-outlined">folder</span>
-        </button>
-      </div>
-      <button
-        class="icon-btn theme-btn"
-        title={`Theme: ${ui.mode} — click to switch`}
-        aria-label={`Theme: ${ui.mode}`}
-        onclick={cycleMode}
-      >
-        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
-      </button>
-    </div>
-
     <div class="rail-body">
       {#each folders as folder (folder.id)}
         <div
@@ -339,6 +308,27 @@
       {/each}
     </div>
 
+    <div class="rail-toolbar">
+      <button
+        class="icon-btn"
+        title="New session or folder"
+        aria-label="New session or folder"
+        onclick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          addMenu = { x: rect.left, bottom: window.innerHeight - rect.top + 4 }
+        }}
+      >
+        <span class="material-symbols-outlined">add</span>
+      </button>
+      <button
+        class="icon-btn theme-btn"
+        title={`Theme: ${ui.mode} — click to switch`}
+        aria-label={`Theme: ${ui.mode}`}
+        onclick={cycleMode}
+      >
+        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
+      </button>
+    </div>
   </aside>
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -381,6 +371,47 @@
       </div>
     {/if}
   </main>
+
+  {#if addMenu}
+    <div
+      class="menu-backdrop"
+      role="presentation"
+      onclick={() => (addMenu = null)}
+      oncontextmenu={(e) => {
+        e.preventDefault()
+        addMenu = null
+      }}
+    ></div>
+    <div class="menu" style:left={`${addMenu.x}px`} style:bottom={`${addMenu.bottom}px`}>
+      <button
+        class="menu-item"
+        onclick={() => {
+          void newSession('claude')
+          addMenu = null
+        }}
+      >
+        <span class="material-symbols-outlined">asterisk</span>Claude session
+      </button>
+      <button
+        class="menu-item"
+        onclick={() => {
+          void newSession('shell')
+          addMenu = null
+        }}
+      >
+        <span class="material-symbols-outlined">terminal_2</span>Shell session
+      </button>
+      <button
+        class="menu-item"
+        onclick={() => {
+          addFolder()
+          addMenu = null
+        }}
+      >
+        <span class="material-symbols-outlined">folder</span>Folder
+      </button>
+    </div>
+  {/if}
 
   {#if colorMenu}
     <div
@@ -485,6 +516,7 @@
     if (e.key === 'Escape') {
       if (colorMenu) colorMenu = null
       if (sessionMenu) sessionMenu = null
+      if (addMenu) addMenu = null
     }
   }}
 />
@@ -700,46 +732,7 @@
     display: flex;
     gap: 6px;
     padding: 8px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 6px;
-  }
-
-  .add-group {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-  }
-
-  .add-label {
-    font-size: 14px;
-    color: var(--fg-muted);
-    align-self: center;
-    user-select: none;
-  }
-
-  .group-btn {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 22px;
-    border: none;
-    border-radius: 4px;
-    background: none;
-    color: var(--fg-muted);
-    cursor: pointer;
-  }
-
-  .group-btn:hover {
-    background: var(--bg-subtle);
-    color: var(--accent);
-  }
-
-  .group-btn .material-symbols-outlined {
-    font-size: 16px;
+    border-top: 1px solid var(--border);
   }
 
   .theme-btn {
@@ -751,7 +744,7 @@
     display: grid;
     place-items: center;
     width: 28px;
-    align-self: stretch;
+    height: 26px;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
