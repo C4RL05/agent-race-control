@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 import { startStatusServer } from './status'
@@ -44,6 +44,11 @@ if (!gotLock) {
     })
 
     win.on('ready-to-show', () => win?.show())
+    // Fallback: some Electron/GPU states never fire ready-to-show even after
+    // a successful load — never leave the window invisible.
+    win.webContents.once('did-finish-load', () => {
+      if (win && !win.isVisible()) win.show()
+    })
     win.on('closed', () => {
       win = null
     })
@@ -113,6 +118,13 @@ if (!gotLock) {
 
   ipcMain.on('shell:openPath', (_event, path: string) => {
     void shell.openPath(path)
+  })
+
+  // Window/taskbar icon, rendered by the renderer from the bundled Material
+  // Symbols font (sports_score — the checkered flag). No icon asset to ship.
+  // The packaged .exe will need a real .ico at packaging time (post-v1).
+  ipcMain.on('app:setIcon', (_event, dataUrl: string) => {
+    win?.setIcon(nativeImage.createFromDataURL(dataUrl))
   })
 
   ipcMain.handle('state:load', () => {

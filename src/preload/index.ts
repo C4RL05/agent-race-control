@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('arc', {
   openInExplorer: (path: string): void => {
     ipcRenderer.send('shell:openPath', path)
   },
+  setAppIcon: (dataUrl: string): void => {
+    ipcRenderer.send('app:setIcon', dataUrl)
+  },
   state: {
     load: (): Promise<unknown> => ipcRenderer.invoke('state:load'),
     save: (state: unknown): void => {

@@ -63,6 +63,24 @@
     return off
   })
 
+  // Window/taskbar icon: render the sports_score glyph (checkered flag) from
+  // the bundled icon font once the fonts are ready.
+  $effect(() => {
+    void document.fonts.ready.then(() => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 256
+      canvas.height = 256
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.fillStyle = '#2f81f7'
+      ctx.font = '224px "Material Symbols Outlined"'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('sports_score', 128, 138)
+      window.arc.setAppIcon(canvas.toDataURL('image/png'))
+    })
+  })
+
   // Restore persisted sessions/mode once at boot; persist on any change after.
   let restored = $state(false)
   $effect(() => {
