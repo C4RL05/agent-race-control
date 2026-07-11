@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 import { startStatusServer } from './status'
+import { loadState, saveState, flushState } from './state'
+import type { AppState } from './state'
 
 // One window, one taskbar icon — a second launch focuses the existing window.
 const gotLock = app.requestSingleInstanceLock()
@@ -47,7 +49,7 @@ if (!gotLock) {
   })
 
   // New-session working directory picker; remembers the last pick as the
-  // dialog's starting point (in-memory only — persistence is Phase 6).
+  // dialog's starting point (persisted via the state JSON).
   let lastPickedDir: string | undefined
   ipcMain.handle('dialog:pickFolder', async () => {
     if (!win) return null
@@ -61,6 +63,16 @@ if (!gotLock) {
     return picked
   })
 
+  ipcMain.handle('state:load', () => {
+    const state = loadState()
+    if (state?.lastPickedDir) lastPickedDir = state.lastPickedDir
+    return state
+  })
+
+  ipcMain.on('state:save', (_event, state: AppState) => {
+    saveState({ ...state, lastPickedDir })
+  })
+
   app.whenReady().then(async () => {
     await startStatusServer((claudeSessionId, status) => {
       win?.webContents.send('session:status', claudeSessionId, status)
@@ -70,6 +82,7 @@ if (!gotLock) {
   })
 
   app.on('will-quit', () => {
+    flushState()
     killAllPtys()
   })
 

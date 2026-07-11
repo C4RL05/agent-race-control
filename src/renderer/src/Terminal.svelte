@@ -9,6 +9,7 @@
   let {
     type = 'shell',
     cwd,
+    resume,
     active = false,
     theme,
     onSpawned,
@@ -16,6 +17,7 @@
   }: {
     type?: 'shell' | 'claude'
     cwd?: string
+    resume?: string
     active?: boolean
     theme: ITheme
     onSpawned?: (ptyId: string, claudeSessionId?: string) => void
@@ -99,7 +101,7 @@
       }
     })
 
-    void window.arc.pty.spawn({ cols: t.cols, rows: t.rows, type, cwd }).then((result) => {
+    void window.arc.pty.spawn({ cols: t.cols, rows: t.rows, type, cwd, resume }).then((result) => {
       if (disposed) return
       if ('error' in result) {
         t.write(`\x1b[31m${result.error}\x1b[0m\r\n`)

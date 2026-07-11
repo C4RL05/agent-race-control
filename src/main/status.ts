@@ -6,7 +6,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // The `waiting` signal, without touching the user's global Claude config:
-// each aRC Claude session gets per-session hooks via `--settings <file>`,
+// each Agent Race Control Claude session gets per-session hooks via `--settings <file>`,
 // and those hooks POST their JSON payloads to this localhost server.
 // Observability only — every request is answered 200 `{}` immediately, so
 // hooks never block, deny, or modify anything Claude does.
@@ -24,7 +24,7 @@ const HOOK_EVENTS = Object.keys(EVENT_STATUS)
 
 let settingsPath: string | null = null
 
-// Path passed as `claude --settings <path>` for aRC-spawned sessions.
+// Path passed as `claude --settings <path>` for sessions this app spawns.
 export function getHookSettingsPath(): string | null {
   return settingsPath
 }

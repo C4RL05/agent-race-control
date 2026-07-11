@@ -5,12 +5,19 @@ import type { IpcRendererEvent } from 'electron'
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
+  state: {
+    load: (): Promise<unknown> => ipcRenderer.invoke('state:load'),
+    save: (state: unknown): void => {
+      ipcRenderer.send('state:save', state)
+    }
+  },
   pty: {
     spawn: (opts: {
       cols: number
       rows: number
       type?: 'shell' | 'claude'
       cwd?: string
+      resume?: string
     }): Promise<{ id: string; claudeSessionId?: string } | { error: string }> =>
       ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {

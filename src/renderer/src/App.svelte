@@ -2,7 +2,16 @@
   import Terminal from './Terminal.svelte'
   import { palettes } from './theme'
   import type { Mode } from './theme'
-  import { sessions, ui, newSession, closeSession, cycleColor, applyStatus } from './sessions.svelte'
+  import {
+    sessions,
+    ui,
+    newSession,
+    closeSession,
+    cycleColor,
+    applyStatus,
+    restoreState,
+    snapshotState
+  } from './sessions.svelte'
 
   const MODES: Mode[] = ['system', 'light', 'dark']
 
@@ -21,6 +30,17 @@
   $effect(() => {
     const off = window.arc.status.onChange(applyStatus)
     return off
+  })
+
+  // Restore persisted sessions/mode once at boot; persist on any change after.
+  let restored = $state(false)
+  $effect(() => {
+    void restoreState().finally(() => (restored = true))
+  })
+
+  $effect(() => {
+    const snapshot = snapshotState()
+    if (restored) window.arc.state.save(snapshot)
   })
 
   const effective = $derived(ui.mode === 'system' ? (systemDark ? 'dark' : 'light') : ui.mode)
@@ -48,7 +68,7 @@
   style:--danger={palette.chrome.danger}
 >
   <aside class="rail">
-    <header class="rail-title">aRC</header>
+    <header class="rail-title">Agent Race Control</header>
 
     <div class="rail-body">
       {#each sessions as session (session.key)}
@@ -129,6 +149,7 @@
         <Terminal
           type={session.type}
           cwd={session.cwd}
+          resume={session.resumeId ?? undefined}
           active={ui.focused === session.key}
           theme={palette.xterm}
           onSpawned={(ptyId, claudeSessionId) => {

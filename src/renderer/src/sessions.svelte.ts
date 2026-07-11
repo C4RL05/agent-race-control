@@ -10,6 +10,8 @@ export interface Session {
   status: 'running' | 'waiting' | 'idle' | 'exited'
   ptyId: string | null
   claudeSessionId: string | null
+  // Set on sessions restored from the state JSON: spawn with --resume.
+  resumeId: string | null
 }
 
 let nextKey = 1
@@ -35,7 +37,8 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
     // Claude starts at its prompt (idle); a shell is simply alive (running).
     status: type === 'claude' ? 'idle' : 'running',
     ptyId: null,
-    claudeSessionId: null
+    claudeSessionId: null,
+    resumeId: null
   }
   sessions.push(session)
   ui.focused = session.key
@@ -44,6 +47,51 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
 export function applyStatus(claudeSessionId: string, status: 'running' | 'waiting' | 'idle'): void {
   const session = sessions.find((s) => s.claudeSessionId === claudeSessionId)
   if (session && session.status !== 'exited') session.status = status
+}
+
+// --- persistence ---
+
+export async function restoreState(): Promise<void> {
+  const saved = await window.arc.state.load()
+  if (!saved) return
+  ui.mode = saved.mode
+  for (const s of saved.sessions) {
+    sessions.push({
+      key: nextKey++,
+      type: s.type,
+      cwd: s.cwd,
+      name: s.name,
+      color: s.color,
+      status: s.type === 'claude' ? 'idle' : 'running',
+      ptyId: null,
+      claudeSessionId: null,
+      // Claude sessions resume their conversation; shells just reopen fresh.
+      resumeId: s.type === 'claude' ? s.claudeSessionId : null
+    })
+    colorIndex++
+  }
+  ui.focused = sessions[saved.focusedIndex]?.key ?? sessions[0]?.key ?? null
+}
+
+// Exited sessions are not persisted — a session that ended is gone.
+export function snapshotState(): PersistedState {
+  const alive = sessions.filter((s) => s.status !== 'exited')
+  const focusedIndex = Math.max(
+    0,
+    alive.findIndex((s) => s.key === ui.focused)
+  )
+  return {
+    version: 1,
+    mode: ui.mode,
+    focusedIndex,
+    sessions: alive.map((s) => ({
+      type: s.type,
+      name: s.name,
+      color: s.color,
+      cwd: s.cwd,
+      claudeSessionId: s.claudeSessionId
+    }))
+  }
 }
 
 export function closeSession(key: number): void {

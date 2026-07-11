@@ -1,8 +1,8 @@
 {
   "name": "agent-race-control",
-  "productName": "Race Control",
+  "productName": "Agent Race Control",
   "version": "0.1.0",
-  "description": "aRC — a session-aware terminal cockpit for Claude Code on native Windows",
+  "description": "Agent Race Control — a session-aware terminal cockpit for Claude Code on native Windows",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
