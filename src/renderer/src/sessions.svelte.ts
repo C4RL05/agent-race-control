@@ -67,6 +67,28 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
   ui.focused = session.key
 }
 
+// Windows Terminal's "Duplicate tab": same type, same cwd, fresh process.
+export function duplicateSession(key: number): void {
+  const index = sessions.findIndex((s) => s.key === key)
+  const source = sessions[index]
+  if (!source) return
+  const session: Session = {
+    key: nextKey++,
+    type: source.type,
+    folderId: source.folderId,
+    cwd: source.cwd,
+    name: source.name,
+    color: DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex,
+    status: source.type === 'claude' ? 'idle' : 'running',
+    title: '',
+    ptyId: null,
+    claudeSessionId: null,
+    resumeId: null
+  }
+  sessions.splice(index + 1, 0, session)
+  ui.focused = session.key
+}
+
 export function applyStatus(claudeSessionId: string, status: 'running' | 'waiting' | 'idle'): void {
   const session = sessions.find((s) => s.claudeSessionId === claudeSessionId)
   if (session && session.status !== 'exited') session.status = status

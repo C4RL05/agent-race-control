@@ -14,6 +14,7 @@
     restoreState,
     snapshotState,
     cleanTitle,
+    duplicateSession,
     addFolder,
     renameFolder,
     deleteFolder,
@@ -24,6 +25,8 @@
 
   // Right-click color picker for a session dot.
   let colorMenu = $state<{ key: number; x: number; y: number } | null>(null)
+  // Right-click context menu for a session row.
+  let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
 
   let draggingRail = $state(false)
 
@@ -232,6 +235,14 @@
             ondragleave={() => (dropHint = null)}
             ondrop={() => dropOnSession(session)}
             onclick={() => (ui.focused = session.key)}
+            oncontextmenu={(e) => {
+              e.preventDefault()
+              sessionMenu = {
+                key: session.key,
+                x: e.clientX,
+                y: Math.min(e.clientY, window.innerHeight - 220)
+              }
+            }}
             onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
           >
           <button
@@ -371,11 +382,84 @@
     </div>
   {/if}
 
+  {#if sessionMenu}
+    {@const menuSession = sessions.find((s) => s.key === sessionMenu?.key)}
+    <div
+      class="menu-backdrop"
+      role="presentation"
+      onclick={() => (sessionMenu = null)}
+      oncontextmenu={(e) => {
+        e.preventDefault()
+        sessionMenu = null
+      }}
+    ></div>
+    {#if menuSession}
+      <div class="menu" style:left={`${sessionMenu.x}px`} style:top={`${sessionMenu.y}px`}>
+        <button
+          class="menu-item"
+          onclick={() => {
+            window.arc.openInExplorer(menuSession.cwd)
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">folder_open</span>Show in Explorer
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            void navigator.clipboard.writeText(menuSession.cwd)
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">content_copy</span>Copy path
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            duplicateSession(menuSession.key)
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">tab_duplicate</span>Duplicate session
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            renaming = menuSession.key
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">edit</span>Rename
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            colorMenu = { key: menuSession.key, x: sessionMenu?.x ?? 0, y: sessionMenu?.y ?? 0 }
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">palette</span>Change color
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            closeSession(menuSession.key)
+            sessionMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">close</span>Close session
+        </button>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === 'Escape' && colorMenu) colorMenu = null
+    if (e.key === 'Escape') {
+      if (colorMenu) colorMenu = null
+      if (sessionMenu) sessionMenu = null
+    }
   }}
 />
 

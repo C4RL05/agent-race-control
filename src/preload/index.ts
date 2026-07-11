@@ -5,6 +5,9 @@ import type { IpcRendererEvent } from 'electron'
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
+  openInExplorer: (path: string): void => {
+    ipcRenderer.send('shell:openPath', path)
+  },
   state: {
     load: (): Promise<unknown> => ipcRenderer.invoke('state:load'),
     save: (state: unknown): void => {

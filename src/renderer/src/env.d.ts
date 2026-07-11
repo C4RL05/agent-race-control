@@ -23,6 +23,7 @@ interface Window {
   arc: {
     electronVersion: string
     pickFolder: () => Promise<string | null>
+    openInExplorer: (path: string) => void
     state: {
       load: () => Promise<PersistedState | null>
       save: (state: PersistedState) => void

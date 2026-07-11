@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 import { startStatusServer } from './status'
@@ -109,6 +109,10 @@ if (!gotLock) {
     const picked = result.canceled ? null : (result.filePaths[0] ?? null)
     if (picked) lastPickedDir = picked
     return picked
+  })
+
+  ipcMain.on('shell:openPath', (_event, path: string) => {
+    void shell.openPath(path)
   })
 
   ipcMain.handle('state:load', () => {
