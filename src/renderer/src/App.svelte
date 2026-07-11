@@ -79,7 +79,7 @@
         ctx.fillStyle = '#000000'
         ctx.fillRect(0, 0, size, size)
         ctx.fillStyle = '#ffffff'
-        ctx.font = `400 ${Math.round(size * 0.875)}px "Material Symbols Outlined"`
+        ctx.font = `300 ${Math.round(size * 0.875)}px "Material Symbols Outlined"`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText('sports_motorsports', size / 2, size * 0.54)
