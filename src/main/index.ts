@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { registerPtyHandlers, killAllPtys } from './pty'
 
 // One window, one taskbar icon — a second launch focuses the existing window.
 const gotLock = app.requestSingleInstanceLock()
@@ -44,7 +45,14 @@ if (!gotLock) {
     }
   })
 
-  app.whenReady().then(createWindow)
+  app.whenReady().then(() => {
+    registerPtyHandlers(() => win?.webContents ?? null)
+    createWindow()
+  })
+
+  app.on('will-quit', () => {
+    killAllPtys()
+  })
 
   // Windows-only app: closing the window quits.
   app.on('window-all-closed', () => {

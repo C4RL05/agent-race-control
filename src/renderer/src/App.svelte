@@ -1,6 +1,5 @@
 <script lang="ts">
-  // Phase 1: structural shell only. Rail and terminal land in later phases.
-  const electronVersion = window.arc?.electronVersion ?? 'preload not loaded'
+  import Terminal from './Terminal.svelte'
 </script>
 
 <div class="shell">
@@ -11,7 +10,7 @@
     </div>
   </aside>
   <main class="pane">
-    <p class="placeholder">terminal — Electron {electronVersion}</p>
+    <Terminal />
   </main>
 </div>
 
@@ -52,8 +51,8 @@
 
   .pane {
     flex: 1;
-    display: grid;
-    place-items: center;
+    min-width: 0;
+    padding: 8px;
   }
 
   .placeholder {

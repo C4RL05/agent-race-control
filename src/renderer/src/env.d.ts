@@ -5,5 +5,13 @@
 interface Window {
   arc: {
     electronVersion: string
+    pty: {
+      spawn: (opts: { cols: number; rows: number }) => Promise<{ id: string } | { error: string }>
+      write: (id: string, data: string) => void
+      resize: (id: string, cols: number, rows: number) => void
+      kill: (id: string) => void
+      onData: (callback: (id: string, data: string) => void) => () => void
+      onExit: (callback: (id: string, exitCode: number) => void) => () => void
+    }
   }
 }
