@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 import { startStatusServer } from './status'
@@ -11,6 +11,12 @@ if (!gotLock) {
   app.quit()
 } else {
   let win: BrowserWindow | null = null
+
+  // No application menu: Electron's default menu accelerators (Ctrl+R reload,
+  // Ctrl+W close, Ctrl+Shift+I, ...) fire even with the menu bar hidden —
+  // they shadow terminal keystrokes (zero-shadow rule) and an accidental
+  // reload duplicates restored sessions and orphans PTYs.
+  Menu.setApplicationMenu(null)
 
   function createWindow(): void {
     win = new BrowserWindow({
@@ -33,6 +39,21 @@ if (!gotLock) {
 
     // The renderer never opens new windows.
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+    // If the renderer ever reloads (dev), the old page's PTYs would be
+    // orphaned in this process — kill them; the new page respawns via state.
+    win.webContents.on('did-start-navigation', (event) => {
+      if (event.isMainFrame && !event.isSameDocument) killAllPtys()
+    })
+
+    // Dev-only devtools access (no menu = no default accelerator).
+    if (!app.isPackaged) {
+      win.webContents.on('before-input-event', (_event, input) => {
+        if (input.type === 'keyDown' && input.key === 'F12') {
+          win?.webContents.toggleDevTools()
+        }
+      })
+    }
 
     if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
       win.loadURL(process.env['ELECTRON_RENDERER_URL'])

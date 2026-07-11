@@ -62,11 +62,24 @@ export function applyStatus(claudeSessionId: string, status: 'running' | 'waitin
 
 // --- persistence ---
 
+let booted = false
+
 export async function restoreState(): Promise<void> {
+  // HMR re-mounts App, which re-runs the boot effect — restore must happen
+  // once per page load and never into a non-empty list (it would append
+  // duplicates, and the persist effect would then save them).
+  if (booted || sessions.length > 0) return
+  booted = true
   const saved = await window.arc.state.load()
   if (!saved) return
   ui.mode = saved.mode
+  const seenClaudeIds = new Set<string>()
   for (const s of saved.sessions) {
+    // Drop legacy duplicates that earlier dev reloads may have persisted.
+    if (s.type === 'claude' && s.claudeSessionId) {
+      if (seenClaudeIds.has(s.claudeSessionId)) continue
+      seenClaudeIds.add(s.claudeSessionId)
+    }
     sessions.push({
       key: nextKey++,
       type: s.type,
