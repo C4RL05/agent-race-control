@@ -240,7 +240,7 @@
           <span
             class="type-icon material-symbols-outlined"
             title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-            >{session.type === 'claude' ? 'flare' : 'terminal'}</span
+            >{session.type === 'claude' ? 'robot_2' : 'terminal'}</span
           >
 
           {#if renaming === session.key}
