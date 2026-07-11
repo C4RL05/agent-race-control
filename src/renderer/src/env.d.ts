@@ -7,8 +7,10 @@ interface PersistedState {
   mode: 'system' | 'light' | 'dark'
   railWidth?: number
   focusedIndex: number
+  folders?: Array<{ id: number; name: string }>
   sessions: Array<{
     type: 'shell' | 'claude'
+    folderId?: number
     name: string
     color: string
     cwd: string

@@ -4,6 +4,7 @@
   import type { Mode } from './theme'
   import {
     sessions,
+    folders,
     ui,
     newSession,
     closeSession,
@@ -12,7 +13,12 @@
     applyStatus,
     restoreState,
     snapshotState,
-    cleanTitle
+    cleanTitle,
+    addFolder,
+    renameFolder,
+    deleteFolder,
+    moveFolder,
+    moveSession
   } from './sessions.svelte'
   import { DOT_COLORS } from './theme'
 
@@ -69,11 +75,40 @@
   const palette = $derived(palettes[effective])
 
   let renaming = $state<number | null>(null)
+  let renamingFolder = $state<number | null>(null)
 
   function commitRename(key: number, value: string): void {
     const session = sessions.find((s) => s.key === key)
     if (session && value.trim()) session.name = value.trim()
     renaming = null
+  }
+
+  // --- drag & drop (same-window; component state, not dataTransfer) ---
+  type Drag = { kind: 'session'; key: number } | { kind: 'folder'; id: number }
+  let dragging = $state<Drag | null>(null)
+  let dropHint = $state<string | null>(null)
+
+  function allowDrop(event: DragEvent, hint: string, accept: boolean): void {
+    if (!accept) return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    dropHint = hint
+  }
+
+  function endDrag(): void {
+    dragging = null
+    dropHint = null
+  }
+
+  function dropOnSession(target: { key: number; folderId: number }): void {
+    if (dragging?.kind === 'session') moveSession(dragging.key, target.folderId, target.key)
+    endDrag()
+  }
+
+  function dropOnFolder(folderId: number): void {
+    if (dragging?.kind === 'session') moveSession(dragging.key, folderId)
+    else if (dragging?.kind === 'folder') moveFolder(dragging.id, folderId)
+    endDrag()
   }
 </script>
 
@@ -93,6 +128,9 @@
     <div class="rail-toolbar">
       <button class="add" onclick={() => newSession('claude')}>+ Claude</button>
       <button class="add" onclick={() => newSession('shell')}>+ Shell</button>
+      <button class="icon-btn" title="New folder" aria-label="New folder" onclick={addFolder}>
+        <span class="material-symbols-outlined">create_new_folder</span>
+      </button>
       <button
         class="icon-btn"
         title={`Theme: ${ui.mode} — click to switch`}
@@ -104,15 +142,81 @@
     </div>
 
     <div class="rail-body">
-      {#each sessions as session (session.key)}
+      {#each folders as folder (folder.id)}
         <div
-          class="row"
-          class:focused={ui.focused === session.key}
+          class="folder-header"
+          class:drop-hint={dropHint === `folder-${folder.id}`}
           role="button"
           tabindex="0"
-          onclick={() => (ui.focused = session.key)}
-          onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
+          draggable="true"
+          ondragstart={() => (dragging = { kind: 'folder', id: folder.id })}
+          ondragend={endDrag}
+          ondragover={(e) => allowDrop(e, `folder-${folder.id}`, dragging !== null)}
+          ondragleave={() => (dropHint = null)}
+          ondrop={() => dropOnFolder(folder.id)}
         >
+          <span class="material-symbols-outlined folder-icon">folder</span>
+          {#if renamingFolder === folder.id}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              class="rename"
+              value={folder.name}
+              autofocus
+              onblur={(e) => {
+                renameFolder(folder.id, e.currentTarget.value)
+                renamingFolder = null
+              }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  renameFolder(folder.id, e.currentTarget.value)
+                  renamingFolder = null
+                }
+                if (e.key === 'Escape') renamingFolder = null
+              }}
+            />
+          {:else}
+            <span
+              class="folder-name"
+              role="button"
+              tabindex="-1"
+              title="Double-click to rename"
+              ondblclick={() => (renamingFolder = folder.id)}>{folder.name}</span
+            >
+          {/if}
+          {#if folder.id !== 0}
+            <button
+              class="close"
+              title="Delete folder (sessions move to default)"
+              aria-label="Delete folder"
+              onclick={(e) => {
+                e.stopPropagation()
+                deleteFolder(folder.id)
+              }}>×</button
+            >
+          {/if}
+        </div>
+
+        {#each sessions.filter((s) => s.folderId === folder.id) as session (session.key)}
+          <div
+            class="row"
+            class:focused={ui.focused === session.key}
+            class:drop-hint={dropHint === `session-${session.key}`}
+            role="button"
+            tabindex="0"
+            draggable="true"
+            ondragstart={() => (dragging = { kind: 'session', key: session.key })}
+            ondragend={endDrag}
+            ondragover={(e) =>
+              allowDrop(
+                e,
+                `session-${session.key}`,
+                dragging?.kind === 'session' && dragging.key !== session.key
+              )}
+            ondragleave={() => (dropHint = null)}
+            ondrop={() => dropOnSession(session)}
+            onclick={() => (ui.focused = session.key)}
+            onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
+          >
           <button
             class="dot"
             style:background={session.color}
@@ -176,7 +280,8 @@
               closeSession(session.key)
             }}>×</button
           >
-        </div>
+          </div>
+        {/each}
       {/each}
     </div>
 
@@ -298,6 +403,46 @@
     padding: 0 8px;
   }
 
+  .folder-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px 3px;
+    margin-top: 4px;
+    border-radius: 6px;
+    color: var(--fg-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    user-select: none;
+    cursor: grab;
+  }
+
+  .folder-icon {
+    font-size: 14px;
+  }
+
+  .folder-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-header .close {
+    font-size: 12px;
+  }
+
+  .folder-header:hover .close {
+    visibility: visible;
+  }
+
+  .drop-hint {
+    outline: 1px solid var(--accent);
+    background: var(--bg);
+  }
+
   .row {
     /* columns: dot | type icon | name | claude title | status | close */
     display: grid;
@@ -305,6 +450,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
+    margin-left: 8px;
     border-radius: 6px;
     cursor: pointer;
     user-select: none;

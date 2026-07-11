@@ -41,6 +41,11 @@ Other tools (Kanban Code, the Claude desktop app, GitKraken Kepler, etc.) integr
 - **Right pane:** one terminal, showing whichever session I clicked in the rail.
 - The rail is the overview; the pane is the cockpit. Same window. Glance to find, click to drive.
 
+### Folders (grouping only)
+- The rail supports **one level** of folders: create from the toolbar, rename (double-click), delete (sessions fall back to the default folder — never killed). A default folder (id 0) always exists, takes new sessions, renamable but not deletable.
+- **Drag & drop:** drag sessions between/within folders; drag folder headers to reorder folders. Persisted in the state JSON.
+- Boundary, stated explicitly: folders are *visual grouping* — no nesting, no kanban semantics, no per-folder behavior. The moment a folder means anything beyond "these rows sit together," it's out of scope.
+
 ### Two session types
 - **Claude session** — bash that `exec`s straight into `claude` (see spawn spec below). The PTY *is* the Claude process: when claude exits, the session is exited. Full status set.
 - **Shell session** — a plain interactive Git Bash, for `npm run dev`, builds, git, or anything else. This is what makes Agent Race Control the *only* terminal window I need — without it I'd still have stray terminals on the taskbar, defeating the point. Status is `running`/`exited` only.

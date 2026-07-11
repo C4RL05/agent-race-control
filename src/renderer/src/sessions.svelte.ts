@@ -1,8 +1,17 @@
 import { DOT_COLORS, type Mode } from './theme'
 
+// One level of visual grouping — no nesting, no kanban semantics.
+// Folder id 0 is the default folder: always exists, takes new sessions,
+// can be renamed but not deleted.
+export interface Folder {
+  id: number
+  name: string
+}
+
 export interface Session {
   key: number
   type: 'shell' | 'claude'
+  folderId: number
   cwd: string
   name: string
   color: string
@@ -19,8 +28,10 @@ export interface Session {
 
 let nextKey = 1
 let colorIndex = 0
+let nextFolderId = 1
 
 export const sessions = $state<Session[]>([])
+export const folders = $state<Folder[]>([{ id: 0, name: 'Sessions' }])
 
 export const ui = $state<{ focused: number | null; mode: Mode; railWidth: number }>({
   focused: null,
@@ -41,6 +52,7 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
   const session: Session = {
     key: nextKey++,
     type,
+    folderId: 0,
     cwd,
     name,
     color: DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex,
@@ -60,6 +72,55 @@ export function applyStatus(claudeSessionId: string, status: 'running' | 'waitin
   if (session && session.status !== 'exited') session.status = status
 }
 
+// --- folders ---
+
+export function addFolder(): void {
+  folders.push({ id: nextFolderId, name: `Folder ${nextFolderId}` })
+  nextFolderId++
+}
+
+export function renameFolder(id: number, name: string): void {
+  const folder = folders.find((f) => f.id === id)
+  if (folder && name.trim()) folder.name = name.trim()
+}
+
+// Sessions in a deleted folder fall back to the default folder — never killed.
+export function deleteFolder(id: number): void {
+  if (id === 0) return
+  const index = folders.findIndex((f) => f.id === id)
+  if (index === -1) return
+  for (const s of sessions) {
+    if (s.folderId === id) s.folderId = 0
+  }
+  folders.splice(index, 1)
+}
+
+// Reorder: move folder `id` before folder `beforeId`.
+export function moveFolder(id: number, beforeId: number): void {
+  if (id === beforeId || id === undefined) return
+  const from = folders.findIndex((f) => f.id === id)
+  if (from === -1) return
+  const [folder] = folders.splice(from, 1)
+  const to = folders.findIndex((f) => f.id === beforeId)
+  folders.splice(to === -1 ? folders.length : to, 0, folder)
+}
+
+// Move a session into a folder — before a specific session, or appended.
+export function moveSession(key: number, folderId: number, beforeKey?: number): void {
+  const from = sessions.findIndex((s) => s.key === key)
+  if (from === -1) return
+  const [session] = sessions.splice(from, 1)
+  session.folderId = folderId
+  if (beforeKey !== undefined && beforeKey !== key) {
+    const to = sessions.findIndex((s) => s.key === beforeKey)
+    if (to !== -1) {
+      sessions.splice(to, 0, session)
+      return
+    }
+  }
+  sessions.push(session)
+}
+
 // --- persistence ---
 
 let booted = false
@@ -73,6 +134,12 @@ export async function restoreState(): Promise<void> {
   const saved = await window.arc.state.load()
   if (!saved) return
   ui.mode = saved.mode
+  if (saved.folders?.length) {
+    folders.length = 0
+    folders.push(...saved.folders)
+    if (!folders.some((f) => f.id === 0)) folders.unshift({ id: 0, name: 'Sessions' })
+    nextFolderId = Math.max(...folders.map((f) => f.id)) + 1
+  }
   const seenClaudeIds = new Set<string>()
   for (const s of saved.sessions) {
     // Drop legacy duplicates that earlier dev reloads may have persisted.
@@ -80,9 +147,11 @@ export async function restoreState(): Promise<void> {
       if (seenClaudeIds.has(s.claudeSessionId)) continue
       seenClaudeIds.add(s.claudeSessionId)
     }
+    const folderId = folders.some((f) => f.id === s.folderId) ? (s.folderId ?? 0) : 0
     sessions.push({
       key: nextKey++,
       type: s.type,
+      folderId,
       cwd: s.cwd,
       name: s.name,
       color: s.color,
@@ -111,8 +180,10 @@ export function snapshotState(): PersistedState {
     mode: ui.mode,
     railWidth: ui.railWidth,
     focusedIndex,
+    folders: folders.map((f) => ({ id: f.id, name: f.name })),
     sessions: alive.map((s) => ({
       type: s.type,
+      folderId: s.folderId,
       name: s.name,
       color: s.color,
       cwd: s.cwd,
