@@ -24,7 +24,8 @@ interface Window {
     electronVersion: string
     pickFolder: () => Promise<string | null>
     openInExplorer: (path: string) => void
-    setAppIcon: (dataUrl: string) => void
+    getPathForFile: (file: File) => string
+    setAppIcon: (representations: Array<{ scaleFactor: number; dataURL: string }>) => void
     state: {
       load: () => Promise<PersistedState | null>
       save: (state: PersistedState) => void

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
@@ -8,8 +8,10 @@ contextBridge.exposeInMainWorld('arc', {
   openInExplorer: (path: string): void => {
     ipcRenderer.send('shell:openPath', path)
   },
-  setAppIcon: (dataUrl: string): void => {
-    ipcRenderer.send('app:setIcon', dataUrl)
+  // File.path no longer exists in the renderer — resolve dropped files here.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  setAppIcon: (representations: Array<{ scaleFactor: number; dataURL: string }>): void => {
+    ipcRenderer.send('app:setIcon', representations)
   },
   state: {
     load: (): Promise<unknown> => ipcRenderer.invoke('state:load'),

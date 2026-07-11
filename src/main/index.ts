@@ -56,6 +56,10 @@ if (!gotLock) {
     // The renderer never opens new windows.
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
+    // ...and never navigates away (also stops file drops from navigating to
+    // the dropped file — the Terminal pastes its path instead).
+    win.webContents.on('will-navigate', (event) => event.preventDefault())
+
     // If the renderer ever reloads (dev), the old page's PTYs would be
     // orphaned in this process — kill them; the new page respawns via state.
     win.webContents.on('did-start-navigation', (event) => {
@@ -121,11 +125,19 @@ if (!gotLock) {
   })
 
   // Window/taskbar icon, rendered by the renderer from the bundled Material
-  // Symbols font (sports_score — the checkered flag). No icon asset to ship.
+  // Symbols font (sports_score — the checkered flag). Multi-resolution so
+  // Windows gets a crisp raster at every DPI size. No icon asset to ship.
   // The packaged .exe will need a real .ico at packaging time (post-v1).
-  ipcMain.on('app:setIcon', (_event, dataUrl: string) => {
-    win?.setIcon(nativeImage.createFromDataURL(dataUrl))
-  })
+  ipcMain.on(
+    'app:setIcon',
+    (_event, representations: Array<{ scaleFactor: number; dataURL: string }>) => {
+      const icon = nativeImage.createEmpty()
+      for (const rep of representations) {
+        icon.addRepresentation({ scaleFactor: rep.scaleFactor, dataURL: rep.dataURL })
+      }
+      win?.setIcon(icon)
+    }
+  )
 
   ipcMain.handle('state:load', () => {
     const state = loadState()

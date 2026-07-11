@@ -82,6 +82,23 @@
       return true
     })
 
+    // Dropping files pastes their quoted paths at the cursor — the same bytes
+    // Windows Terminal sends, and how you hand images/files to Claude Code.
+    container.addEventListener('dragover', (event) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    })
+    container.addEventListener('drop', (event) => {
+      const files = event.dataTransfer?.files
+      if (!files?.length) return
+      event.preventDefault()
+      const text = Array.from(files)
+        .map((file) => window.arc.getPathForFile(file))
+        .filter(Boolean)
+        .map((path) => `"${path.replace(/"/g, '\\"')}"`)
+        .join(' ')
+      if (text) t.paste(text)
+    })
+
     // Right-click: copy selection if present, else paste (Windows Terminal default).
     container.addEventListener('contextmenu', (event) => {
       event.preventDefault()
