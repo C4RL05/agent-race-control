@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 
@@ -43,6 +43,21 @@ if (!gotLock) {
       if (win.isMinimized()) win.restore()
       win.focus()
     }
+  })
+
+  // New-session working directory picker; remembers the last pick as the
+  // dialog's starting point (in-memory only — persistence is Phase 6).
+  let lastPickedDir: string | undefined
+  ipcMain.handle('dialog:pickFolder', async () => {
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose the session working directory',
+      properties: ['openDirectory'],
+      defaultPath: lastPickedDir
+    })
+    const picked = result.canceled ? null : (result.filePaths[0] ?? null)
+    if (picked) lastPickedDir = picked
+    return picked
   })
 
   app.whenReady().then(() => {

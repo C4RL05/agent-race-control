@@ -4,11 +4,13 @@ import type { IpcRendererEvent } from 'electron'
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
+  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
   pty: {
     spawn: (opts: {
       cols: number
       rows: number
       type?: 'shell' | 'claude'
+      cwd?: string
     }): Promise<{ id: string } | { error: string }> => ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {
       ipcRenderer.send('pty:write', id, data)

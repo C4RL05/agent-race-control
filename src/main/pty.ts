@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { spawn } from 'node-pty'
 import type { IPty } from 'node-pty'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { findGitBash } from './bash'
 
@@ -14,7 +15,10 @@ export type SessionType = 'shell' | 'claude'
 export function registerPtyHandlers(getWebContents: () => WebContents | null): void {
   ipcMain.handle(
     'pty:spawn',
-    (_event, opts: { cols: number; rows: number; type?: SessionType }): SpawnResult => {
+    (
+      _event,
+      opts: { cols: number; rows: number; type?: SessionType; cwd?: string }
+    ): SpawnResult => {
       const bash = findGitBash()
       if (!bash) {
         return { error: 'Git Bash not found. Install Git for Windows and restart aRC.' }
@@ -39,7 +43,7 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         name: 'xterm-256color',
         cols: Math.max(1, Math.floor(opts.cols)),
         rows: Math.max(1, Math.floor(opts.rows)),
-        cwd: homedir(),
+        cwd: opts.cwd && existsSync(opts.cwd) ? opts.cwd : homedir(),
         env
       })
 

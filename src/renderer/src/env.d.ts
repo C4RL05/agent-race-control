@@ -5,11 +5,13 @@
 interface Window {
   arc: {
     electronVersion: string
+    pickFolder: () => Promise<string | null>
     pty: {
       spawn: (opts: {
         cols: number
         rows: number
         type?: 'shell' | 'claude'
+        cwd?: string
       }) => Promise<{ id: string } | { error: string }>
       write: (id: string, data: string) => void
       resize: (id: string, cols: number, rows: number) => void
