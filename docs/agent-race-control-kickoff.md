@@ -41,6 +41,7 @@ Other tools (Kanban Code, the Claude desktop app, GitKraken Kepler, etc.) integr
 - **Left rail:** a list of every session showing its name, a color dot, and a status indicator.
 - **Right pane:** one terminal, showing whichever session I clicked in the rail.
 - The rail is the overview; the pane is the cockpit. Same window. Glance to find, click to drive.
+- Visual reference: **F1 timing tables** — a column of colored entries with names and live status, the whole race readable at a glance; click one to go on board.
 
 ### Folders (grouping only)
 - The rail supports **one level** of folders: create from the toolbar, rename (double-click), delete (sessions fall back to the default folder — never killed). A default folder (id 0) always exists, takes new sessions, renamable but not deletable.
