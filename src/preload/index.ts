@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld('arc', {
       rows: number
       type?: 'shell' | 'claude'
       cwd?: string
-    }): Promise<{ id: string } | { error: string }> => ipcRenderer.invoke('pty:spawn', opts),
+    }): Promise<{ id: string; claudeSessionId?: string } | { error: string }> =>
+      ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {
       ipcRenderer.send('pty:write', id, data)
     },
@@ -34,6 +35,21 @@ contextBridge.exposeInMainWorld('arc', {
       }
       ipcRenderer.on('pty:exit', listener)
       return () => ipcRenderer.removeListener('pty:exit', listener)
+    }
+  },
+  status: {
+    onChange: (
+      callback: (claudeSessionId: string, status: 'running' | 'waiting' | 'idle') => void
+    ): (() => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        claudeSessionId: string,
+        status: 'running' | 'waiting' | 'idle'
+      ): void => {
+        callback(claudeSessionId, status)
+      }
+      ipcRenderer.on('session:status', listener)
+      return () => ipcRenderer.removeListener('session:status', listener)
     }
   }
 })

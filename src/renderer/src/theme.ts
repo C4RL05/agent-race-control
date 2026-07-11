@@ -15,6 +15,7 @@ export interface Chrome {
   border: string
   accent: string
   success: string
+  attention: string
   danger: string
 }
 
@@ -33,6 +34,7 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       border: '#d0d7de',
       accent: '#0969da',
       success: '#1a7f37',
+      attention: '#9a6700',
       danger: '#cf222e'
     },
     xterm: {
@@ -68,6 +70,7 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       border: '#30363d',
       accent: '#2f81f7',
       success: '#3fb950',
+      attention: '#d29922',
       danger: '#f85149'
     },
     xterm: {

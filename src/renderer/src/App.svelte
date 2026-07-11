@@ -2,7 +2,7 @@
   import Terminal from './Terminal.svelte'
   import { palettes } from './theme'
   import type { Mode } from './theme'
-  import { sessions, ui, newSession, closeSession, cycleColor } from './sessions.svelte'
+  import { sessions, ui, newSession, closeSession, cycleColor, applyStatus } from './sessions.svelte'
 
   const MODES: Mode[] = ['system', 'light', 'dark']
 
@@ -15,6 +15,12 @@
     }
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
+  })
+
+  // Hook-driven status stream (main's localhost status server → renderer).
+  $effect(() => {
+    const off = window.arc.status.onChange(applyStatus)
+    return off
   })
 
   const effective = $derived(ui.mode === 'system' ? (systemDark ? 'dark' : 'light') : ui.mode)
@@ -38,6 +44,7 @@
   style:--border={palette.chrome.border}
   style:--accent={palette.chrome.accent}
   style:--success={palette.chrome.success}
+  style:--attention={palette.chrome.attention}
   style:--danger={palette.chrome.danger}
 >
   <aside class="rail">
@@ -86,11 +93,7 @@
             >
           {/if}
 
-          <span
-            class="status"
-            class:running={session.status === 'running'}
-            title={session.status}
-          ></span>
+          <span class="status {session.status}" title={session.status}></span>
 
           <button
             class="close"
@@ -128,7 +131,10 @@
           cwd={session.cwd}
           active={ui.focused === session.key}
           theme={palette.xterm}
-          onSpawned={(ptyId) => (session.ptyId = ptyId)}
+          onSpawned={(ptyId, claudeSessionId) => {
+            session.ptyId = ptyId
+            session.claudeSessionId = claudeSessionId ?? null
+          }}
           onExited={() => (session.status = 'exited')}
         />
       </div>
@@ -233,11 +239,30 @@
     height: 7px;
     flex-shrink: 0;
     border-radius: 50%;
-    background: var(--fg-muted);
   }
 
   .status.running {
     background: var(--success);
+  }
+
+  .status.waiting {
+    background: var(--attention);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .status.idle {
+    background: var(--accent);
+  }
+
+  .status.exited {
+    background: var(--fg-muted);
+    opacity: 0.5;
+  }
+
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
   }
 
   .close {

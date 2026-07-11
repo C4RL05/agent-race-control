@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
+import { startStatusServer } from './status'
 
 // One window, one taskbar icon — a second launch focuses the existing window.
 const gotLock = app.requestSingleInstanceLock()
@@ -60,7 +61,10 @@ if (!gotLock) {
     return picked
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await startStatusServer((claudeSessionId, status) => {
+      win?.webContents.send('session:status', claudeSessionId, status)
+    })
     registerPtyHandlers(() => win?.webContents ?? null)
     createWindow()
   })

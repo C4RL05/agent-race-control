@@ -2,14 +2,16 @@ import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { spawn } from 'node-pty'
 import type { IPty } from 'node-pty'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { findGitBash } from './bash'
+import { getHookSettingsPath } from './status'
 
 const ptys = new Map<string, IPty>()
 let nextId = 1
 
-type SpawnResult = { id: string } | { error: string }
+type SpawnResult = { id: string; claudeSessionId?: string } | { error: string }
 export type SessionType = 'shell' | 'claude'
 
 export function registerPtyHandlers(getWebContents: () => WebContents | null): void {
@@ -36,8 +38,19 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
       // Claude sessions: the login shell sources the user's profile (so claude
       // resolves from their real PATH), then exec makes bash *become* claude —
       // the PTY's lifetime IS the claude process's lifetime.
-      const args =
-        opts.type === 'claude' ? ['--login', '-i', '-c', 'exec claude'] : ['--login', '-i']
+      // --session-id gives a deterministic session id (status + resume mapping);
+      // --settings adds the observability-only status hooks (see status.ts).
+      let claudeSessionId: string | undefined
+      let args: string[]
+      if (opts.type === 'claude') {
+        claudeSessionId = randomUUID()
+        let cmd = `exec claude --session-id ${claudeSessionId}`
+        const hookSettings = getHookSettingsPath()
+        if (hookSettings) cmd += ` --settings '${hookSettings.replace(/\\/g, '/')}'`
+        args = ['--login', '-i', '-c', cmd]
+      } else {
+        args = ['--login', '-i']
+      }
 
       const pty = spawn(bash, args, {
         name: 'xterm-256color',
@@ -56,7 +69,7 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         getWebContents()?.send('pty:exit', id, exitCode)
       })
 
-      return { id }
+      return { id, claudeSessionId }
     }
   )
 

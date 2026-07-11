@@ -18,7 +18,7 @@
     cwd?: string
     active?: boolean
     theme: ITheme
-    onSpawned?: (ptyId: string) => void
+    onSpawned?: (ptyId: string, claudeSessionId?: string) => void
     onExited?: (exitCode: number) => void
   } = $props()
 
@@ -107,7 +107,7 @@
         return
       }
       ptyId = result.id
-      onSpawned?.(result.id)
+      onSpawned?.(result.id, result.claudeSessionId)
       t.onData((data) => window.arc.pty.write(result.id, data))
       t.onResize(({ cols, rows }) => window.arc.pty.resize(result.id, cols, rows))
       if (active) t.focus()

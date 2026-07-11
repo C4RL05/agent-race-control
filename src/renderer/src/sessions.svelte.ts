@@ -6,8 +6,10 @@ export interface Session {
   cwd: string
   name: string
   color: string
-  status: 'running' | 'exited'
+  // Claude sessions use the full set; shell sessions only running/exited.
+  status: 'running' | 'waiting' | 'idle' | 'exited'
   ptyId: string | null
+  claudeSessionId: string | null
 }
 
 let nextKey = 1
@@ -30,11 +32,18 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
     cwd,
     name,
     color: DOT_COLORS[colorIndex++ % DOT_COLORS.length],
-    status: 'running',
-    ptyId: null
+    // Claude starts at its prompt (idle); a shell is simply alive (running).
+    status: type === 'claude' ? 'idle' : 'running',
+    ptyId: null,
+    claudeSessionId: null
   }
   sessions.push(session)
   ui.focused = session.key
+}
+
+export function applyStatus(claudeSessionId: string, status: 'running' | 'waiting' | 'idle'): void {
+  const session = sessions.find((s) => s.claudeSessionId === claudeSessionId)
+  if (session && session.status !== 'exited') session.status = status
 }
 
 export function closeSession(key: number): void {
