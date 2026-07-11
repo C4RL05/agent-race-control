@@ -45,3 +45,7 @@ Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state
 ## Design notes
 
 The full design record — every decision, constraint, and verified gotcha — is in [`docs/agent-race-control-kickoff.md`](docs/agent-race-control-kickoff.md). The short version: minimalism is a hard requirement, and Claude Code purity is the reason this exists.
+
+## License
+
+[MIT](LICENSE)
