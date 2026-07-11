@@ -43,7 +43,7 @@ export async function newSession(type: 'shell' | 'claude'): Promise<void> {
     type,
     cwd,
     name,
-    color: DOT_COLORS[colorIndex++ % DOT_COLORS.length],
+    color: DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex,
     // Claude starts at its prompt (idle); a shell is simply alive (running).
     status: type === 'claude' ? 'idle' : 'running',
     title: '',
@@ -130,7 +130,25 @@ export function closeSession(key: number): void {
   }
 }
 
-export function cycleColor(session: Session): void {
-  const index = DOT_COLORS.indexOf(session.color)
-  session.color = DOT_COLORS[(index + 1) % DOT_COLORS.length]
+// Type `/color <name>` into the session on the user's behalf. User-initiated,
+// visible in the TUI, public command — the one blessed form of writing into a
+// session. Claude tints its agent-view row to match. One-way sync: /color
+// typed inside the TUI can't be read back (verified: no file, no escape seq).
+function injectColor(session: Session, name: string): void {
+  if (session.type === 'claude' && session.ptyId && session.status !== 'exited') {
+    window.arc.pty.write(session.ptyId, `/color ${name}\r`)
+  }
+}
+
+// Left-click on the dot: re-apply the current color to the session
+// (useful after resume — Claude's color is runtime-only and resets).
+export function applyColor(session: Session): void {
+  const entry = DOT_COLORS.find((c) => c.hex === session.color)
+  if (entry) injectColor(session, entry.name)
+}
+
+// Context-menu pick: set the dot and push it into the session.
+export function setColor(session: Session, entry: { name: string; hex: string }): void {
+  session.color = entry.hex
+  injectColor(session, entry.name)
 }

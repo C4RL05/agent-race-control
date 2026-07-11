@@ -101,14 +101,16 @@ export const palettes: Record<'light' | 'dark', Palette> = {
   }
 }
 
-// Session identity dots — GitHub mid-tones legible on both palettes.
-export const DOT_COLORS = [
-  '#388bfd',
-  '#3fb950',
-  '#a371f7',
-  '#db61a2',
-  '#db6d28',
-  '#39c5cf',
-  '#d29922',
-  '#f85149'
+// Session identity dots — the same 8-color vocabulary as Claude Code's
+// /color command, in GitHub mid-tones legible on both palettes. The name is
+// what gets typed as `/color <name>` when the user sets a color from the rail.
+export const DOT_COLORS: { name: string; hex: string }[] = [
+  { name: 'blue', hex: '#388bfd' },
+  { name: 'green', hex: '#3fb950' },
+  { name: 'purple', hex: '#a371f7' },
+  { name: 'pink', hex: '#db61a2' },
+  { name: 'orange', hex: '#db6d28' },
+  { name: 'cyan', hex: '#39c5cf' },
+  { name: 'yellow', hex: '#d29922' },
+  { name: 'red', hex: '#f85149' }
 ]

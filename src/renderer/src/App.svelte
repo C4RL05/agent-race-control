@@ -7,12 +7,17 @@
     ui,
     newSession,
     closeSession,
-    cycleColor,
+    applyColor,
+    setColor,
     applyStatus,
     restoreState,
     snapshotState,
     cleanTitle
   } from './sessions.svelte'
+  import { DOT_COLORS } from './theme'
+
+  // Right-click color picker for a session dot.
+  let colorMenu = $state<{ key: number; x: number; y: number } | null>(null)
 
   let draggingRail = $state(false)
 
@@ -22,6 +27,15 @@
   }
 
   const MODES: Mode[] = ['system', 'light', 'dark']
+  const MODE_ICONS: Record<Mode, string> = {
+    system: 'contrast',
+    light: 'light_mode',
+    dark: 'dark_mode'
+  }
+
+  function cycleMode(): void {
+    ui.mode = MODES[(MODES.indexOf(ui.mode) + 1) % MODES.length]
+  }
 
   let systemDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches)
 
@@ -76,7 +90,18 @@
   style:--danger={palette.chrome.danger}
 >
   <aside class="rail" style:width={`${ui.railWidth}px`}>
-    <header class="rail-title">Agent Race Control</header>
+    <div class="rail-toolbar">
+      <button class="add" onclick={() => newSession('claude')}>+ Claude</button>
+      <button class="add" onclick={() => newSession('shell')}>+ Shell</button>
+      <button
+        class="icon-btn"
+        title={`Theme: ${ui.mode} — click to switch`}
+        aria-label={`Theme: ${ui.mode}`}
+        onclick={cycleMode}
+      >
+        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
+      </button>
+    </div>
 
     <div class="rail-body">
       {#each sessions as session (session.key)}
@@ -91,13 +116,28 @@
           <button
             class="dot"
             style:background={session.color}
-            title="Change color"
-            aria-label="Change session color"
+            title="Click: apply color to session · Right-click: choose color"
+            aria-label="Session color"
             onclick={(e) => {
               e.stopPropagation()
-              cycleColor(session)
+              applyColor(session)
+            }}
+            oncontextmenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              colorMenu = {
+                key: session.key,
+                x: e.clientX,
+                y: Math.min(e.clientY, window.innerHeight - 240)
+              }
             }}
           ></button>
+
+          <span
+            class="type-icon material-symbols-outlined"
+            title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
+            >{session.type === 'claude' ? 'flare' : 'terminal'}</span
+          >
 
           {#if renaming === session.key}
             <!-- svelte-ignore a11y_autofocus -->
@@ -140,19 +180,6 @@
       {/each}
     </div>
 
-    <footer class="rail-footer">
-      <div class="add-buttons">
-        <button class="add" onclick={() => newSession('claude')}>+ Claude</button>
-        <button class="add" onclick={() => newSession('shell')}>+ Shell</button>
-      </div>
-      <div class="mode-toggle">
-        {#each MODES as mode (mode)}
-          <button class="mode" class:selected={ui.mode === mode} onclick={() => (ui.mode = mode)}>
-            {mode}
-          </button>
-        {/each}
-      </div>
-    </footer>
   </aside>
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -195,7 +222,39 @@
       </div>
     {/if}
   </main>
+
+  {#if colorMenu}
+    <div
+      class="menu-backdrop"
+      role="presentation"
+      onclick={() => (colorMenu = null)}
+      oncontextmenu={(e) => {
+        e.preventDefault()
+        colorMenu = null
+      }}
+    ></div>
+    <div class="color-menu" style:left={`${colorMenu.x}px`} style:top={`${colorMenu.y}px`}>
+      {#each DOT_COLORS as entry (entry.name)}
+        <button
+          class="color-item"
+          onclick={() => {
+            const session = sessions.find((s) => s.key === colorMenu?.key)
+            if (session) setColor(session, entry)
+            colorMenu = null
+          }}
+        >
+          <span class="swatch" style:background={entry.hex}></span>{entry.name}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
+
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === 'Escape' && colorMenu) colorMenu = null
+  }}
+/>
 
 <style>
   :global(html, body, #app) {
@@ -233,13 +292,6 @@
     background-color: var(--accent);
   }
 
-  .rail-title {
-    padding: 12px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
-
   .rail-body {
     flex: 1;
     overflow-y: auto;
@@ -247,9 +299,9 @@
   }
 
   .row {
-    /* columns: dot | name | claude title | status | close */
+    /* columns: dot | type icon | name | claude title | status | close */
     display: grid;
-    grid-template-columns: 10px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
+    grid-template-columns: 10px 16px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
@@ -275,6 +327,11 @@
     border: none;
     padding: 0;
     cursor: pointer;
+  }
+
+  .type-icon {
+    font-size: 15px;
+    color: var(--fg-muted);
   }
 
   .name {
@@ -357,17 +414,12 @@
     color: var(--danger);
   }
 
-  .rail-footer {
-    padding: 8px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .add-buttons {
+  .rail-toolbar {
     display: flex;
     gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
   }
 
   .add {
@@ -387,31 +439,26 @@
     color: var(--accent);
   }
 
-  .mode-toggle {
-    display: flex;
-    gap: 2px;
+  .icon-btn {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 2px;
-  }
-
-  .mode {
-    flex: 1;
-    font-size: 11px;
-    font-family: inherit;
-    padding: 3px 0;
-    border: none;
-    border-radius: 4px;
-    background: none;
+    background: var(--bg);
     color: var(--fg-muted);
     cursor: pointer;
-    text-transform: capitalize;
   }
 
-  .mode.selected {
-    background: var(--bg);
-    color: var(--fg);
-    outline: 1px solid var(--border);
+  .icon-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .icon-btn .material-symbols-outlined {
+    font-size: 16px;
   }
 
   .pane {
@@ -432,5 +479,51 @@
     place-items: center;
     font-size: 12px;
     color: var(--fg-muted);
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  .color-menu {
+    position: fixed;
+    z-index: 11;
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+    padding: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .color-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--fg);
+    font-size: 12px;
+    font-family: inherit;
+    text-align: left;
+    text-transform: capitalize;
+    cursor: pointer;
+  }
+
+  .color-item:hover {
+    background: var(--bg-subtle);
+  }
+
+  .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 </style>
