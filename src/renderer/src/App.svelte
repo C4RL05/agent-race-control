@@ -126,13 +126,30 @@
 >
   <aside class="rail" style:width={`${ui.railWidth}px`}>
     <div class="rail-toolbar">
-      <button class="add" onclick={() => newSession('claude')}>+ Claude</button>
-      <button class="add" onclick={() => newSession('shell')}>+ Shell</button>
-      <button class="icon-btn" title="New folder" aria-label="New folder" onclick={addFolder}>
-        <span class="material-symbols-outlined">create_new_folder</span>
-      </button>
+      <span class="add-label material-symbols-outlined">add</span>
+      <div class="add-group">
+        <button
+          class="group-btn"
+          title="New Claude session"
+          aria-label="New Claude session"
+          onclick={() => newSession('claude')}
+        >
+          <span class="material-symbols-outlined">asterisk</span>
+        </button>
+        <button
+          class="group-btn"
+          title="New shell session"
+          aria-label="New shell session"
+          onclick={() => newSession('shell')}
+        >
+          <span class="material-symbols-outlined">terminal_2</span>
+        </button>
+        <button class="group-btn" title="New folder" aria-label="New folder" onclick={addFolder}>
+          <span class="material-symbols-outlined">folder</span>
+        </button>
+      </div>
       <button
-        class="icon-btn"
+        class="icon-btn theme-btn"
         title={`Theme: ${ui.mode} — click to switch`}
         aria-label={`Theme: ${ui.mode}`}
         onclick={cycleMode}
@@ -240,7 +257,7 @@
           <span
             class="type-icon material-symbols-outlined"
             title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-            >{session.type === 'claude' ? 'robot_2' : 'terminal'}</span
+            >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
           >
 
           {#if renaming === session.key}
@@ -338,10 +355,10 @@
         colorMenu = null
       }}
     ></div>
-    <div class="color-menu" style:left={`${colorMenu.x}px`} style:top={`${colorMenu.y}px`}>
+    <div class="menu" style:left={`${colorMenu.x}px`} style:top={`${colorMenu.y}px`}>
       {#each DOT_COLORS as entry (entry.name)}
         <button
-          class="color-item"
+          class="menu-item color"
           onclick={() => {
             const session = sessions.find((s) => s.key === colorMenu?.key)
             if (session) setColor(session, entry)
@@ -353,6 +370,7 @@
       {/each}
     </div>
   {/if}
+
 </div>
 
 <svelte:window
@@ -383,13 +401,17 @@
   }
 
   .splitter {
+    /* 5px hit area; visible line is the content-box (width minus padding) */
     width: 5px;
     flex-shrink: 0;
     cursor: col-resize;
-    background: var(--border);
+    /* VS Code sash: invisible at rest — the rail/pane background change
+       marks the boundary; the accent line appears on hover/drag. */
+    background: transparent;
     background-clip: content-box;
     padding: 0 2px;
     touch-action: none;
+    transition: background-color 100ms ease-out 300ms;
   }
 
   .splitter:hover,
@@ -397,17 +419,21 @@
     background-color: var(--accent);
   }
 
+  .splitter.dragging {
+    transition-delay: 0s;
+  }
+
   .rail-body {
     flex: 1;
     overflow-y: auto;
-    padding: 0 8px;
+    padding: 0 4px;
   }
 
   .folder-header {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 8px 3px;
+    padding: 6px 4px 3px;
     margin-top: 4px;
     border-radius: 6px;
     color: var(--fg-muted);
@@ -446,7 +472,7 @@
   .row {
     /* columns: dot | type icon | name | claude title | status | close */
     display: grid;
-    grid-template-columns: 10px 16px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
+    grid-template-columns: 10px 18px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
@@ -476,7 +502,7 @@
   }
 
   .type-icon {
-    font-size: 15px;
+    font-size: 18px;
     color: var(--fg-muted);
   }
 
@@ -568,21 +594,46 @@
     margin-bottom: 6px;
   }
 
-  .add {
-    flex: 1;
-    font-size: 12px;
-    font-family: inherit;
-    padding: 5px 0;
+  .add-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg);
-    color: var(--fg);
+  }
+
+  .add-label {
+    font-size: 14px;
+    color: var(--fg-muted);
+    align-self: center;
+    user-select: none;
+  }
+
+  .group-btn {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 22px;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--fg-muted);
     cursor: pointer;
   }
 
-  .add:hover {
-    border-color: var(--accent);
+  .group-btn:hover {
+    background: var(--bg-subtle);
     color: var(--accent);
+  }
+
+  .group-btn .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .theme-btn {
+    margin-left: auto;
   }
 
   .icon-btn {
@@ -590,6 +641,7 @@
     display: grid;
     place-items: center;
     width: 28px;
+    align-self: stretch;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -633,12 +685,12 @@
     z-index: 10;
   }
 
-  .color-menu {
+  .menu {
     position: fixed;
     z-index: 11;
     display: flex;
     flex-direction: column;
-    min-width: 120px;
+    min-width: 150px;
     padding: 4px;
     background: var(--bg);
     border: 1px solid var(--border);
@@ -646,7 +698,7 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
 
-  .color-item {
+  .menu-item {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -658,12 +710,20 @@
     font-size: 12px;
     font-family: inherit;
     text-align: left;
-    text-transform: capitalize;
     cursor: pointer;
   }
 
-  .color-item:hover {
+  .menu-item:hover {
     background: var(--bg-subtle);
+  }
+
+  .menu-item .material-symbols-outlined {
+    font-size: 15px;
+    color: var(--fg-muted);
+  }
+
+  .menu-item.color {
+    text-transform: capitalize;
   }
 
   .swatch {
