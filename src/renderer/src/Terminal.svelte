@@ -5,6 +5,8 @@
   import { ClipboardAddon } from '@xterm/addon-clipboard'
   import '@xterm/xterm/css/xterm.css'
 
+  let { type = 'shell' }: { type?: 'shell' | 'claude' } = $props()
+
   let container: HTMLDivElement
 
   onMount(() => {
@@ -58,7 +60,7 @@
       }
     })
 
-    void window.arc.pty.spawn({ cols: term.cols, rows: term.rows }).then((result) => {
+    void window.arc.pty.spawn({ cols: term.cols, rows: term.rows, type }).then((result) => {
       if (disposed) return
       if ('error' in result) {
         term.write(`\x1b[31m${result.error}\x1b[0m\r\n`)

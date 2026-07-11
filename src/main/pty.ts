@@ -9,42 +9,52 @@ const ptys = new Map<string, IPty>()
 let nextId = 1
 
 type SpawnResult = { id: string } | { error: string }
+export type SessionType = 'shell' | 'claude'
 
 export function registerPtyHandlers(getWebContents: () => WebContents | null): void {
-  ipcMain.handle('pty:spawn', (_event, opts: { cols: number; rows: number }): SpawnResult => {
-    const bash = findGitBash()
-    if (!bash) {
-      return { error: 'Git Bash not found. Install Git for Windows and restart aRC.' }
+  ipcMain.handle(
+    'pty:spawn',
+    (_event, opts: { cols: number; rows: number; type?: SessionType }): SpawnResult => {
+      const bash = findGitBash()
+      if (!bash) {
+        return { error: 'Git Bash not found. Install Git for Windows and restart aRC.' }
+      }
+
+      // Full environment passthrough — fidelity requires the shell to see
+      // exactly what a regular terminal would. COLORTERM is truthful: xterm.js
+      // renders 24-bit color (VS Code sets the same).
+      const env: Record<string, string> = {}
+      for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined) env[key] = value
+      }
+      env['COLORTERM'] = 'truecolor'
+
+      // Claude sessions: the login shell sources the user's profile (so claude
+      // resolves from their real PATH), then exec makes bash *become* claude —
+      // the PTY's lifetime IS the claude process's lifetime.
+      const args =
+        opts.type === 'claude' ? ['--login', '-i', '-c', 'exec claude'] : ['--login', '-i']
+
+      const pty = spawn(bash, args, {
+        name: 'xterm-256color',
+        cols: Math.max(1, Math.floor(opts.cols)),
+        rows: Math.max(1, Math.floor(opts.rows)),
+        cwd: homedir(),
+        env
+      })
+
+      const id = String(nextId++)
+      ptys.set(id, pty)
+
+      pty.onData((data) => getWebContents()?.send('pty:data', id, data))
+      pty.onExit(({ exitCode }) => {
+        ptys.delete(id)
+        getWebContents()?.send('pty:exit', id, exitCode)
+      })
+
+      return { id }
     }
-
-    // Full environment passthrough — fidelity requires the shell to see
-    // exactly what a regular terminal would. COLORTERM is truthful: xterm.js
-    // renders 24-bit color (VS Code sets the same).
-    const env: Record<string, string> = {}
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) env[key] = value
-    }
-    env['COLORTERM'] = 'truecolor'
-
-    const pty = spawn(bash, ['--login', '-i'], {
-      name: 'xterm-256color',
-      cols: Math.max(1, Math.floor(opts.cols)),
-      rows: Math.max(1, Math.floor(opts.rows)),
-      cwd: homedir(),
-      env
-    })
-
-    const id = String(nextId++)
-    ptys.set(id, pty)
-
-    pty.onData((data) => getWebContents()?.send('pty:data', id, data))
-    pty.onExit(({ exitCode }) => {
-      ptys.delete(id)
-      getWebContents()?.send('pty:exit', id, exitCode)
-    })
-
-    return { id }
-  })
+  )
 
   ipcMain.on('pty:write', (_event, id: string, data: string) => {
     ptys.get(id)?.write(data)

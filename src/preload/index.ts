@@ -5,8 +5,11 @@ import type { IpcRendererEvent } from 'electron'
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
   pty: {
-    spawn: (opts: { cols: number; rows: number }): Promise<{ id: string } | { error: string }> =>
-      ipcRenderer.invoke('pty:spawn', opts),
+    spawn: (opts: {
+      cols: number
+      rows: number
+      type?: 'shell' | 'claude'
+    }): Promise<{ id: string } | { error: string }> => ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {
       ipcRenderer.send('pty:write', id, data)
     },

@@ -10,7 +10,9 @@
     </div>
   </aside>
   <main class="pane">
-    <Terminal />
+    <!-- Phase 3: the one terminal is a Claude session (exec claude spawn spec).
+         Phase 4's rail brings back shell sessions as a choice. -->
+    <Terminal type="claude" />
   </main>
 </div>
 
