@@ -12,6 +12,17 @@ if (!gotLock) {
 } else {
   let win: BrowserWindow | null = null
 
+  // Window zoom, VS Code style (each level = ±20%). Persisted via the state
+  // JSON (merged in main, like lastPickedDir).
+  let zoomLevel = 0
+  let lastState: AppState | null = null
+
+  function applyZoom(delta: number | null): void {
+    zoomLevel = delta === null ? 0 : Math.max(-3, Math.min(4, zoomLevel + delta))
+    win?.webContents.setZoomLevel(zoomLevel)
+    if (lastState) saveState({ ...lastState, zoomLevel })
+  }
+
   // No application menu: Electron's default menu accelerators (Ctrl+R reload,
   // Ctrl+W close, Ctrl+Shift+I, ...) fire even with the menu bar hidden —
   // they shadow terminal keystrokes (zero-shadow rule) and an accidental
@@ -44,6 +55,22 @@ if (!gotLock) {
     // orphaned in this process — kill them; the new page respawns via state.
     win.webContents.on('did-start-navigation', (event) => {
       if (event.isMainFrame && !event.isSameDocument) killAllPtys()
+    })
+
+    // Chrome-level keys. Zoom follows Windows Terminal / VS Code convention
+    // (Ctrl+= / Ctrl+- / Ctrl+0) — the one deliberate set of shadowed keys.
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || !input.control || input.alt || input.meta) return
+      if (input.key === '+' || input.key === '=') {
+        event.preventDefault()
+        applyZoom(1)
+      } else if (input.key === '-' || input.key === '_') {
+        event.preventDefault()
+        applyZoom(-1)
+      } else if (input.key === '0') {
+        event.preventDefault()
+        applyZoom(null)
+      }
     })
 
     // Dev-only devtools access (no menu = no default accelerator).
@@ -87,11 +114,16 @@ if (!gotLock) {
   ipcMain.handle('state:load', () => {
     const state = loadState()
     if (state?.lastPickedDir) lastPickedDir = state.lastPickedDir
+    if (state?.zoomLevel !== undefined) {
+      zoomLevel = state.zoomLevel
+      win?.webContents.setZoomLevel(zoomLevel)
+    }
     return state
   })
 
   ipcMain.on('state:save', (_event, state: AppState) => {
-    saveState({ ...state, lastPickedDir })
+    lastState = state
+    saveState({ ...state, lastPickedDir, zoomLevel })
   })
 
   app.whenReady().then(async () => {

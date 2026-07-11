@@ -17,6 +17,7 @@ export interface AppState {
   version: 1
   mode: 'system' | 'light' | 'dark'
   railWidth?: number
+  zoomLevel?: number
   focusedIndex: number
   folders?: Array<{ id: number; name: string }>
   sessions: PersistedSession[]
