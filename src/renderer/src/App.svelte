@@ -63,8 +63,8 @@
     return off
   })
 
-  // Window/taskbar icon: the sports_score glyph (checkered flag), white on
-  // #ff1561, rendered from the bundled icon font. Rasterized fresh at every
+  // Window/taskbar icon: the sports_motorsports glyph (racing helmet), white
+  // on #ff1561, rendered from the bundled icon font. Rasterized fresh at every
   // DPI size Windows may ask for — one big bitmap downscaled looks pixelated.
   $effect(() => {
     void document.fonts.ready.then(() => {
@@ -76,13 +76,13 @@
         canvas.height = size
         const ctx = canvas.getContext('2d')
         if (!ctx) return { scaleFactor, dataURL: '' }
-        ctx.fillStyle = '#ff1561'
+        ctx.fillStyle = '#000000'
         ctx.fillRect(0, 0, size, size)
         ctx.fillStyle = '#ffffff'
         ctx.font = `400 ${Math.round(size * 0.875)}px "Material Symbols Outlined"`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('sports_score', size / 2, size * 0.54)
+        ctx.fillText('sports_motorsports', size / 2, size * 0.54)
         return { scaleFactor, dataURL: canvas.toDataURL('image/png') }
       })
       window.arc.setAppIcon(representations.filter((r) => r.dataURL))
