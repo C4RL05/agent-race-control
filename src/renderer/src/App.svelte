@@ -241,6 +241,7 @@
           tabindex="0"
           draggable="true"
           title={dir}
+          style:--dir-color={dirColors[dir]}
           ondragstart={() => (dragging = { kind: 'dir', dir })}
           ondragend={endDrag}
           ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
@@ -257,34 +258,44 @@
         >
           <span class="material-symbols-outlined folder-icon">folder</span>
           <span class="folder-name">{label.base}</span>
-          <button
-            class="spawn-btn"
-            title="New Claude session here"
-            aria-label="New Claude session here"
-            onclick={(e) => {
-              e.stopPropagation()
-              void newSession('claude', dir)
-            }}
-          >
-            <span class="material-symbols-outlined">asterisk</span>
-          </button>
-          <button
-            class="spawn-btn"
-            title="New shell session here"
-            aria-label="New shell session here"
-            onclick={(e) => {
-              e.stopPropagation()
-              void newSession('shell', dir)
-            }}
-          >
-            <span class="material-symbols-outlined">terminal_2</span>
-          </button>
-          <span
-            class="dir-chip"
-            style:border-color={dirColors[dir]}
-            style:background={`color-mix(in srgb, ${dirColors[dir]} 25%, transparent)`}
-            >{label.parent}</span
-          >
+          <span class="dir-meta">
+            <span class="dir-path">{label.parent}</span>
+            <span class="spawn-cluster">
+              <button
+                class="spawn-btn"
+                title="New Claude session here"
+                aria-label="New Claude session here"
+                onclick={(e) => {
+                  e.stopPropagation()
+                  void newSession('claude', dir)
+                }}
+              >
+                <span class="material-symbols-outlined">asterisk</span>
+              </button>
+              <button
+                class="spawn-btn"
+                title="New shell session here"
+                aria-label="New shell session here"
+                onclick={(e) => {
+                  e.stopPropagation()
+                  void newSession('shell', dir)
+                }}
+              >
+                <span class="material-symbols-outlined">terminal_2</span>
+              </button>
+              <button
+                class="spawn-btn"
+                title="Show in Explorer"
+                aria-label="Show in Explorer"
+                onclick={(e) => {
+                  e.stopPropagation()
+                  window.arc.openInExplorer(dir)
+                }}
+              >
+                <span class="material-symbols-outlined">folder_open</span>
+              </button>
+            </span>
+          </span>
         </div>
 
         {#each visible as session (session.key)}
@@ -575,6 +586,12 @@
     height: 100%;
   }
 
+  /* App-wide icon weight; the variation axis beats the package's
+     font-weight: normal regardless of stylesheet order */
+  :global(.material-symbols-outlined) {
+    font-variation-settings: 'wght' 300;
+  }
+
   .shell {
     display: flex;
     height: 100%;
@@ -633,6 +650,18 @@
     cursor: grab;
   }
 
+  /* F1 team stripe — the directory color lives here */
+  .folder-header::before {
+    content: '';
+    align-self: stretch;
+    flex-shrink: 0;
+    width: 3px;
+    /* -3px centers the 18px folder glyph over the rows' 10px status dots */
+    margin-right: -3px;
+    border-radius: 999px;
+    background: var(--dir-color);
+  }
+
   .folder-icon {
     font-size: 18px;
   }
@@ -644,47 +673,79 @@
     white-space: nowrap;
   }
 
-  .dir-chip {
+  /* Path text and spawn cluster share the right slot; hover swaps them */
+  .dir-meta {
     margin-left: auto;
-    flex-shrink: 1;
     min-width: 0;
+    display: grid;
+    align-items: center;
+    justify-items: end;
+  }
+
+  .dir-meta > * {
+    grid-area: 1 / 1;
+  }
+
+  .dir-path {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 0 8px;
-    border: 1px solid;
-    border-radius: 999px;
-    color: var(--fg);
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 16px;
+    font-size: 11px;
+    font-weight: 400;
+    transition:
+      opacity 0.12s,
+      visibility 0.12s;
+  }
+
+  .folder-header:hover .dir-path,
+  .folder-header:focus-within .dir-path {
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  .spawn-cluster {
+    display: flex;
+    visibility: hidden;
+    opacity: 0;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-subtle);
+    overflow: hidden;
+    transition:
+      opacity 0.12s,
+      visibility 0.12s;
+  }
+
+  .folder-header:hover .spawn-cluster,
+  .folder-header:focus-within .spawn-cluster {
+    visibility: visible;
+    opacity: 1;
   }
 
   .spawn-btn {
-    visibility: hidden;
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 20px;
+    width: 24px;
     height: 20px;
     padding: 0;
     border: none;
-    border-radius: 4px;
     background: none;
     color: var(--fg-muted);
     cursor: pointer;
+  }
+
+  .spawn-btn + .spawn-btn {
+    border-left: 1px solid var(--border);
   }
 
   .spawn-btn .material-symbols-outlined {
     font-size: 14px;
   }
 
-  .folder-header:hover .spawn-btn {
-    visibility: visible;
-  }
-
   .spawn-btn:hover {
-    background: var(--bg-subtle);
+    background: var(--border);
     color: var(--accent);
   }
 
