@@ -12,7 +12,9 @@ export interface PersistedSession {
 }
 
 export interface AppState {
-  version: 1
+  // v1 defaulted session names to the cwd basename; v2 names are pure user
+  // labels (the renderer migrates v1 names away on restore).
+  version: 1 | 2
   mode: 'system' | 'light' | 'dark'
   towerWidth?: number
   // Legacy key — towerWidth was persisted as railWidth before the rename.
@@ -21,6 +23,7 @@ export interface AppState {
   focusedIndex: number
   dirOrder?: string[]
   dirColors?: Record<string, string>
+  recentDirs?: string[]
   sessions: PersistedSession[]
   lastPickedDir?: string
 }
@@ -32,7 +35,7 @@ function statePath(): string {
 export function loadState(): AppState | null {
   try {
     const state = JSON.parse(readFileSync(statePath(), 'utf8')) as AppState
-    return state.version === 1 ? state : null
+    return state.version === 1 || state.version === 2 ? state : null
   } catch {
     return null
   }

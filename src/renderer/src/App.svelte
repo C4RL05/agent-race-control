@@ -13,8 +13,10 @@
     snapshotState,
     cleanTitle,
     duplicateSession,
+    renameSession,
     nudgeStatusFromKey,
     dirColors,
+    recentDirs,
     setDirColor,
     applyFolderColor,
     moveDir,
@@ -26,10 +28,10 @@
   let colorMenu = $state<{ dir: string; x: number; y: number } | null>(null)
   // Right-click context menu for a session row.
   let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
-  // The + button's create dropdown (opens upward from the bottom toolbar).
-  // Both items open the OS folder picker — sessions in an existing directory
-  // are spawned from that group header's hover buttons instead.
-  let addMenu = $state<{ x: number; bottom: number } | null>(null)
+  // Per-type spawn dropdowns (✳ / ⌨ in the filter bar): recent directories
+  // plus Browse… (OS folder picker). Sessions in a live directory are spawned
+  // from that group header's hover cluster instead.
+  let spawnMenu = $state<{ type: 'shell' | 'claude'; x: number; y: number } | null>(null)
 
   function dirLabel(dir: string): { base: string; parent: string } {
     const parts = dir.split(/[\\/]/).filter(Boolean)
@@ -45,7 +47,7 @@
 
   const MODES: Mode[] = ['system', 'light', 'dark']
   const MODE_ICONS: Record<Mode, string> = {
-    system: 'contrast',
+    system: 'computer',
     light: 'light_mode',
     dark: 'dark_mode'
   }
@@ -130,6 +132,9 @@
     const query = filterText.trim().toLowerCase()
     if (!query) return true
     return (
+      // displayName covers the rendered 'Claude'/'Shell' fallback — what the
+      // row visibly says must be findable.
+      displayName(session).toLowerCase().includes(query) ||
       session.name.toLowerCase().includes(query) ||
       cleanTitle(session.title).toLowerCase().includes(query) ||
       session.cwd.toLowerCase().includes(query)
@@ -137,9 +142,22 @@
   }
 
   function commitRename(key: number, value: string): void {
-    const session = sessions.find((s) => s.key === key)
-    if (session && value.trim()) session.name = value.trim()
     renaming = null
+    const session = sessions.find((s) => s.key === key)
+    const name = value.trim()
+    // Blur commits, so only act on a real change — clicking away from the
+    // untouched prefill must not type /rename into a live session.
+    if (session && name && name !== (session.name || cleanTitle(session.title))) {
+      renameSession(key, name)
+    }
+  }
+
+  // What a row is called: user label, else the session's own live name from
+  // the terminal title, else the bare type. Never the folder name.
+  function displayName(session: (typeof sessions)[number]): string {
+    return (
+      session.name || cleanTitle(session.title) || (session.type === 'claude' ? 'Claude' : 'Shell')
+    )
   }
 
   // --- drag & drop (same-window; component state, not dataTransfer) ---
@@ -186,6 +204,30 @@
 >
   <aside class="tower" style:width={`${ui.towerWidth}px`}>
     <div class="tower-filter">
+      <div class="spawn-group">
+        <button
+          class="icon-btn"
+          title="New Claude session"
+          aria-label="New Claude session"
+          onclick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            spawnMenu = { type: 'claude', x: rect.left, y: rect.bottom + 4 }
+          }}
+        >
+          <span class="material-symbols-outlined">asterisk</span>
+        </button>
+        <button
+          class="icon-btn"
+          title="New shell session"
+          aria-label="New shell session"
+          onclick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            spawnMenu = { type: 'shell', x: rect.left, y: rect.bottom + 4 }
+          }}
+        >
+          <span class="material-symbols-outlined">terminal_2</span>
+        </button>
+      </div>
       <div class="search">
         <span class="material-symbols-outlined">search</span>
         <input
@@ -228,6 +270,14 @@
           <span class="material-symbols-outlined">terminal_2</span>
         </button>
       </div>
+      <button
+        class="icon-btn"
+        title={`Theme: ${ui.mode} — click to switch`}
+        aria-label={`Theme: ${ui.mode}`}
+        onclick={cycleMode}
+      >
+        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
+      </button>
     </div>
 
     <div class="tower-body">
@@ -347,7 +397,7 @@
             <!-- svelte-ignore a11y_autofocus -->
             <input
               class="rename"
-              value={session.name}
+              value={session.name || cleanTitle(session.title)}
               autofocus
               onblur={(e) => commitRename(session.key, e.currentTarget.value)}
               onkeydown={(e) => {
@@ -362,7 +412,7 @@
               tabindex="-1"
               title={`${session.cwd} — double-click to rename`}
               ondblclick={() => (renaming = session.key)}
-              >{cleanTitle(session.title) || session.name}</span
+              >{displayName(session)}</span
             >
           {/if}
 
@@ -381,27 +431,6 @@
       {/each}
     </div>
 
-    <div class="tower-toolbar">
-      <button
-        class="icon-btn"
-        title="New session or folder"
-        aria-label="New session or folder"
-        onclick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          addMenu = { x: rect.left, bottom: window.innerHeight - rect.top + 4 }
-        }}
-      >
-        <span class="material-symbols-outlined">add</span>
-      </button>
-      <button
-        class="icon-btn theme-btn"
-        title={`Theme: ${ui.mode} — click to switch`}
-        aria-label={`Theme: ${ui.mode}`}
-        onclick={cycleMode}
-      >
-        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
-      </button>
-    </div>
   </aside>
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -446,34 +475,42 @@
     {/if}
   </main>
 
-  {#if addMenu}
+  {#if spawnMenu}
     <div
       class="menu-backdrop"
       role="presentation"
-      onclick={() => (addMenu = null)}
+      onclick={() => (spawnMenu = null)}
       oncontextmenu={(e) => {
         e.preventDefault()
-        addMenu = null
+        spawnMenu = null
       }}
     ></div>
-    <div class="menu" style:left={`${addMenu.x}px`} style:bottom={`${addMenu.bottom}px`}>
+    <div class="menu" style:left={`${spawnMenu.x}px`} style:top={`${spawnMenu.y}px`}>
+      {#each recentDirs as dir (dir)}
+        {@const label = dirLabel(dir)}
+        <button
+          class="menu-item"
+          title={dir}
+          onclick={() => {
+            if (spawnMenu) void newSession(spawnMenu.type, dir)
+            spawnMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">folder</span>{label.base}
+          <span class="dir-parent">{label.parent}</span>
+        </button>
+      {/each}
+      {#if recentDirs.length > 0}
+        <div class="menu-divider"></div>
+      {/if}
       <button
         class="menu-item"
         onclick={() => {
-          addMenu = null
-          void newSession('claude')
+          if (spawnMenu) void newSession(spawnMenu.type)
+          spawnMenu = null
         }}
       >
-        <span class="material-symbols-outlined">asterisk</span>Claude session
-      </button>
-      <button
-        class="menu-item"
-        onclick={() => {
-          addMenu = null
-          void newSession('shell')
-        }}
-      >
-        <span class="material-symbols-outlined">terminal_2</span>Shell session
+        <span class="material-symbols-outlined">folder_open</span>Browse…
       </button>
     </div>
   {/if}
@@ -582,7 +619,7 @@
     if (e.key === 'Escape') {
       if (colorMenu) colorMenu = null
       if (sessionMenu) sessionMenu = null
-      if (addMenu) addMenu = null
+      if (spawnMenu) spawnMenu = null
     }
   }}
 />
@@ -640,14 +677,16 @@
   .tower-body {
     flex: 1;
     overflow-y: auto;
-    padding: 0 4px;
+    /* right pad matches the filter bar's 8px so row/header boxes and the
+       spawn cluster end flush with the search box */
+    padding: 0 8px 0 4px;
   }
 
   .folder-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 4px;
+    padding: 6px 0 6px 4px;
     margin-top: 4px;
     border-radius: 6px;
     color: var(--fg-muted);
@@ -870,13 +909,6 @@
     color: var(--danger);
   }
 
-  .tower-toolbar {
-    display: flex;
-    gap: 6px;
-    padding: 8px;
-    border-top: 1px solid var(--border);
-  }
-
   .tower-filter {
     display: flex;
     gap: 6px;
@@ -959,10 +991,6 @@
     outline: 1px solid var(--accent);
   }
 
-  .theme-btn {
-    margin-left: auto;
-  }
-
   .icon-btn {
     flex: 0 0 auto;
     display: grid;
@@ -975,6 +1003,30 @@
     background: var(--bg);
     color: var(--fg-muted);
     cursor: pointer;
+  }
+
+  /* Segmented pill for the spawn buttons — same idiom as the folder
+     header's hover cluster */
+  .spawn-group {
+    flex: 0 0 auto;
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  .spawn-group .icon-btn {
+    border: none;
+    border-radius: 0;
+  }
+
+  .spawn-group .icon-btn + .icon-btn {
+    border-left: 1px solid var(--border);
+  }
+
+  .spawn-group .icon-btn:hover {
+    background: var(--border);
   }
 
   .icon-btn:hover {

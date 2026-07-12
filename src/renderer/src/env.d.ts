@@ -2,8 +2,10 @@
 /// <reference types="vite/client" />
 
 // Shape persisted to the state JSON in userData.
+// v1 defaulted session names to the cwd basename; v2 names are pure user
+// labels (restoreState migrates v1 names away once).
 interface PersistedState {
-  version: 1
+  version: 1 | 2
   mode: 'system' | 'light' | 'dark'
   towerWidth?: number
   // Legacy key — towerWidth was persisted as railWidth before the rename.
@@ -11,6 +13,7 @@ interface PersistedState {
   focusedIndex: number
   dirOrder?: string[]
   dirColors?: Record<string, string>
+  recentDirs?: string[]
   sessions: Array<{
     type: 'shell' | 'claude'
     name: string

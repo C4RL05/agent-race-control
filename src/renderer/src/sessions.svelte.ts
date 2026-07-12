@@ -4,6 +4,11 @@ export interface Session {
   key: number
   type: 'shell' | 'claude'
   cwd: string
+  // User label — shell sessions only. A Claude session's name IS its
+  // conversation's, arriving via the terminal title (tower renames go
+  // through /rename, see renameSession), so name stays '' for Claude and
+  // the title is the single source of truth. The cwd basename is never a
+  // display name.
   name: string
   // Claude sessions use the full set; shell sessions only running/exited.
   status: 'running' | 'waiting' | 'idle' | 'exited'
@@ -40,6 +45,19 @@ export function setDirColor(dir: string, hex: string): void {
   dirColors[dir] = hex
 }
 
+// Recently used directories for the spawn menus — unlike dirOrder this
+// deliberately keeps dirs whose last session closed (that's their point).
+// Most-recent-first, persisted.
+const RECENT_MAX = 8
+export const recentDirs = $state<string[]>([])
+
+function touchRecent(cwd: string): void {
+  const index = recentDirs.indexOf(cwd)
+  if (index !== -1) recentDirs.splice(index, 1)
+  recentDirs.unshift(cwd)
+  if (recentDirs.length > RECENT_MAX) recentDirs.length = RECENT_MAX
+}
+
 export const ui = $state<{ focused: number | null; mode: Mode; towerWidth: number }>({
   focused: null,
   mode: 'system',
@@ -60,12 +78,12 @@ export async function newSession(type: 'shell' | 'claude', dir?: string): Promis
   const cwd = dir ?? (await window.arc.pickFolder())
   if (!cwd) return
   touchDir(cwd)
-  const name = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
+  touchRecent(cwd)
   const session: Session = {
     key: nextKey++,
     type,
     cwd,
-    name,
+    name: '',
     // Claude starts at its prompt (idle); a shell is simply alive (running).
     status: type === 'claude' ? 'idle' : 'running',
     title: '',
@@ -86,7 +104,9 @@ export function duplicateSession(key: number): void {
     key: nextKey++,
     type: source.type,
     cwd: source.cwd,
-    name: source.name,
+    // A duplicated Claude session is a brand-new conversation — the source's
+    // label names a different one. Shell labels describe purpose; keep those.
+    name: source.type === 'shell' ? source.name : '',
     status: source.type === 'claude' ? 'idle' : 'running',
     title: '',
     ptyId: null,
@@ -160,6 +180,11 @@ export async function restoreState(): Promise<void> {
   ui.mode = saved.mode
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
+  // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
+  // external data and the one path that skips them otherwise.
+  if (saved.recentDirs?.length) {
+    recentDirs.push(...[...new Set(saved.recentDirs)].slice(0, RECENT_MAX))
+  }
   const seenClaudeIds = new Set<string>()
   for (const s of saved.sessions) {
     // Drop legacy duplicates that earlier dev reloads may have persisted.
@@ -168,11 +193,17 @@ export async function restoreState(): Promise<void> {
       seenClaudeIds.add(s.claudeSessionId)
     }
     touchDir(s.cwd)
+    // v1 state files defaulted every name to the cwd basename — migrate
+    // those away ONCE, gated on the version so a v2 user who deliberately
+    // names a shell after its folder keeps that name. Claude names are
+    // always '' (the title is the source of truth).
+    const legacyBasename =
+      saved.version === 1 && s.name === (s.cwd.split(/[\\/]/).filter(Boolean).pop() ?? s.cwd)
     sessions.push({
       key: nextKey++,
       type: s.type,
       cwd: s.cwd,
-      name: s.name,
+      name: s.type === 'claude' || legacyBasename ? '' : s.name,
       status: s.type === 'claude' ? 'idle' : 'running',
       title: '',
       ptyId: null,
@@ -196,7 +227,7 @@ export function snapshotState(): PersistedState {
     alive.findIndex((s) => s.key === ui.focused)
   )
   return {
-    version: 1,
+    version: 2,
     mode: ui.mode,
     towerWidth: ui.towerWidth,
     focusedIndex,
@@ -204,6 +235,7 @@ export function snapshotState(): PersistedState {
     dirColors: Object.fromEntries(
       Object.entries(dirColors).filter(([dir]) => alive.some((s) => s.cwd === dir))
     ),
+    recentDirs: [...recentDirs],
     sessions: alive.map((s) => ({
       type: s.type,
       name: s.name,
@@ -222,13 +254,38 @@ export function closeSession(key: number): void {
   }
 }
 
-// Type `/color <name>` into the session on the user's behalf. User-initiated,
-// visible in the TUI, public command — the one blessed form of writing into a
-// session. Claude tints its agent-view row to match. One-way sync: /color
-// typed inside the TUI can't be read back (verified: no file, no escape seq).
+// The two blessed forms of writing into a session (/color, /rename):
+// user-initiated, visible in the TUI, public commands. Only injected at the
+// IDLE prompt — while `waiting`, the trailing Enter would answer the open
+// permission/question dialog (and digits in the argument could pick an
+// option first); while `running`, the input box may hold a draft the command
+// would corrupt. Returns whether the command was actually typed.
+function injectCommand(session: Session, command: string): boolean {
+  if (session.type !== 'claude' || !session.ptyId || session.status !== 'idle') return false
+  window.arc.pty.write(session.ptyId, `${command}\r`)
+  return true
+}
+
+// Claude tints its agent-view row to match. One-way sync: /color typed
+// inside the TUI can't be read back (verified: no file, no escape seq).
 function injectColor(session: Session, name: string): void {
-  if (session.type === 'claude' && session.ptyId && session.status !== 'exited') {
-    window.arc.pty.write(session.ptyId, `/color ${name}\r`)
+  injectCommand(session, `/color ${name}`)
+}
+
+// Tower rename. Shell: plain local label. Claude: type /rename on the user's
+// behalf — Claude renames the conversation, so tower and TUI stay in sync.
+// Claude doesn't re-emit the terminal title right away, so the title is set
+// optimistically; the next real title emission overwrites it (title stays
+// the single source of truth — name is never set for Claude sessions). If
+// the session isn't at its idle prompt, nothing is typed and nothing
+// changes: the label visibly not taking beats a silent revert later.
+export function renameSession(key: number, name: string): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session) return
+  if (session.type === 'shell') {
+    session.name = name
+  } else if (injectCommand(session, `/rename ${name}`)) {
+    session.title = name
   }
 }
 
