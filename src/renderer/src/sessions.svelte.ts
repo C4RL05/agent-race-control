@@ -48,9 +48,20 @@ export function cleanTitle(title: string): string {
     .replace(/^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/, '')
 }
 
-export async function newSession(type: 'shell' | 'claude'): Promise<void> {
-  const cwd = await window.arc.pickFolder()
+// Recently used working directories, most recent first (persisted).
+export const recentDirs = $state<string[]>([])
+
+function touchRecentDir(cwd: string): void {
+  const index = recentDirs.indexOf(cwd)
+  if (index !== -1) recentDirs.splice(index, 1)
+  recentDirs.unshift(cwd)
+  if (recentDirs.length > 8) recentDirs.length = 8
+}
+
+export async function newSession(type: 'shell' | 'claude', dir?: string): Promise<void> {
+  const cwd = dir ?? (await window.arc.pickFolder())
   if (!cwd) return
+  touchRecentDir(cwd)
   const name = cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd
   const session: Session = {
     key: nextKey++,
@@ -159,6 +170,7 @@ export async function restoreState(): Promise<void> {
   const saved = await window.arc.state.load()
   if (!saved) return
   ui.mode = saved.mode
+  if (saved.recentDirs?.length) recentDirs.push(...saved.recentDirs)
   if (saved.folders?.length) {
     folders.length = 0
     folders.push(...saved.folders)
@@ -206,6 +218,7 @@ export function snapshotState(): PersistedState {
     railWidth: ui.railWidth,
     focusedIndex,
     folders: folders.map((f) => ({ id: f.id, name: f.name })),
+    recentDirs: [...recentDirs],
     sessions: alive.map((s) => ({
       type: s.type,
       folderId: s.folderId,

@@ -20,6 +20,7 @@ export interface AppState {
   zoomLevel?: number
   focusedIndex: number
   folders?: Array<{ id: number; name: string }>
+  recentDirs?: string[]
   sessions: PersistedSession[]
   lastPickedDir?: string
 }

@@ -15,6 +15,7 @@
     snapshotState,
     cleanTitle,
     duplicateSession,
+    recentDirs,
     addFolder,
     renameFolder,
     deleteFolder,
@@ -28,7 +29,22 @@
   // Right-click context menu for a session row.
   let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
   // The + button's create dropdown (opens upward from the bottom toolbar).
-  let addMenu = $state<{ x: number; bottom: number } | null>(null)
+  // Two steps: pick a type, then pick a recent directory or browse.
+  let addMenu = $state<{ x: number; bottom: number; type?: 'shell' | 'claude' } | null>(null)
+
+  function pickType(type: 'shell' | 'claude'): void {
+    if (recentDirs.length === 0) {
+      void newSession(type)
+      addMenu = null
+    } else if (addMenu) {
+      addMenu.type = type
+    }
+  }
+
+  function dirLabel(dir: string): { base: string; parent: string } {
+    const parts = dir.split(/[\\/]/).filter(Boolean)
+    return { base: parts.pop() ?? dir, parent: parts.join('\\') }
+  }
 
   let draggingRail = $state(false)
 
@@ -196,31 +212,31 @@
             >×</button
           >
         {/if}
+        <button
+          class="chip"
+          class:active={filterClaude}
+          title="Show Claude sessions"
+          aria-label="Filter Claude sessions"
+          onclick={() => {
+            filterClaude = !filterClaude
+            if (filterClaude) filterShell = false
+          }}
+        >
+          <span class="material-symbols-outlined">asterisk</span>
+        </button>
+        <button
+          class="chip"
+          class:active={filterShell}
+          title="Show shell sessions"
+          aria-label="Filter shell sessions"
+          onclick={() => {
+            filterShell = !filterShell
+            if (filterShell) filterClaude = false
+          }}
+        >
+          <span class="material-symbols-outlined">terminal_2</span>
+        </button>
       </div>
-      <button
-        class="chip"
-        class:active={filterClaude}
-        title="Show Claude sessions"
-        aria-label="Filter Claude sessions"
-        onclick={() => {
-          filterClaude = !filterClaude
-          if (filterClaude) filterShell = false
-        }}
-      >
-        <span class="material-symbols-outlined">asterisk</span>
-      </button>
-      <button
-        class="chip"
-        class:active={filterShell}
-        title="Show shell sessions"
-        aria-label="Filter shell sessions"
-        onclick={() => {
-          filterShell = !filterShell
-          if (filterShell) filterClaude = false
-        }}
-      >
-        <span class="material-symbols-outlined">terminal_2</span>
-      </button>
     </div>
 
     <div class="rail-body">
@@ -453,33 +469,50 @@
       }}
     ></div>
     <div class="menu" style:left={`${addMenu.x}px`} style:bottom={`${addMenu.bottom}px`}>
-      <button
-        class="menu-item"
-        onclick={() => {
-          void newSession('claude')
-          addMenu = null
-        }}
-      >
-        <span class="material-symbols-outlined">asterisk</span>Claude session
-      </button>
-      <button
-        class="menu-item"
-        onclick={() => {
-          void newSession('shell')
-          addMenu = null
-        }}
-      >
-        <span class="material-symbols-outlined">terminal_2</span>Shell session
-      </button>
-      <button
-        class="menu-item"
-        onclick={() => {
-          addFolder()
-          addMenu = null
-        }}
-      >
-        <span class="material-symbols-outlined">folder</span>Folder
-      </button>
+      {#if !addMenu.type}
+        <button class="menu-item" onclick={() => pickType('claude')}>
+          <span class="material-symbols-outlined">asterisk</span>Claude session
+        </button>
+        <button class="menu-item" onclick={() => pickType('shell')}>
+          <span class="material-symbols-outlined">terminal_2</span>Shell session
+        </button>
+        <button
+          class="menu-item"
+          onclick={() => {
+            addFolder()
+            addMenu = null
+          }}
+        >
+          <span class="material-symbols-outlined">folder</span>Folder
+        </button>
+      {:else}
+        {#each recentDirs as dir (dir)}
+          {@const label = dirLabel(dir)}
+          <button
+            class="menu-item"
+            title={dir}
+            onclick={() => {
+              const type = addMenu?.type
+              addMenu = null
+              if (type) void newSession(type, dir)
+            }}
+          >
+            <span class="material-symbols-outlined">folder_open</span>{label.base}
+            <span class="dir-parent">{label.parent}</span>
+          </button>
+        {/each}
+        <div class="menu-divider"></div>
+        <button
+          class="menu-item"
+          onclick={() => {
+            const type = addMenu?.type
+            addMenu = null
+            if (type) void newSession(type)
+          }}
+        >
+          <span class="material-symbols-outlined">more_horiz</span>Browse…
+        </button>
+      {/if}
     </div>
   {/if}
 
@@ -863,28 +896,28 @@
     flex: 0 0 auto;
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 26px;
+    width: 20px;
+    height: 20px;
     padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
+    border: none;
+    border-radius: 4px;
+    background: none;
     color: var(--fg-muted);
     cursor: pointer;
   }
 
   .chip .material-symbols-outlined {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .chip:hover {
-    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .chip.active {
-    border-color: var(--accent);
     color: var(--accent);
     background: var(--bg-subtle);
+    outline: 1px solid var(--accent);
   }
 
   .theme-btn {
@@ -979,6 +1012,21 @@
 
   .menu-item.color {
     text-transform: capitalize;
+  }
+
+  .menu-divider {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border);
+  }
+
+  .dir-parent {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    color: var(--fg-muted);
   }
 
   .swatch {

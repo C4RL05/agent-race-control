@@ -8,6 +8,7 @@ interface PersistedState {
   railWidth?: number
   focusedIndex: number
   folders?: Array<{ id: number; name: string }>
+  recentDirs?: string[]
   sessions: Array<{
     type: 'shell' | 'claude'
     folderId?: number
