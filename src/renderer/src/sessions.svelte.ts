@@ -5,7 +5,6 @@ export interface Session {
   type: 'shell' | 'claude'
   cwd: string
   name: string
-  color: string
   // Claude sessions use the full set; shell sessions only running/exited.
   status: 'running' | 'waiting' | 'idle' | 'exited'
   // Live terminal title (OSC 0/2) — Claude Code keeps it set to the
@@ -28,8 +27,17 @@ export const sessions = $state<Session[]>([])
 // (header drag reorders it); it never creates or deletes anything.
 export const dirOrder = $state<string[]>([])
 
+// Color belongs to the directory group — auto-assigned on first appearance
+// from Claude's /color vocabulary, right-click the header to change it.
+export const dirColors = $state<Record<string, string>>({})
+
 function touchDir(cwd: string): void {
   if (!dirOrder.includes(cwd)) dirOrder.push(cwd)
+  if (!dirColors[cwd]) dirColors[cwd] = DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex
+}
+
+export function setDirColor(dir: string, hex: string): void {
+  dirColors[dir] = hex
 }
 
 export const ui = $state<{ focused: number | null; mode: Mode; railWidth: number }>({
@@ -58,7 +66,6 @@ export async function newSession(type: 'shell' | 'claude', dir?: string): Promis
     type,
     cwd,
     name,
-    color: DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex,
     // Claude starts at its prompt (idle); a shell is simply alive (running).
     status: type === 'claude' ? 'idle' : 'running',
     title: '',
@@ -80,7 +87,6 @@ export function duplicateSession(key: number): void {
     type: source.type,
     cwd: source.cwd,
     name: source.name,
-    color: DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex,
     status: source.type === 'claude' ? 'idle' : 'running',
     title: '',
     ptyId: null,
@@ -135,6 +141,7 @@ export async function restoreState(): Promise<void> {
   if (!saved) return
   ui.mode = saved.mode
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
+  if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
   const seenClaudeIds = new Set<string>()
   for (const s of saved.sessions) {
     // Drop legacy duplicates that earlier dev reloads may have persisted.
@@ -148,7 +155,6 @@ export async function restoreState(): Promise<void> {
       type: s.type,
       cwd: s.cwd,
       name: s.name,
-      color: s.color,
       status: s.type === 'claude' ? 'idle' : 'running',
       title: '',
       ptyId: null,
@@ -175,10 +181,12 @@ export function snapshotState(): PersistedState {
     railWidth: ui.railWidth,
     focusedIndex,
     dirOrder: dirOrder.filter((dir) => alive.some((s) => s.cwd === dir)),
+    dirColors: Object.fromEntries(
+      Object.entries(dirColors).filter(([dir]) => alive.some((s) => s.cwd === dir))
+    ),
     sessions: alive.map((s) => ({
       type: s.type,
       name: s.name,
-      color: s.color,
       cwd: s.cwd,
       claudeSessionId: s.claudeSessionId
     }))
@@ -204,15 +212,11 @@ function injectColor(session: Session, name: string): void {
   }
 }
 
-// Left-click on the dot: re-apply the current color to the session
-// (useful after resume — Claude's color is runtime-only and resets).
-export function applyColor(session: Session): void {
-  const entry = DOT_COLORS.find((c) => c.hex === session.color)
+// Context-menu action: push the folder's color into the session (useful
+// after resume too — Claude's color is runtime-only and resets).
+export function applyFolderColor(key: number): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session) return
+  const entry = DOT_COLORS.find((c) => c.hex === dirColors[session.cwd])
   if (entry) injectColor(session, entry.name)
-}
-
-// Context-menu pick: set the dot and push it into the session.
-export function setColor(session: Session, entry: { name: string; hex: string }): void {
-  session.color = entry.hex
-  injectColor(session, entry.name)
 }

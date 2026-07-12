@@ -8,10 +8,10 @@ interface PersistedState {
   railWidth?: number
   focusedIndex: number
   dirOrder?: string[]
+  dirColors?: Record<string, string>
   sessions: Array<{
     type: 'shell' | 'claude'
     name: string
-    color: string
     cwd: string
     claudeSessionId: string | null
   }>

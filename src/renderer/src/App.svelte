@@ -8,20 +8,21 @@
     ui,
     newSession,
     closeSession,
-    applyColor,
-    setColor,
     applyStatus,
     restoreState,
     snapshotState,
     cleanTitle,
     duplicateSession,
+    dirColors,
+    setDirColor,
+    applyFolderColor,
     moveDir,
     moveSession
   } from './sessions.svelte'
   import { DOT_COLORS } from './theme'
 
-  // Right-click color picker for a session dot.
-  let colorMenu = $state<{ key: number; x: number; y: number } | null>(null)
+  // Right-click color picker for a directory group header.
+  let colorMenu = $state<{ dir: string; x: number; y: number } | null>(null)
   // Right-click context menu for a session row.
   let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
   // The + button's create dropdown (opens upward from the bottom toolbar).
@@ -245,6 +246,14 @@
           ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
           ondragleave={() => (dropHint = null)}
           ondrop={() => dropOnDir(dir)}
+          oncontextmenu={(e) => {
+            e.preventDefault()
+            colorMenu = {
+              dir,
+              x: e.clientX,
+              y: Math.min(e.clientY, window.innerHeight - 260)
+            }
+          }}
         >
           <span class="material-symbols-outlined folder-icon">folder</span>
           <span class="folder-name">{label.base}</span>
@@ -270,7 +279,12 @@
           >
             <span class="material-symbols-outlined">terminal_2</span>
           </button>
-          <span class="dir-parent">{label.parent}</span>
+          <span
+            class="dir-chip"
+            style:border-color={dirColors[dir]}
+            style:background={`color-mix(in srgb, ${dirColors[dir]} 25%, transparent)`}
+            >{label.parent}</span
+          >
         </div>
 
         {#each visible as session (session.key)}
@@ -304,25 +318,7 @@
             }}
             onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
           >
-          <button
-            class="dot"
-            style:background={session.color}
-            title="Click: apply color to session · Right-click: choose color"
-            aria-label="Session color"
-            onclick={(e) => {
-              e.stopPropagation()
-              applyColor(session)
-            }}
-            oncontextmenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              colorMenu = {
-                key: session.key,
-                x: e.clientX,
-                y: Math.min(e.clientY, window.innerHeight - 240)
-              }
-            }}
-          ></button>
+          <span class="dot {session.status}" title={session.status}></span>
 
           <span
             class="type-icon material-symbols-outlined"
@@ -348,15 +344,10 @@
               role="button"
               tabindex="-1"
               title={`${session.cwd} — double-click to rename`}
-              ondblclick={() => (renaming = session.key)}>{session.name}</span
+              ondblclick={() => (renaming = session.key)}
+              >{cleanTitle(session.title) || session.name}</span
             >
           {/if}
-
-          <span class="title" title={cleanTitle(session.title)}
-            >{cleanTitle(session.title)}</span
-          >
-
-          <span class="status {session.status}" title={session.status}></span>
 
           <button
             class="close"
@@ -484,8 +475,7 @@
         <button
           class="menu-item color"
           onclick={() => {
-            const session = sessions.find((s) => s.key === colorMenu?.key)
-            if (session) setColor(session, entry)
+            if (colorMenu) setDirColor(colorMenu.dir, entry.hex)
             colorMenu = null
           }}
         >
@@ -544,15 +534,17 @@
         >
           <span class="material-symbols-outlined">edit</span>Rename
         </button>
-        <button
-          class="menu-item"
-          onclick={() => {
-            colorMenu = { key: menuSession.key, x: sessionMenu?.x ?? 0, y: sessionMenu?.y ?? 0 }
-            sessionMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">palette</span>Change color
-        </button>
+        {#if menuSession.type === 'claude'}
+          <button
+            class="menu-item"
+            onclick={() => {
+              applyFolderColor(menuSession.key)
+              sessionMenu = null
+            }}
+          >
+            <span class="material-symbols-outlined">palette</span>Apply folder color
+          </button>
+        {/if}
         <button
           class="menu-item"
           onclick={() => {
@@ -652,9 +644,20 @@
     white-space: nowrap;
   }
 
-  .folder-header .dir-parent {
-    flex: 1;
-    text-align: right;
+  .dir-chip {
+    margin-left: auto;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 8px;
+    border: 1px solid;
+    border-radius: 999px;
+    color: var(--fg);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
   }
 
   .spawn-btn {
@@ -691,9 +694,9 @@
   }
 
   .row {
-    /* columns: dot | type icon | name | claude title | status | close */
+    /* columns: status dot | type icon | name | close */
     display: grid;
-    grid-template-columns: 10px 18px minmax(60px, 1fr) minmax(0, 1.4fr) 7px 14px;
+    grid-template-columns: 10px 18px minmax(0, 1fr) 14px;
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
@@ -735,15 +738,6 @@
     font-size: 13px;
   }
 
-  .title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: var(--fg-muted);
-  }
-
   .rename {
     min-width: 0;
     font-size: 13px;
@@ -756,27 +750,20 @@
     outline: none;
   }
 
-  .status {
-    width: 7px;
-    height: 7px;
-    flex-shrink: 0;
-    border-radius: 50%;
-  }
-
-  .status.running {
+  .dot.running {
     background: var(--success);
   }
 
-  .status.waiting {
+  .dot.waiting {
     background: var(--attention);
     animation: pulse 1.2s ease-in-out infinite;
   }
 
-  .status.idle {
+  .dot.idle {
     background: var(--accent);
   }
 
-  .status.exited {
+  .dot.exited {
     background: var(--fg-muted);
     opacity: 0.5;
   }
