@@ -13,9 +13,14 @@ import { join } from 'node:path'
 
 export type ClaudeStatus = 'running' | 'waiting' | 'idle'
 
+// PermissionRequest fires the instant a dialog appears (permission dialogs
+// AND AskUserQuestion); the permission_prompt Notification trails it by ~6s
+// (it's the OS-notification pathway). Notification stays mapped as the
+// safety net for any other needs-input notification type.
 const EVENT_STATUS: Record<string, ClaudeStatus> = {
   UserPromptSubmit: 'running',
   PostToolUse: 'running',
+  PermissionRequest: 'waiting',
   Notification: 'waiting',
   Stop: 'idle'
 }
@@ -44,7 +49,21 @@ export function startStatusServer(
         res.end('{}')
         if (req.url !== `/hook/${token}`) return
         try {
-          const payload = JSON.parse(body) as { session_id?: string; hook_event_name?: string }
+          const payload = JSON.parse(body) as {
+            session_id?: string
+            hook_event_name?: string
+            notification_type?: string
+          }
+          // The 60s idle nag (type idle_prompt, "Claude is waiting for your
+          // input" — verified empirically) is not a needs-input signal: Stop
+          // already reported idle, and mapping the nag to waiting was a false
+          // amber on every session left alone for a minute.
+          if (
+            payload.hook_event_name === 'Notification' &&
+            payload.notification_type === 'idle_prompt'
+          ) {
+            return
+          }
           const status = payload.hook_event_name && EVENT_STATUS[payload.hook_event_name]
           if (payload.session_id && status) onStatus(payload.session_id, status)
         } catch {
