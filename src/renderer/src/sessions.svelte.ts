@@ -102,6 +102,24 @@ export function applyStatus(claudeSessionId: string, status: 'running' | 'waitin
   if (session && session.status !== 'exited') session.status = status
 }
 
+// Hooks are blind to user interrupts — documented: Stop fires only on
+// normally-completed turns, and no hook fires when a permission/question
+// dialog is dismissed. Infer those transitions from the keystrokes we
+// already forward to the PTY (observation only; the bytes pass through
+// untouched). Optimistic nudge — the next hook event stays authoritative.
+export function nudgeStatusFromKey(key: number, data: string): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.type !== 'claude' || session.status === 'exited') return
+  // A lone ESC byte is the Esc key (arrows etc. arrive as longer 0x1b-prefixed
+  // chunks); 0x03 is Ctrl+C. Both abort the dialog/turn → back at the prompt.
+  if (data === '\x1b' || data === '\x03') {
+    if (session.status === 'running' || session.status === 'waiting') session.status = 'idle'
+  } else if (data === '\r' && session.status === 'waiting') {
+    // Enter answers the dialog — approve and deny-with-feedback both resume the turn.
+    session.status = 'running'
+  }
+}
+
 // Reorder directory groups: move `dir` before `beforeDir`.
 export function moveDir(dir: string, beforeDir: string): void {
   if (dir === beforeDir) return

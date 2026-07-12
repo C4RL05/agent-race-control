@@ -13,6 +13,7 @@
     snapshotState,
     cleanTitle,
     duplicateSession,
+    nudgeStatusFromKey,
     dirColors,
     setDirColor,
     applyFolderColor,
@@ -433,6 +434,7 @@
             session.claudeSessionId = claudeSessionId ?? null
           }}
           onExited={() => (session.status = 'exited')}
+          onInput={(data) => nudgeStatusFromKey(session.key, data)}
           onTitle={(title) => (session.title = title)}
         />
       </div>

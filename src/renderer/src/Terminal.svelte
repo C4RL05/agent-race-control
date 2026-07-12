@@ -14,7 +14,8 @@
     theme,
     onSpawned,
     onExited,
-    onTitle
+    onTitle,
+    onInput
   }: {
     type?: 'shell' | 'claude'
     cwd?: string
@@ -24,6 +25,9 @@
     onSpawned?: (ptyId: string, claudeSessionId?: string) => void
     onExited?: (exitCode: number) => void
     onTitle?: (title: string) => void
+    // Observes what the user types (already bound for the PTY) — the bytes
+    // themselves pass through to pty.write untouched.
+    onInput?: (data: string) => void
   } = $props()
 
   let container: HTMLDivElement
@@ -134,7 +138,10 @@
       }
       ptyId = result.id
       onSpawned?.(result.id, result.claudeSessionId)
-      t.onData((data) => window.arc.pty.write(result.id, data))
+      t.onData((data) => {
+        onInput?.(data)
+        window.arc.pty.write(result.id, data)
+      })
       t.onResize(({ cols, rows }) => window.arc.pty.resize(result.id, cols, rows))
       if (active) t.focus()
     })
