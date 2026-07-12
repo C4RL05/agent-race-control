@@ -11,15 +11,15 @@ Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** 
 ## Features
 
 - **Timing tower** — every session with an editable name, live conversation title, and status
-- **Live status** from Claude Code itself: 🟢 running · 🟠 waiting for you (pulses) · 🔵 idle at the prompt · ⚪ exited
+- **Live status** from Claude Code itself — traffic lights from *your* point of view: 🔴 running (agent busy) · 🟠 waiting for you (pulses) · 🟢 idle at the prompt, your turn · ⚪ live shell · exited fades out
 - **Two session types** — Claude sessions (`bash --login -i -c 'exec claude'`) and first-class Git Bash shells for dev servers, builds, git
 - **Resume across restarts** — sessions reopen with their conversations (`--resume`, deterministic session ids)
-- **Folders** — one level of grouping with drag & drop (sessions between folders, folders reorderable)
+- **Directory groups** — sessions group by their working directory (the group *is* the dir), each with an F1-style team-stripe color; drag & drop reorders groups, and sessions within their group
 - **Filter bar** — text search over name/title/path, plus Claude/shell type chips
-- **Session colors** synced *into* Claude Code: pick a color on the dot and the app types `/color <name>` for you, so agent view matches
+- **Directory colors** pushed *into* Claude Code on demand: "Apply folder color" types `/color <name>` for you, so agent view matches the tower
 - **GitHub Light/Dark/System** theming (exact Primer palettes) — the app's chrome only; Claude Code renders untouched
 - **Windows Terminal conventions** — Ctrl+Shift+C/V copy/paste, right-click copy/paste, file drop pastes the quoted path, Ctrl+=/−/0 window zoom. Zero new muscle memory, nothing shadowed.
-- **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, color, close
+- **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, apply folder color, close
 
 ## Requirements
 

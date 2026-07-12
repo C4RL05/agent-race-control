@@ -330,7 +330,11 @@
             }}
             onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
           >
-          <span class="dot {session.status}" title={session.status}></span>
+          <span
+            class="dot {session.status}"
+            class:plain={session.type === 'shell'}
+            title={session.status}
+          ></span>
 
           <span
             class="type-icon material-symbols-outlined"
@@ -782,9 +786,6 @@
     height: 10px;
     flex-shrink: 0;
     border-radius: 50%;
-    border: none;
-    padding: 0;
-    cursor: pointer;
   }
 
   .type-icon {
@@ -812,8 +813,19 @@
     outline: none;
   }
 
+  /* Traffic lights from the user's point of view — every color answers
+     "is this session mine to act on?": red = the agent is driving (hands
+     off), pulsing amber = it's asking for you, green = your turn. Hexes
+     are the Primer semantic tokens, roles remapped. */
   .dot.running {
-    background: var(--success);
+    background: var(--danger);
+  }
+
+  /* A live shell is not an agent state — neutral ink, a power LED.
+     "running" only means the PTY is alive; it fades via .exited when it
+     dies, and green stays exclusive to "a Claude awaits you". */
+  .dot.plain.running {
+    background: var(--fg);
   }
 
   .dot.waiting {
@@ -822,7 +834,7 @@
   }
 
   .dot.idle {
-    background: var(--accent);
+    background: var(--success);
   }
 
   .dot.exited {
