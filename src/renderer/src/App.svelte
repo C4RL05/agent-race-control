@@ -70,32 +70,31 @@
     return off
   })
 
-  // Window/taskbar icon: a 5x5 black/white checkerboard (chequered flag),
-  // white squares at the corners. Rasterized fresh at every DPI size Windows
-  // may ask for — one big bitmap downscaled looks pixelated. Cell edges are
-  // rounded per-size so the grid tiles pixel-perfectly even when 5 doesn't
-  // divide the size.
+  // Window/taskbar icon: the sports_motorsports glyph (racing helmet, weight
+  // 300), white on black, rendered from the bundled icon font once it's
+  // loaded. Rasterized fresh at every DPI size Windows may ask for — one big
+  // bitmap downscaled looks pixelated.
   $effect(() => {
-    // base DIP size 32; scaleFactor n => 32n pixels
-    const representations = [0.5, 1, 1.25, 1.5, 2, 4, 8].map((scaleFactor) => {
-      const size = Math.round(32 * scaleFactor)
-      const canvas = document.createElement('canvas')
-      canvas.width = size
-      canvas.height = size
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return { scaleFactor, dataURL: '' }
-      ctx.fillStyle = '#000000'
-      ctx.fillRect(0, 0, size, size)
-      ctx.fillStyle = '#ffffff'
-      const edge = (i: number): number => Math.round((size * i) / 5)
-      for (let row = 0; row < 5; row++) {
-        for (let col = row % 2; col < 5; col += 2) {
-          ctx.fillRect(edge(col), edge(row), edge(col + 1) - edge(col), edge(row + 1) - edge(row))
-        }
-      }
-      return { scaleFactor, dataURL: canvas.toDataURL('image/png') }
+    void document.fonts.ready.then(() => {
+      // base DIP size 32; scaleFactor n => 32n pixels
+      const representations = [0.5, 1, 1.25, 1.5, 2, 4, 8].map((scaleFactor) => {
+        const size = Math.round(32 * scaleFactor)
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return { scaleFactor, dataURL: '' }
+        ctx.fillStyle = '#000000'
+        ctx.fillRect(0, 0, size, size)
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `300 ${Math.round(size * 0.875)}px "Material Symbols Outlined"`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('sports_motorsports', size / 2, size * 0.54)
+        return { scaleFactor, dataURL: canvas.toDataURL('image/png') }
+      })
+      window.arc.setAppIcon(representations.filter((r) => r.dataURL))
     })
-    window.arc.setAppIcon(representations.filter((r) => r.dataURL))
   })
 
   // Restore persisted sessions/mode once at boot; persist on any change after.
