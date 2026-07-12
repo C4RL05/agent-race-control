@@ -40,15 +40,15 @@ export function setDirColor(dir: string, hex: string): void {
   dirColors[dir] = hex
 }
 
-export const ui = $state<{ focused: number | null; mode: Mode; railWidth: number }>({
+export const ui = $state<{ focused: number | null; mode: Mode; towerWidth: number }>({
   focused: null,
   mode: 'system',
-  railWidth: 240
+  towerWidth: 240
 })
 
 // Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
 // it works; Git Bash prefixes the cwd with the MSYS system name (MINGW64:).
-// Strip both — the rail wants the conversation name / the path, nothing else.
+// Strip both — the tower wants the conversation name / the path, nothing else.
 export function cleanTitle(title: string): string {
   return title
     .replace(/^[✳✶✻✽·∴※+*●○◐◑]+\s*/u, '')
@@ -164,7 +164,9 @@ export async function restoreState(): Promise<void> {
     })
     colorIndex++
   }
-  if (saved.railWidth) ui.railWidth = saved.railWidth
+  // towerWidth was persisted as railWidth before the rename — accept both.
+  const width = saved.towerWidth ?? saved.railWidth
+  if (width) ui.towerWidth = width
   ui.focused = sessions[saved.focusedIndex]?.key ?? sessions[0]?.key ?? null
 }
 
@@ -178,7 +180,7 @@ export function snapshotState(): PersistedState {
   return {
     version: 1,
     mode: ui.mode,
-    railWidth: ui.railWidth,
+    towerWidth: ui.towerWidth,
     focusedIndex,
     dirOrder: dirOrder.filter((dir) => alive.some((s) => s.cwd === dir)),
     dirColors: Object.fromEntries(

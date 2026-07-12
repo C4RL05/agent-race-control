@@ -35,11 +35,11 @@
     return { base: parts.pop() ?? dir, parent: parts.join('\\') }
   }
 
-  let draggingRail = $state(false)
+  let draggingTower = $state(false)
 
-  function railDrag(event: PointerEvent): void {
-    if (!draggingRail) return
-    ui.railWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
+  function towerDrag(event: PointerEvent): void {
+    if (!draggingTower) return
+    ui.towerWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
   }
 
   const MODES: Mode[] = ['system', 'light', 'dark']
@@ -112,7 +112,7 @@
 
   let renaming = $state<number | null>(null)
 
-  // Rail filter: text matches name/title/cwd; chips narrow by session type.
+  // Tower filter: text matches name/title/cwd; chips narrow by session type.
   // Transient UI state — deliberately not persisted.
   let filterText = $state('')
   let filterClaude = $state(false)
@@ -182,8 +182,8 @@
   style:--attention={palette.chrome.attention}
   style:--danger={palette.chrome.danger}
 >
-  <aside class="rail" style:width={`${ui.railWidth}px`}>
-    <div class="rail-filter">
+  <aside class="tower" style:width={`${ui.towerWidth}px`}>
+    <div class="tower-filter">
       <div class="search">
         <span class="material-symbols-outlined">search</span>
         <input
@@ -228,7 +228,7 @@
       </div>
     </div>
 
-    <div class="rail-body">
+    <div class="tower-body">
       {#each dirOrder as dir (dir)}
         {@const inDir = sessions.filter((s) => s.cwd === dir)}
         {@const visible = inDir.filter(sessionMatches)}
@@ -364,7 +364,7 @@
       {/each}
     </div>
 
-    <div class="rail-toolbar">
+    <div class="tower-toolbar">
       <button
         class="icon-btn"
         title="New session or folder"
@@ -390,17 +390,17 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="splitter"
-    class:dragging={draggingRail}
+    class:dragging={draggingTower}
     role="separator"
     aria-orientation="vertical"
-    aria-label="Resize session rail"
+    aria-label="Resize timing tower"
     onpointerdown={(e) => {
-      draggingRail = true
+      draggingTower = true
       e.currentTarget.setPointerCapture(e.pointerId)
     }}
-    onpointermove={railDrag}
-    onpointerup={() => (draggingRail = false)}
-    onpointercancel={() => (draggingRail = false)}
+    onpointermove={towerDrag}
+    onpointerup={() => (draggingTower = false)}
+    onpointercancel={() => (draggingTower = false)}
   ></div>
 
   <main class="pane">
@@ -423,7 +423,7 @@
     {/each}
     {#if sessions.length === 0}
       <div class="empty">
-        <p>No sessions. Spawn one from the rail.</p>
+        <p>No sessions. Spawn one from the timing tower.</p>
       </div>
     {/if}
   </main>
@@ -583,7 +583,7 @@
     color: var(--fg);
   }
 
-  .rail {
+  .tower {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
@@ -595,7 +595,7 @@
     width: 5px;
     flex-shrink: 0;
     cursor: col-resize;
-    /* VS Code sash: invisible at rest — the rail/pane background change
+    /* VS Code sash: invisible at rest — the tower/pane background change
        marks the boundary; the accent line appears on hover/drag. */
     background: transparent;
     background-clip: content-box;
@@ -613,7 +613,7 @@
     transition-delay: 0s;
   }
 
-  .rail-body {
+  .tower-body {
     flex: 1;
     overflow-y: auto;
     padding: 0 4px;
@@ -794,14 +794,14 @@
     color: var(--danger);
   }
 
-  .rail-toolbar {
+  .tower-toolbar {
     display: flex;
     gap: 6px;
     padding: 8px;
     border-top: 1px solid var(--border);
   }
 
-  .rail-filter {
+  .tower-filter {
     display: flex;
     gap: 6px;
     padding: 8px;

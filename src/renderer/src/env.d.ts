@@ -5,6 +5,8 @@
 interface PersistedState {
   version: 1
   mode: 'system' | 'light' | 'dark'
+  towerWidth?: number
+  // Legacy key — towerWidth was persisted as railWidth before the rename.
   railWidth?: number
   focusedIndex: number
   dirOrder?: string[]

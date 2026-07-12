@@ -1,6 +1,6 @@
 # Agent Race Control
 
-Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: one window, a rail of sessions (Claude + plain Git Bash shells), one terminal pane. **`docs/agent-race-control-kickoff.md` is the living spec** — every decision is recorded there; fold new decisions into it before implementing.
+Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: one window, a **timing tower** of sessions (Claude + plain Git Bash shells; named after the F1 broadcast graphic, "tower" in code), one terminal pane. **`docs/agent-race-control-kickoff.md` is the living spec** — every decision is recorded there; fold new decisions into it before implementing.
 
 ## Two non-negotiable ethos rules
 
@@ -17,7 +17,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 
 - `src/main/` — `index.ts` (window, zoom, menus-off, IPC), `pty.ts` (node-pty spawn/registry; session types + resume + env scrubbing), `bash.ts` (Git Bash discovery — VS Code's algorithm, never PATH-resolve bash.exe), `status.ts` (localhost HTTP server receiving per-session hook POSTs), `state.ts` (state JSON in userData)
 - `src/preload/index.ts` — the only renderer↔main bridge (`window.arc`), keep it minimal and explicit
-- `src/renderer/src/` — Svelte 5 runes: `App.svelte` (rail, menus, filter, DnD), `Terminal.svelte` (xterm wiring), `sessions.svelte.ts` (session/folder store + persistence), `theme.ts` (GitHub palettes — exact Primer hexes, don't tweak by eye)
+- `src/renderer/src/` — Svelte 5 runes: `App.svelte` (tower, menus, filter, DnD), `Terminal.svelte` (xterm wiring), `sessions.svelte.ts` (session/folder store + persistence), `theme.ts` (GitHub palettes — exact Primer hexes, don't tweak by eye)
 
 ## Gotchas that cost real time (don't relearn these)
 

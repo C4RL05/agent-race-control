@@ -1,8 +1,8 @@
 # Agent Race Control
 
-A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every Claude Code session and every plain shell you run alongside them — in a single rail you can glance at and a terminal you can drive.
+A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every Claude Code session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
 
-Inspired by **F1 timing tables**: a column of colored entries, each with a name and a live status, telling you the state of the whole race at a glance — then you click one to go on board.
+Inspired by the **F1 timing tower**: a column of colored entries, each with a name and a live status, telling you the state of the whole race at a glance — then you click one to go on board.
 
 ![Agent Race Control](images/arc-screenshot.png)
 
@@ -10,7 +10,7 @@ Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** 
 
 ## Features
 
-- **Session rail** — every session with an editable name, color dot, live conversation title, and status
+- **Timing tower** — every session with an editable name, live conversation title, and status
 - **Live status** from Claude Code itself: 🟢 running · 🟠 waiting for you (pulses) · 🔵 idle at the prompt · ⚪ exited
 - **Two session types** — Claude sessions (`bash --login -i -c 'exec claude'`) and first-class Git Bash shells for dev servers, builds, git
 - **Resume across restarts** — sessions reopen with their conversations (`--resume`, deterministic session ids)
@@ -42,7 +42,7 @@ No installer yet — packaging is planned post-v1.
 
 ## State
 
-Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json` (sessions, folders, appearance, zoom, rail width). No database. Delete it to start fresh.
+Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json` (sessions, directory groups, appearance, zoom, tower width). No database. Delete it to start fresh.
 
 ## Design notes
 

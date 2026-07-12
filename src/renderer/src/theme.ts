@@ -103,7 +103,7 @@ export const palettes: Record<'light' | 'dark', Palette> = {
 
 // Session identity dots — the same 8-color vocabulary as Claude Code's
 // /color command, in GitHub mid-tones legible on both palettes. The name is
-// what gets typed as `/color <name>` when the user sets a color from the rail.
+// what gets typed as `/color <name>` when the user sets a color from the tower.
 export const DOT_COLORS: { name: string; hex: string }[] = [
   { name: 'blue', hex: '#388bfd' },
   { name: 'green', hex: '#3fb950' },
