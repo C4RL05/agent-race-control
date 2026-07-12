@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
+type PreviewItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string }
+  | { kind: 'tool'; label: string }
+
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
@@ -50,6 +55,28 @@ contextBridge.exposeInMainWorld('arc', {
       }
       ipcRenderer.on('pty:exit', listener)
       return () => ipcRenderer.removeListener('pty:exit', listener)
+    }
+  },
+  transcript: {
+    watch: (sessionId: string, cwd: string): void => {
+      ipcRenderer.send('transcript:watch', sessionId, cwd)
+    },
+    unwatch: (sessionId: string): void => {
+      ipcRenderer.send('transcript:unwatch', sessionId)
+    },
+    onItems: (
+      callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
+    ): (() => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        sessionId: string,
+        items: PreviewItem[],
+        reset: boolean
+      ): void => {
+        callback(sessionId, items, reset)
+      }
+      ipcRenderer.on('transcript:items', listener)
+      return () => ipcRenderer.removeListener('transcript:items', listener)
     }
   },
   status: {

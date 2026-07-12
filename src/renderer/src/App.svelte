@@ -1,5 +1,6 @@
 <script lang="ts">
   import Terminal from './Terminal.svelte'
+  import Preview from './Preview.svelte'
   import { palettes } from './theme'
   import type { Mode } from './theme'
   import {
@@ -15,6 +16,7 @@
     duplicateSession,
     renameSession,
     nudgeStatusFromKey,
+    applySpawnCwd,
     dirColors,
     recentDirs,
     setDirColor,
@@ -451,21 +453,59 @@
 
   <main class="pane">
     {#each sessions as session (session.key)}
-      <div class="host" style:display={ui.focused === session.key ? 'block' : 'none'}>
-        <Terminal
-          type={session.type}
-          cwd={session.cwd}
-          resume={session.resumeId ?? undefined}
-          active={ui.focused === session.key}
-          theme={palette.xterm}
-          onSpawned={(ptyId, claudeSessionId) => {
-            session.ptyId = ptyId
-            session.claudeSessionId = claudeSessionId ?? null
-          }}
-          onExited={() => (session.status = 'exited')}
-          onInput={(data) => nudgeStatusFromKey(session.key, data)}
-          onTitle={(title) => (session.title = title)}
-        />
+      <div class="host" style:display={ui.focused === session.key ? 'flex' : 'none'}>
+        {#if session.type === 'claude'}
+          <div class="tabs" role="tablist">
+            <button
+              class="tab"
+              class:active={session.view === 'terminal'}
+              role="tab"
+              aria-selected={session.view === 'terminal'}
+              onclick={() => (session.view = 'terminal')}
+            >
+              <span class="material-symbols-outlined">terminal_2</span>Terminal
+            </button>
+            <button
+              class="tab"
+              class:active={session.view === 'preview'}
+              role="tab"
+              aria-selected={session.view === 'preview'}
+              onclick={() => (session.view = 'preview')}
+            >
+              <span class="material-symbols-outlined">article</span>Preview
+            </button>
+          </div>
+        {/if}
+        <!-- The terminal stays mounted while hidden — the PTY's lifetime is
+             the session. The preview mounts/unmounts with its tab. -->
+        <div class="view" style:display={session.view === 'terminal' ? 'block' : 'none'}>
+          <Terminal
+            type={session.type}
+            cwd={session.cwd}
+            resume={session.resumeId ?? undefined}
+            active={ui.focused === session.key && session.view === 'terminal'}
+            theme={palette.xterm}
+            onSpawned={(ptyId, claudeSessionId, cwd) => {
+              session.ptyId = ptyId
+              session.claudeSessionId = claudeSessionId ?? null
+              applySpawnCwd(session.key, cwd)
+            }}
+            onExited={() => (session.status = 'exited')}
+            onInput={(data) => nudgeStatusFromKey(session.key, data)}
+            onTitle={(title) => (session.title = title)}
+          />
+        </div>
+        {#if session.view === 'preview'}
+          <div class="view">
+            {#if session.claudeSessionId}
+              <Preview sessionId={session.claudeSessionId} cwd={session.cwd} />
+            {:else}
+              <!-- spawn still in flight, or it failed (the terminal tab has
+                   the error) — never a silently blank pane -->
+              <div class="empty">No conversation yet.</div>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/each}
     {#if sessions.length === 0}
@@ -1048,6 +1088,48 @@
   .host {
     width: 100%;
     height: 100%;
+    flex-direction: column;
+  }
+
+  /* GitHub-style underline tabs, only rendered on Claude sessions. */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px 5px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    background: none;
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .tab .material-symbols-outlined {
+    font-size: 14px;
+  }
+
+  .tab:hover {
+    color: var(--fg);
+  }
+
+  .tab.active {
+    color: var(--fg);
+    border-bottom-color: var(--accent);
+  }
+
+  .view {
+    flex: 1;
+    min-height: 0;
   }
 
   .empty {

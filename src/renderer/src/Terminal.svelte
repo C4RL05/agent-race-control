@@ -22,7 +22,9 @@
     resume?: string
     active?: boolean
     theme: ITheme
-    onSpawned?: (ptyId: string, claudeSessionId?: string) => void
+    // cwd is where the PTY actually started — may differ from the requested
+    // directory (dead paths fall back to the home dir in main).
+    onSpawned?: (ptyId: string, claudeSessionId: string | undefined, cwd: string) => void
     onExited?: (exitCode: number) => void
     onTitle?: (title: string) => void
     // Observes what the user types (already bound for the PTY) — the bytes
@@ -137,7 +139,7 @@
         return
       }
       ptyId = result.id
-      onSpawned?.(result.id, result.claudeSessionId)
+      onSpawned?.(result.id, result.claudeSessionId, result.cwd)
       t.onData((data) => {
         onInput?.(data)
         window.arc.pty.write(result.id, data)

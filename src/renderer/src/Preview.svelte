@@ -1,0 +1,205 @@
+<script lang="ts">
+  import { onMount, tick } from 'svelte'
+  import { marked } from 'marked'
+  import DOMPurify from 'dompurify'
+
+  // Read-only conversation preview: renders the PreviewItem stream that
+  // main tails out of the session's transcript JSONL. Observation only —
+  // nothing here can write to the session.
+  let { sessionId, cwd }: { sessionId: string; cwd: string } = $props()
+
+  let items = $state<PreviewItem[]>([])
+  let scroller: HTMLDivElement
+
+  // Auto-scroll to the live tail unless the user has scrolled up to read.
+  let stick = true
+
+  function onScroll(): void {
+    stick = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 32
+  }
+
+  // Conversation content is untrusted input — never inject unsanitized HTML.
+  // style is forbidden on top of the defaults: inline CSS (position:fixed,
+  // z-index) would let rendered content overlay and spoof the app's own UI.
+  function render(text: string): string {
+    return DOMPurify.sanitize(marked.parse(text, { async: false }), { FORBID_ATTR: ['style'] })
+  }
+
+  onMount(() => {
+    const off = window.arc.transcript.onItems((sid, incoming, reset) => {
+      if (sid !== sessionId) return
+      if (reset) items = incoming
+      else items.push(...incoming)
+      if (stick) {
+        void tick().then(() => scroller?.scrollTo({ top: scroller.scrollHeight }))
+      }
+    })
+    window.arc.transcript.watch(sessionId, cwd)
+    return () => {
+      off()
+      window.arc.transcript.unwatch(sessionId)
+    }
+  })
+</script>
+
+<div class="preview" bind:this={scroller} onscroll={onScroll}>
+  {#if items.length === 0}
+    <div class="empty">No conversation yet.</div>
+  {:else}
+    {#each items as item, i (i)}
+      {#if item.kind === 'assistant'}
+        <div class="assistant">{@html render(item.text)}</div>
+      {:else if item.kind === 'user'}
+        <div class="user">{item.text}</div>
+      {:else}
+        <div class="tool" title={item.label}>
+          <span class="material-symbols-outlined">manufacturing</span>
+          <span class="tool-label">{item.label}</span>
+        </div>
+      {/if}
+    {/each}
+  {/if}
+</div>
+
+<style>
+  .preview {
+    height: 100%;
+    overflow-y: auto;
+    padding: 12px 16px;
+    box-sizing: border-box;
+    font-size: 13px;
+    line-height: 1.55;
+    user-select: text;
+    overflow-wrap: break-word;
+  }
+
+  .empty {
+    height: 100%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  .user {
+    margin: 16px 0 10px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    background: var(--bg-subtle);
+    white-space: pre-wrap;
+  }
+
+  .preview > :first-child {
+    margin-top: 0;
+  }
+
+  .tool {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+    color: var(--fg-muted);
+    font-family: 'Cascadia Mono', Consolas, monospace;
+    font-size: 11px;
+  }
+
+  .tool .material-symbols-outlined {
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .tool-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .assistant {
+    margin: 10px 0;
+  }
+
+  /* Markdown body — minimal GitHub-flavored styling off the chrome vars. */
+  .assistant :global(p) {
+    margin: 8px 0;
+  }
+
+  .assistant :global(h1),
+  .assistant :global(h2),
+  .assistant :global(h3),
+  .assistant :global(h4),
+  .assistant :global(h5),
+  .assistant :global(h6) {
+    margin: 14px 0 6px;
+    font-size: 1em;
+    font-weight: 700;
+  }
+
+  .assistant :global(h1) {
+    font-size: 1.15em;
+  }
+
+  .assistant :global(h2) {
+    font-size: 1.05em;
+  }
+
+  .assistant :global(code) {
+    font-family: 'Cascadia Mono', Consolas, monospace;
+    font-size: 11.5px;
+    background: var(--bg-subtle);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+
+  .assistant :global(pre) {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+  }
+
+  .assistant :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+
+  .assistant :global(ul),
+  .assistant :global(ol) {
+    margin: 8px 0;
+    padding-left: 22px;
+  }
+
+  .assistant :global(blockquote) {
+    margin: 8px 0;
+    padding-left: 10px;
+    border-left: 3px solid var(--border);
+    color: var(--fg-muted);
+  }
+
+  .assistant :global(a) {
+    color: var(--accent);
+  }
+
+  .assistant :global(table) {
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .assistant :global(th),
+  .assistant :global(td) {
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+  }
+
+  .assistant :global(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .assistant :global(img) {
+    max-width: 100%;
+  }
+</style>

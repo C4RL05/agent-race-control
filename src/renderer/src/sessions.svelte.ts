@@ -19,6 +19,9 @@ export interface Session {
   claudeSessionId: string | null
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
+  // Which pane tab is showing: the live terminal or the read-only
+  // conversation preview (Claude sessions only). Transient — not persisted.
+  view: 'terminal' | 'preview'
 }
 
 let nextKey = 1
@@ -89,7 +92,8 @@ export async function newSession(type: 'shell' | 'claude', dir?: string): Promis
     title: '',
     ptyId: null,
     claudeSessionId: null,
-    resumeId: null
+    resumeId: null,
+    view: 'terminal'
   }
   sessions.push(session)
   ui.focused = session.key
@@ -111,10 +115,21 @@ export function duplicateSession(key: number): void {
     title: '',
     ptyId: null,
     claudeSessionId: null,
-    resumeId: null
+    resumeId: null,
+    view: 'terminal'
   }
   sessions.splice(index + 1, 0, session)
   ui.focused = session.key
+}
+
+// The PTY reports the directory it actually started in — a dead requested
+// cwd falls back to the home dir (pty.ts). Follow the truth, and keep the
+// invariant that every session's cwd has a directory group.
+export function applySpawnCwd(key: number, cwd: string): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.cwd === cwd) return
+  session.cwd = cwd
+  touchDir(cwd)
 }
 
 export function applyStatus(claudeSessionId: string, status: 'running' | 'waiting' | 'idle'): void {
@@ -209,7 +224,8 @@ export async function restoreState(): Promise<void> {
       ptyId: null,
       claudeSessionId: null,
       // Claude sessions resume their conversation; shells just reopen fresh.
-      resumeId: s.type === 'claude' ? s.claudeSessionId : null
+      resumeId: s.type === 'claude' ? s.claudeSessionId : null,
+      view: 'terminal'
     })
     colorIndex++
   }

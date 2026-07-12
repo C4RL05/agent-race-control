@@ -22,6 +22,12 @@ interface PersistedState {
   }>
 }
 
+// One entry of the read-only conversation preview (see src/main/transcript.ts).
+type PreviewItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string }
+  | { kind: 'tool'; label: string }
+
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {
   arc: {
@@ -41,12 +47,19 @@ interface Window {
         type?: 'shell' | 'claude'
         cwd?: string
         resume?: string
-      }) => Promise<{ id: string; claudeSessionId?: string } | { error: string }>
+      }) => Promise<{ id: string; claudeSessionId?: string; cwd: string } | { error: string }>
       write: (id: string, data: string) => void
       resize: (id: string, cols: number, rows: number) => void
       kill: (id: string) => void
       onData: (callback: (id: string, data: string) => void) => () => void
       onExit: (callback: (id: string, exitCode: number) => void) => () => void
+    }
+    transcript: {
+      watch: (sessionId: string, cwd: string) => void
+      unwatch: (sessionId: string) => void
+      onItems: (
+        callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
+      ) => () => void
     }
     status: {
       onChange: (

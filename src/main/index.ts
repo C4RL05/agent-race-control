@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'e
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys } from './pty'
 import { startStatusServer } from './status'
+import { registerTranscriptHandlers, disposeAllTails } from './transcript'
 import { loadState, saveState, flushState } from './state'
 import type { AppState } from './state'
 
@@ -53,17 +54,30 @@ if (!gotLock) {
       win = null
     })
 
-    // The renderer never opens new windows.
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    // The renderer never opens new windows — http(s) targets (links in the
+    // conversation preview) go to the OS browser instead. Scheme-restricted:
+    // never hand shell.openExternal anything else.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/i.test(url)) void shell.openExternal(url)
+      return { action: 'deny' }
+    })
 
     // ...and never navigates away (also stops file drops from navigating to
-    // the dropped file — the Terminal pastes its path instead).
-    win.webContents.on('will-navigate', (event) => event.preventDefault())
+    // the dropped file — the Terminal pastes its path instead). Same http(s)
+    // escape hatch: a plain click on a preview link lands here.
+    win.webContents.on('will-navigate', (event, url) => {
+      event.preventDefault()
+      if (/^https?:/i.test(url)) void shell.openExternal(url)
+    })
 
     // If the renderer ever reloads (dev), the old page's PTYs would be
     // orphaned in this process — kill them; the new page respawns via state.
+    // Same for transcript watchers: the new page re-subscribes on its own.
     win.webContents.on('did-start-navigation', (event) => {
-      if (event.isMainFrame && !event.isSameDocument) killAllPtys()
+      if (event.isMainFrame && !event.isSameDocument) {
+        killAllPtys()
+        disposeAllTails()
+      }
     })
 
     // Chrome-level keys. Zoom follows Windows Terminal / VS Code convention
@@ -160,12 +174,14 @@ if (!gotLock) {
       win?.webContents.send('session:status', claudeSessionId, status)
     })
     registerPtyHandlers(() => win?.webContents ?? null)
+    registerTranscriptHandlers(() => win?.webContents ?? null)
     createWindow()
   })
 
   app.on('will-quit', () => {
     flushState()
     killAllPtys()
+    disposeAllTails()
   })
 
   // Windows-only app: closing the window quits.
