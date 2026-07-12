@@ -124,9 +124,9 @@ if (!gotLock) {
     void shell.openPath(path)
   })
 
-  // Window/taskbar icon, rendered by the renderer from the bundled Material
-  // Symbols font (sports_score — the checkered flag). Multi-resolution so
-  // Windows gets a crisp raster at every DPI size. No icon asset to ship.
+  // Window/taskbar icon, rendered by the renderer on a canvas (5x5 black/white
+  // checkerboard, white corners). Multi-resolution so Windows gets a crisp
+  // raster at every DPI size. No icon asset to ship.
   // The packaged .exe will need a real .ico at packaging time (post-v1).
   ipcMain.on(
     'app:setIcon',
