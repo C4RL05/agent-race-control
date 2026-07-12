@@ -6,7 +6,6 @@ import { join } from 'node:path'
 
 export interface PersistedSession {
   type: 'shell' | 'claude'
-  folderId?: number
   name: string
   color: string
   cwd: string
@@ -19,8 +18,7 @@ export interface AppState {
   railWidth?: number
   zoomLevel?: number
   focusedIndex: number
-  folders?: Array<{ id: number; name: string }>
-  recentDirs?: string[]
+  dirOrder?: string[]
   sessions: PersistedSession[]
   lastPickedDir?: string
 }

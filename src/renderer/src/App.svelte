@@ -4,7 +4,7 @@
   import type { Mode } from './theme'
   import {
     sessions,
-    folders,
+    dirOrder,
     ui,
     newSession,
     closeSession,
@@ -15,11 +15,7 @@
     snapshotState,
     cleanTitle,
     duplicateSession,
-    recentDirs,
-    addFolder,
-    renameFolder,
-    deleteFolder,
-    moveFolder,
+    moveDir,
     moveSession
   } from './sessions.svelte'
   import { DOT_COLORS } from './theme'
@@ -29,17 +25,9 @@
   // Right-click context menu for a session row.
   let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
   // The + button's create dropdown (opens upward from the bottom toolbar).
-  // Two steps: pick a type, then pick a recent directory or browse.
-  let addMenu = $state<{ x: number; bottom: number; type?: 'shell' | 'claude' } | null>(null)
-
-  function pickType(type: 'shell' | 'claude'): void {
-    if (recentDirs.length === 0) {
-      void newSession(type)
-      addMenu = null
-    } else if (addMenu) {
-      addMenu.type = type
-    }
-  }
+  // Both items open the OS folder picker — sessions in an existing directory
+  // are spawned from that group header's hover buttons instead.
+  let addMenu = $state<{ x: number; bottom: number } | null>(null)
 
   function dirLabel(dir: string): { base: string; parent: string } {
     const parts = dir.split(/[\\/]/).filter(Boolean)
@@ -122,7 +110,6 @@
   const palette = $derived(palettes[effective])
 
   let renaming = $state<number | null>(null)
-  let renamingFolder = $state<number | null>(null)
 
   // Rail filter: text matches name/title/cwd; chips narrow by session type.
   // Transient UI state — deliberately not persisted.
@@ -153,7 +140,9 @@
   }
 
   // --- drag & drop (same-window; component state, not dataTransfer) ---
-  type Drag = { kind: 'session'; key: number } | { kind: 'folder'; id: number }
+  // Directory headers reorder against each other; sessions reorder within
+  // their own directory group only (a session's directory is a fact).
+  type Drag = { kind: 'session'; key: number; cwd: string } | { kind: 'dir'; dir: string }
   let dragging = $state<Drag | null>(null)
   let dropHint = $state<string | null>(null)
 
@@ -169,14 +158,13 @@
     dropHint = null
   }
 
-  function dropOnSession(target: { key: number; folderId: number }): void {
-    if (dragging?.kind === 'session') moveSession(dragging.key, target.folderId, target.key)
+  function dropOnSession(target: { key: number }): void {
+    if (dragging?.kind === 'session') moveSession(dragging.key, target.key)
     endDrag()
   }
 
-  function dropOnFolder(folderId: number): void {
-    if (dragging?.kind === 'session') moveSession(dragging.key, folderId)
-    else if (dragging?.kind === 'folder') moveFolder(dragging.id, folderId)
+  function dropOnDir(dir: string): void {
+    if (dragging?.kind === 'dir') moveDir(dragging.dir, dir)
     endDrag()
   }
 </script>
@@ -240,60 +228,49 @@
     </div>
 
     <div class="rail-body">
-      {#each folders as folder (folder.id)}
-        {@const visible = sessions.filter((s) => s.folderId === folder.id && sessionMatches(s))}
-        {#if !filterActive || visible.length > 0}
+      {#each dirOrder as dir (dir)}
+        {@const inDir = sessions.filter((s) => s.cwd === dir)}
+        {@const visible = inDir.filter(sessionMatches)}
+        {#if inDir.length > 0 && (!filterActive || visible.length > 0)}
+        {@const label = dirLabel(dir)}
         <div
           class="folder-header"
-          class:drop-hint={dropHint === `folder-${folder.id}`}
+          class:drop-hint={dropHint === `dir-${dir}`}
           role="button"
           tabindex="0"
           draggable="true"
-          ondragstart={() => (dragging = { kind: 'folder', id: folder.id })}
+          title={dir}
+          ondragstart={() => (dragging = { kind: 'dir', dir })}
           ondragend={endDrag}
-          ondragover={(e) => allowDrop(e, `folder-${folder.id}`, dragging !== null)}
+          ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
           ondragleave={() => (dropHint = null)}
-          ondrop={() => dropOnFolder(folder.id)}
+          ondrop={() => dropOnDir(dir)}
         >
           <span class="material-symbols-outlined folder-icon">folder</span>
-          {#if renamingFolder === folder.id}
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              class="rename"
-              value={folder.name}
-              autofocus
-              onblur={(e) => {
-                renameFolder(folder.id, e.currentTarget.value)
-                renamingFolder = null
-              }}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  renameFolder(folder.id, e.currentTarget.value)
-                  renamingFolder = null
-                }
-                if (e.key === 'Escape') renamingFolder = null
-              }}
-            />
-          {:else}
-            <span
-              class="folder-name"
-              role="button"
-              tabindex="-1"
-              title="Double-click to rename"
-              ondblclick={() => (renamingFolder = folder.id)}>{folder.name}</span
-            >
-          {/if}
-          {#if folder.id !== 0}
-            <button
-              class="close"
-              title="Delete folder (sessions move to default)"
-              aria-label="Delete folder"
-              onclick={(e) => {
-                e.stopPropagation()
-                deleteFolder(folder.id)
-              }}>×</button
-            >
-          {/if}
+          <span class="folder-name">{label.base}</span>
+          <button
+            class="spawn-btn"
+            title="New Claude session here"
+            aria-label="New Claude session here"
+            onclick={(e) => {
+              e.stopPropagation()
+              void newSession('claude', dir)
+            }}
+          >
+            <span class="material-symbols-outlined">asterisk</span>
+          </button>
+          <button
+            class="spawn-btn"
+            title="New shell session here"
+            aria-label="New shell session here"
+            onclick={(e) => {
+              e.stopPropagation()
+              void newSession('shell', dir)
+            }}
+          >
+            <span class="material-symbols-outlined">terminal_2</span>
+          </button>
+          <span class="dir-parent">{label.parent}</span>
         </div>
 
         {#each visible as session (session.key)}
@@ -304,13 +281,15 @@
             role="button"
             tabindex="0"
             draggable="true"
-            ondragstart={() => (dragging = { kind: 'session', key: session.key })}
+            ondragstart={() => (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
             ondragend={endDrag}
             ondragover={(e) =>
               allowDrop(
                 e,
                 `session-${session.key}`,
-                dragging?.kind === 'session' && dragging.key !== session.key
+                dragging?.kind === 'session' &&
+                  dragging.key !== session.key &&
+                  dragging.cwd === session.cwd
               )}
             ondragleave={() => (dropHint = null)}
             ondrop={() => dropOnSession(session)}
@@ -469,50 +448,24 @@
       }}
     ></div>
     <div class="menu" style:left={`${addMenu.x}px`} style:bottom={`${addMenu.bottom}px`}>
-      {#if !addMenu.type}
-        <button class="menu-item" onclick={() => pickType('claude')}>
-          <span class="material-symbols-outlined">asterisk</span>Claude session
-        </button>
-        <button class="menu-item" onclick={() => pickType('shell')}>
-          <span class="material-symbols-outlined">terminal_2</span>Shell session
-        </button>
-        <button
-          class="menu-item"
-          onclick={() => {
-            addFolder()
-            addMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">folder</span>Folder
-        </button>
-      {:else}
-        {#each recentDirs as dir (dir)}
-          {@const label = dirLabel(dir)}
-          <button
-            class="menu-item"
-            title={dir}
-            onclick={() => {
-              const type = addMenu?.type
-              addMenu = null
-              if (type) void newSession(type, dir)
-            }}
-          >
-            <span class="material-symbols-outlined">folder_open</span>{label.base}
-            <span class="dir-parent">{label.parent}</span>
-          </button>
-        {/each}
-        <div class="menu-divider"></div>
-        <button
-          class="menu-item"
-          onclick={() => {
-            const type = addMenu?.type
-            addMenu = null
-            if (type) void newSession(type)
-          }}
-        >
-          <span class="material-symbols-outlined">more_horiz</span>Browse…
-        </button>
-      {/if}
+      <button
+        class="menu-item"
+        onclick={() => {
+          addMenu = null
+          void newSession('claude')
+        }}
+      >
+        <span class="material-symbols-outlined">asterisk</span>Claude session
+      </button>
+      <button
+        class="menu-item"
+        onclick={() => {
+          addMenu = null
+          void newSession('shell')
+        }}
+      >
+        <span class="material-symbols-outlined">terminal_2</span>Shell session
+      </button>
     </div>
   {/if}
 
@@ -677,36 +630,59 @@
   .folder-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 4px 3px;
+    gap: 8px;
+    padding: 6px 4px;
     margin-top: 4px;
     border-radius: 6px;
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
-    letter-spacing: 0.03em;
     user-select: none;
     cursor: grab;
   }
 
   .folder-icon {
-    font-size: 14px;
+    font-size: 18px;
   }
 
   .folder-name {
-    flex: 1;
-    min-width: 0;
+    flex-shrink: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .folder-header .close {
-    font-size: 12px;
+  .folder-header .dir-parent {
+    flex: 1;
+    text-align: right;
   }
 
-  .folder-header:hover .close {
+  .spawn-btn {
+    visibility: hidden;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+
+  .spawn-btn .material-symbols-outlined {
+    font-size: 14px;
+  }
+
+  .folder-header:hover .spawn-btn {
     visibility: visible;
+  }
+
+  .spawn-btn:hover {
+    background: var(--bg-subtle);
+    color: var(--accent);
   }
 
   .drop-hint {
