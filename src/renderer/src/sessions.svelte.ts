@@ -217,34 +217,22 @@ export async function restoreState(): Promise<void> {
   if (saved.recentDirs?.length) {
     recentDirs.push(...[...new Set(saved.recentDirs)].slice(0, RECENT_MAX))
   }
-  const seenClaudeIds = new Set<string>()
   for (const s of saved.sessions) {
-    // Drop legacy duplicates that earlier dev reloads may have persisted.
-    if (s.type === 'claude' && s.claudeSessionId) {
-      if (seenClaudeIds.has(s.claudeSessionId)) continue
-      seenClaudeIds.add(s.claudeSessionId)
-    }
     touchDir(s.cwd)
-    // v1 state files defaulted every name to the cwd basename — migrate
-    // those away ONCE, gated on the version so a v2 user who deliberately
-    // names a shell after its folder keeps that name. Claude names are
-    // always '' (the title is the source of truth).
-    const legacyBasename =
-      saved.version === 1 && s.name === (s.cwd.split(/[\\/]/).filter(Boolean).pop() ?? s.cwd)
     sessions.push(
       createSession({
         type: s.type,
         cwd: s.cwd,
-        name: s.type === 'claude' || legacyBasename ? '' : s.name,
+        // name is a shell-only label (enforced here against hand-edited
+        // state files — the title is a Claude session's source of truth).
+        name: s.type === 'shell' ? s.name : '',
         // Claude sessions resume their conversation; shells reopen fresh.
         resumeId: s.type === 'claude' ? s.claudeSessionId : null
       })
     )
     colorIndex++
   }
-  // towerWidth was persisted as railWidth before the rename — accept both.
-  const width = saved.towerWidth ?? saved.railWidth
-  if (width) ui.towerWidth = width
+  if (saved.towerWidth) ui.towerWidth = saved.towerWidth
   ui.focused = sessions[saved.focusedIndex]?.key ?? sessions[0]?.key ?? null
 }
 

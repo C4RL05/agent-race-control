@@ -12,13 +12,11 @@ export interface PersistedSession {
 }
 
 export interface AppState {
-  // v1 defaulted session names to the cwd basename; v2 names are pure user
-  // labels (the renderer migrates v1 names away on restore).
-  version: 1 | 2
+  // Pre-1.0 no-compat policy (see the kickoff doc): a schema change bumps
+  // this and loadState discards older files — factory reset, no migrations.
+  version: 2
   mode: 'system' | 'light' | 'dark'
   towerWidth?: number
-  // Legacy key — towerWidth was persisted as railWidth before the rename.
-  railWidth?: number
   zoomLevel?: number
   focusedIndex: number
   dirOrder?: string[]
@@ -35,7 +33,7 @@ function statePath(): string {
 export function loadState(): AppState | null {
   try {
     const state = JSON.parse(readFileSync(statePath(), 'utf8')) as AppState
-    return state.version === 1 || state.version === 2 ? state : null
+    return state.version === 2 ? state : null
   } catch {
     return null
   }

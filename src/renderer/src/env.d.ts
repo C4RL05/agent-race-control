@@ -1,15 +1,12 @@
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
 
-// Shape persisted to the state JSON in userData.
-// v1 defaulted session names to the cwd basename; v2 names are pure user
-// labels (restoreState migrates v1 names away once).
+// Shape persisted to the state JSON in userData. Pre-1.0 no-compat policy:
+// a schema change bumps version and older files are discarded on load.
 interface PersistedState {
-  version: 1 | 2
+  version: 2
   mode: 'system' | 'light' | 'dark'
   towerWidth?: number
-  // Legacy key — towerWidth was persisted as railWidth before the rename.
-  railWidth?: number
   focusedIndex: number
   dirOrder?: string[]
   dirColors?: Record<string, string>
