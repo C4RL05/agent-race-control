@@ -5,6 +5,11 @@ import type { ITheme } from '@xterm/xterm'
 // pins — plus the fg/accent overrides github-vscode-theme applies on top.
 // Do not tweak by eye; re-derive from the source if GitHub updates.
 
+// The one monospace decision — Terminal's xterm option and the preview's
+// CSS (via --mono) both read it. Box-drawing/glyph coverage matters here
+// (see the kickoff doc's terminal-font open item).
+export const MONO_FONT = '"Cascadia Mono", Consolas, monospace'
+
 export type Mode = 'system' | 'light' | 'dark'
 
 export interface Chrome {

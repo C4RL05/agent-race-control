@@ -13,6 +13,14 @@ if (!gotLock) {
 } else {
   let win: BrowserWindow | null = null
 
+  // Everything a renderer page owns in this process — one list, shared by
+  // both teardown hooks (page reload and quit), so a future per-page
+  // resource can't be released in one and leaked in the other.
+  function releasePageResources(): void {
+    killAllPtys()
+    disposeAllTails()
+  }
+
   // Window zoom, VS Code style (each level = ±20%). Persisted via the state
   // JSON (merged in main, like lastPickedDir).
   let zoomLevel = 0
@@ -70,14 +78,11 @@ if (!gotLock) {
       if (/^https?:/i.test(url)) void shell.openExternal(url)
     })
 
-    // If the renderer ever reloads (dev), the old page's PTYs would be
-    // orphaned in this process — kill them; the new page respawns via state.
-    // Same for transcript watchers: the new page re-subscribes on its own.
+    // If the renderer ever reloads (dev), the old page's PTYs and transcript
+    // watchers would be orphaned in this process — release them; the new
+    // page respawns and re-subscribes via state on its own.
     win.webContents.on('did-start-navigation', (event) => {
-      if (event.isMainFrame && !event.isSameDocument) {
-        killAllPtys()
-        disposeAllTails()
-      }
+      if (event.isMainFrame && !event.isSameDocument) releasePageResources()
     })
 
     // Chrome-level keys. Zoom follows Windows Terminal / VS Code convention
@@ -180,8 +185,7 @@ if (!gotLock) {
 
   app.on('will-quit', () => {
     flushState()
-    killAllPtys()
-    disposeAllTails()
+    releasePageResources()
   })
 
   // Windows-only app: closing the window quits.

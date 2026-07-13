@@ -3,6 +3,7 @@
   import { marked } from 'marked'
   import DOMPurify from 'dompurify'
   import { previewItems } from './sessions.svelte'
+  import { MONO_FONT } from './theme'
 
   // Read-only conversation preview: a pure view of the per-session item
   // cache the store fills from main's transcript tail (the stream is routed
@@ -42,11 +43,11 @@
   })
 </script>
 
-<div class="preview" bind:this={scroller} onscroll={onScroll}>
+<div class="preview" style:--mono={MONO_FONT} bind:this={scroller} onscroll={onScroll}>
   {#if items.length === 0}
     <div class="empty">No conversation yet.</div>
   {:else}
-    {#each items as item, i (i)}
+    {#each items as item}
       {#if item.kind === 'assistant'}
         <div class="assistant">{@html render(item.text)}</div>
       {:else if item.kind === 'user'}
@@ -73,13 +74,7 @@
     overflow-wrap: break-word;
   }
 
-  .empty {
-    height: 100%;
-    display: grid;
-    place-items: center;
-    font-size: 12px;
-    color: var(--fg-muted);
-  }
+  /* .empty comes from App.svelte's shared :global rule */
 
   .user {
     margin: 16px 0 10px;
@@ -100,7 +95,7 @@
     gap: 6px;
     margin: 2px 0;
     color: var(--fg-muted);
-    font-family: 'Cascadia Mono', Consolas, monospace;
+    font-family: var(--mono);
     font-size: 11px;
   }
 
@@ -145,7 +140,7 @@
   }
 
   .assistant :global(code) {
-    font-family: 'Cascadia Mono', Consolas, monospace;
+    font-family: var(--mono);
     font-size: 11.5px;
     background: var(--bg-subtle);
     padding: 1px 4px;

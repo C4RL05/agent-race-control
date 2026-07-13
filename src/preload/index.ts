@@ -1,10 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-
-type PreviewItem =
-  | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
-  | { kind: 'tool'; label: string }
+// Type-only: erased at build, so no runtime coupling to main.
+import type { PreviewItem } from '../main/transcript'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {

@@ -76,25 +76,36 @@ export function cleanTitle(title: string): string {
     .replace(/^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/, '')
 }
 
+// Every session literal in one place — defaults change here and nowhere
+// else. Claude starts at its prompt (idle); a shell is simply alive
+// (running).
+function createSession(init: {
+  type: 'shell' | 'claude'
+  cwd: string
+  name?: string
+  resumeId?: string | null
+}): Session {
+  return {
+    key: nextKey++,
+    type: init.type,
+    cwd: init.cwd,
+    name: init.name ?? '',
+    status: init.type === 'claude' ? 'idle' : 'running',
+    title: '',
+    ptyId: null,
+    claudeSessionId: null,
+    resumeId: init.resumeId ?? null,
+    view: 'terminal'
+  }
+}
+
 // dir given: spawn there (group header + buttons). No dir: OS folder picker.
 export async function newSession(type: 'shell' | 'claude', dir?: string): Promise<void> {
   const cwd = dir ?? (await window.arc.pickFolder())
   if (!cwd) return
   touchDir(cwd)
   touchRecent(cwd)
-  const session: Session = {
-    key: nextKey++,
-    type,
-    cwd,
-    name: '',
-    // Claude starts at its prompt (idle); a shell is simply alive (running).
-    status: type === 'claude' ? 'idle' : 'running',
-    title: '',
-    ptyId: null,
-    claudeSessionId: null,
-    resumeId: null,
-    view: 'terminal'
-  }
+  const session = createSession({ type, cwd })
   sessions.push(session)
   ui.focused = session.key
 }
@@ -104,20 +115,13 @@ export function duplicateSession(key: number): void {
   const index = sessions.findIndex((s) => s.key === key)
   const source = sessions[index]
   if (!source) return
-  const session: Session = {
-    key: nextKey++,
+  // A duplicated Claude session is a brand-new conversation — the source's
+  // label names a different one. Shell labels describe purpose; keep those.
+  const session = createSession({
     type: source.type,
     cwd: source.cwd,
-    // A duplicated Claude session is a brand-new conversation — the source's
-    // label names a different one. Shell labels describe purpose; keep those.
-    name: source.type === 'shell' ? source.name : '',
-    status: source.type === 'claude' ? 'idle' : 'running',
-    title: '',
-    ptyId: null,
-    claudeSessionId: null,
-    resumeId: null,
-    view: 'terminal'
-  }
+    name: source.type === 'shell' ? source.name : ''
+  })
   sessions.splice(index + 1, 0, session)
   ui.focused = session.key
 }
@@ -227,19 +231,15 @@ export async function restoreState(): Promise<void> {
     // always '' (the title is the source of truth).
     const legacyBasename =
       saved.version === 1 && s.name === (s.cwd.split(/[\\/]/).filter(Boolean).pop() ?? s.cwd)
-    sessions.push({
-      key: nextKey++,
-      type: s.type,
-      cwd: s.cwd,
-      name: s.type === 'claude' || legacyBasename ? '' : s.name,
-      status: s.type === 'claude' ? 'idle' : 'running',
-      title: '',
-      ptyId: null,
-      claudeSessionId: null,
-      // Claude sessions resume their conversation; shells just reopen fresh.
-      resumeId: s.type === 'claude' ? s.claudeSessionId : null,
-      view: 'terminal'
-    })
+    sessions.push(
+      createSession({
+        type: s.type,
+        cwd: s.cwd,
+        name: s.type === 'claude' || legacyBasename ? '' : s.name,
+        // Claude sessions resume their conversation; shells reopen fresh.
+        resumeId: s.type === 'claude' ? s.claudeSessionId : null
+      })
+    )
     colorIndex++
   }
   // towerWidth was persisted as railWidth before the rename — accept both.

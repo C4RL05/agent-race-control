@@ -5,6 +5,7 @@
   import { FitAddon } from '@xterm/addon-fit'
   import { ClipboardAddon } from '@xterm/addon-clipboard'
   import '@xterm/xterm/css/xterm.css'
+  import { MONO_FONT } from './theme'
 
   let {
     type = 'shell',
@@ -56,7 +57,7 @@
 
   onMount(() => {
     const t = new Terminal({
-      fontFamily: '"Cascadia Mono", Consolas, monospace',
+      fontFamily: MONO_FONT,
       // Match the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
       fontSize: 12,
       theme

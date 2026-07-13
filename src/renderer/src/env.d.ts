@@ -22,7 +22,10 @@ interface PersistedState {
   }>
 }
 
-// One entry of the read-only conversation preview (see src/main/transcript.ts).
+// One entry of the read-only conversation preview. Hand-copied from
+// src/main/transcript.ts (the exported source of truth, which preload
+// imports directly): the renderer program deliberately excludes node types,
+// so it cannot import from main — keep this copy in sync by hand.
 type PreviewItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }

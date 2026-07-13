@@ -27,14 +27,22 @@
   } from './sessions.svelte'
   import { DOT_COLORS } from './theme'
 
-  // Right-click color picker for a directory group header.
-  let colorMenu = $state<{ dir: string; x: number; y: number } | null>(null)
-  // Right-click context menu for a session row.
-  let sessionMenu = $state<{ key: number; x: number; y: number } | null>(null)
-  // Per-type spawn dropdowns (✳ / ⌨ in the filter bar): recent directories
-  // plus Browse… (OS folder picker). Sessions in a live directory are spawned
-  // from that group header's hover cluster instead.
-  let spawnMenu = $state<{ type: 'shell' | 'claude'; x: number; y: number } | null>(null)
+  // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
+  // for all three. spawn: the filter bar's per-type dropdowns — recent
+  // directories plus Browse…; sessions in a live directory spawn from the
+  // group header's hover cluster instead. color: right-click a group header.
+  // session: right-click a session row.
+  type Menu =
+    | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
+    | { kind: 'color'; dir: string; x: number; y: number }
+    | { kind: 'session'; key: number; x: number; y: number }
+  let menu = $state<Menu | null>(null)
+
+  // Clamp y so no menu opens off the bottom edge — the per-menu copies of
+  // this had drifted (spawn menus never clamped). height ≈ panel pixels.
+  function openMenu(next: Menu, height: number): void {
+    menu = { ...next, y: Math.min(next.y, window.innerHeight - height) }
+  }
 
   function dirLabel(dir: string): { base: string; parent: string } {
     const parts = dir.split(/[\\/]/).filter(Boolean)
@@ -222,7 +230,10 @@
           aria-label="New Claude session"
           onclick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect()
-            spawnMenu = { type: 'claude', x: rect.left, y: rect.bottom + 4 }
+            openMenu(
+              { kind: 'spawn', type: 'claude', x: rect.left, y: rect.bottom + 4 },
+              30 * recentDirs.length + 42
+            )
           }}
         >
           <span class="material-symbols-outlined">asterisk</span>
@@ -233,7 +244,10 @@
           aria-label="New shell session"
           onclick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect()
-            spawnMenu = { type: 'shell', x: rect.left, y: rect.bottom + 4 }
+            openMenu(
+              { kind: 'spawn', type: 'shell', x: rect.left, y: rect.bottom + 4 },
+              30 * recentDirs.length + 42
+            )
           }}
         >
           <span class="material-symbols-outlined">terminal_2</span>
@@ -312,11 +326,7 @@
           ondrop={() => dropOnDir(dir)}
           oncontextmenu={(e) => {
             e.preventDefault()
-            colorMenu = {
-              dir,
-              x: e.clientX,
-              y: Math.min(e.clientY, window.innerHeight - 260)
-            }
+            openMenu({ kind: 'color', dir, x: e.clientX, y: e.clientY }, 260)
           }}
         >
           <span class="material-symbols-outlined folder-icon">folder</span>
@@ -384,11 +394,7 @@
             onclick={() => (ui.focused = session.key)}
             oncontextmenu={(e) => {
               e.preventDefault()
-              sessionMenu = {
-                key: session.key,
-                x: e.clientX,
-                y: Math.min(e.clientY, window.innerHeight - 220)
-              }
+              openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
             }}
             onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
           >
@@ -529,152 +535,124 @@
     {/if}
   </main>
 
-  {#if spawnMenu}
+  {#if menu}
     <div
       class="menu-backdrop"
       role="presentation"
-      onclick={() => (spawnMenu = null)}
+      onclick={() => (menu = null)}
       oncontextmenu={(e) => {
         e.preventDefault()
-        spawnMenu = null
+        menu = null
       }}
     ></div>
-    <div class="menu" style:left={`${spawnMenu.x}px`} style:top={`${spawnMenu.y}px`}>
-      {#each recentDirs as dir (dir)}
-        {@const label = dirLabel(dir)}
-        <button
-          class="menu-item"
-          title={dir}
-          onclick={() => {
-            if (spawnMenu) void newSession(spawnMenu.type, dir)
-            spawnMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">folder</span>{label.base}
-          <span class="dir-parent">{label.parent}</span>
-        </button>
-      {/each}
-      {#if recentDirs.length > 0}
-        <div class="menu-divider"></div>
-      {/if}
-      <button
-        class="menu-item"
-        onclick={() => {
-          if (spawnMenu) void newSession(spawnMenu.type)
-          spawnMenu = null
-        }}
-      >
-        <span class="material-symbols-outlined">folder_open</span>Browse…
-      </button>
-    </div>
-  {/if}
-
-  {#if colorMenu}
-    <div
-      class="menu-backdrop"
-      role="presentation"
-      onclick={() => (colorMenu = null)}
-      oncontextmenu={(e) => {
-        e.preventDefault()
-        colorMenu = null
-      }}
-    ></div>
-    <div class="menu" style:left={`${colorMenu.x}px`} style:top={`${colorMenu.y}px`}>
-      {#each DOT_COLORS as entry (entry.name)}
-        <button
-          class="menu-item color"
-          onclick={() => {
-            if (colorMenu) setDirColor(colorMenu.dir, entry.hex)
-            colorMenu = null
-          }}
-        >
-          <span class="swatch" style:background={entry.hex}></span>{entry.name}
-        </button>
-      {/each}
-    </div>
-  {/if}
-
-  {#if sessionMenu}
-    {@const menuSession = sessions.find((s) => s.key === sessionMenu?.key)}
-    <div
-      class="menu-backdrop"
-      role="presentation"
-      onclick={() => (sessionMenu = null)}
-      oncontextmenu={(e) => {
-        e.preventDefault()
-        sessionMenu = null
-      }}
-    ></div>
-    {#if menuSession}
-      <div class="menu" style:left={`${sessionMenu.x}px`} style:top={`${sessionMenu.y}px`}>
-        <button
-          class="menu-item"
-          onclick={() => {
-            window.arc.openInExplorer(menuSession.cwd)
-            sessionMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">folder_open</span>Show in Explorer
-        </button>
-        <button
-          class="menu-item"
-          onclick={() => {
-            void navigator.clipboard.writeText(menuSession.cwd)
-            sessionMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">content_copy</span>Copy path
-        </button>
-        <button
-          class="menu-item"
-          onclick={() => {
-            duplicateSession(menuSession.key)
-            sessionMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">tab_duplicate</span>Duplicate session
-        </button>
-        <button
-          class="menu-item"
-          onclick={() => {
-            renaming = menuSession.key
-            sessionMenu = null
-          }}
-        >
-          <span class="material-symbols-outlined">edit</span>Rename
-        </button>
-        {#if menuSession.type === 'claude'}
+    <div class="menu" style:left={`${menu.x}px`} style:top={`${menu.y}px`}>
+      {#if menu.kind === 'spawn'}
+        {#each recentDirs as dir (dir)}
+          {@const label = dirLabel(dir)}
           <button
             class="menu-item"
+            title={dir}
             onclick={() => {
-              applyFolderColor(menuSession.key)
-              sessionMenu = null
+              if (menu?.kind === 'spawn') void newSession(menu.type, dir)
+              menu = null
             }}
           >
-            <span class="material-symbols-outlined">palette</span>Apply folder color
+            <span class="material-symbols-outlined">folder</span>{label.base}
+            <span class="dir-parent">{label.parent}</span>
           </button>
+        {/each}
+        {#if recentDirs.length > 0}
+          <div class="menu-divider"></div>
         {/if}
         <button
           class="menu-item"
           onclick={() => {
-            closeSession(menuSession.key)
-            sessionMenu = null
+            if (menu?.kind === 'spawn') void newSession(menu.type)
+            menu = null
           }}
         >
-          <span class="material-symbols-outlined">close</span>Close session
+          <span class="material-symbols-outlined">folder_open</span>Browse…
         </button>
-      </div>
-    {/if}
+      {:else if menu.kind === 'color'}
+        {#each DOT_COLORS as entry (entry.name)}
+          <button
+            class="menu-item color"
+            onclick={() => {
+              if (menu?.kind === 'color') setDirColor(menu.dir, entry.hex)
+              menu = null
+            }}
+          >
+            <span class="swatch" style:background={entry.hex}></span>{entry.name}
+          </button>
+        {/each}
+      {:else}
+        {@const menuSession = sessions.find((s) => menu?.kind === 'session' && s.key === menu.key)}
+        {#if menuSession}
+          <button
+            class="menu-item"
+            onclick={() => {
+              window.arc.openInExplorer(menuSession.cwd)
+              menu = null
+            }}
+          >
+            <span class="material-symbols-outlined">folder_open</span>Show in Explorer
+          </button>
+          <button
+            class="menu-item"
+            onclick={() => {
+              void navigator.clipboard.writeText(menuSession.cwd)
+              menu = null
+            }}
+          >
+            <span class="material-symbols-outlined">content_copy</span>Copy path
+          </button>
+          <button
+            class="menu-item"
+            onclick={() => {
+              duplicateSession(menuSession.key)
+              menu = null
+            }}
+          >
+            <span class="material-symbols-outlined">tab_duplicate</span>Duplicate session
+          </button>
+          <button
+            class="menu-item"
+            onclick={() => {
+              renaming = menuSession.key
+              menu = null
+            }}
+          >
+            <span class="material-symbols-outlined">edit</span>Rename
+          </button>
+          {#if menuSession.type === 'claude'}
+            <button
+              class="menu-item"
+              onclick={() => {
+                applyFolderColor(menuSession.key)
+                menu = null
+              }}
+            >
+              <span class="material-symbols-outlined">palette</span>Apply folder color
+            </button>
+          {/if}
+          <button
+            class="menu-item"
+            onclick={() => {
+              closeSession(menuSession.key)
+              menu = null
+            }}
+          >
+            <span class="material-symbols-outlined">close</span>Close session
+          </button>
+        {/if}
+      {/if}
+    </div>
   {/if}
 </div>
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === 'Escape') {
-      if (colorMenu) colorMenu = null
-      if (sessionMenu) sessionMenu = null
-      if (spawnMenu) spawnMenu = null
-    }
+    if (e.key === 'Escape' && menu) menu = null
   }}
 />
 
@@ -1146,7 +1124,9 @@
     min-height: 0;
   }
 
-  .empty {
+  /* Shared empty-state idiom — deliberately :global so the pane's
+     "No sessions" and the preview's "No conversation yet" stay one rule. */
+  :global(.empty) {
     height: 100%;
     display: grid;
     place-items: center;
