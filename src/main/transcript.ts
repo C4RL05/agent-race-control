@@ -127,8 +127,7 @@ class TranscriptTail {
   private watcher: FSWatcher | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private readTimer: NodeJS.Timeout | null = null
-  private reading = false
-  private dirty = false
+  private queue: Promise<void> = Promise.resolve()
   private disposed = false
 
   constructor(
@@ -184,28 +183,17 @@ class TranscriptTail {
   }
 
   // fs.watch fires in bursts during rapid appends — coalesce into one read.
+  // Reads serialize through a queued promise (offset/remainder must never be
+  // touched by two readOnce calls at once); a request landing mid-read just
+  // queues a cheap no-op pass (open + stat, size === offset, return). The
+  // catch keeps one failed link (e.g. a rejecting close()) from wedging the
+  // chain — readOnce already swallows everything else itself.
   private schedule(): void {
     if (this.readTimer || this.disposed) return
     this.readTimer = setTimeout(() => {
       this.readTimer = null
-      void this.read()
+      this.queue = this.queue.then(() => this.readOnce()).catch(() => {})
     }, 50)
-  }
-
-  private async read(): Promise<void> {
-    if (this.reading) {
-      this.dirty = true
-      return
-    }
-    this.reading = true
-    try {
-      do {
-        this.dirty = false
-        await this.readOnce()
-      } while (this.dirty && !this.disposed)
-    } finally {
-      this.reading = false
-    }
   }
 
   private async readOnce(): Promise<void> {
