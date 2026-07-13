@@ -144,6 +144,18 @@ Ship a real Windows app without growing the stack: **electron-builder** (26.15.3
 - **Icon: generated, never hand-drawn.** `build/icon.ico` (checked in) is produced by `scripts/make-icon.mjs` (`npx electron scripts/make-icon.mjs`): a hidden Electron window draws the *exact* canvas the running app draws — `sports_motorsports`, weight 300, white on black — at 16–256px, and the script composes a PNG-compressed ICO by hand. Zero image dependencies, zero drift between the runtime icon and the exe icon. Regenerate when the drawing changes.
 - **The load-bearing gotcha: `asarUnpack: node_modules/node-pty/**`.** The prebuilds (`conpty.node`, `winpty.dll`, `winpty-agent.exe`) must exist as real files on disk — native binaries can't be loaded or spawned from inside the asar archive. This is the packaged-app sibling of the "no `@electron/rebuild`, ever" rule.
 
+## Next: documentation screenshot harness (discussed 2026-07-13 — decisions pending, not yet built)
+
+Automated doc screenshots that stage the scene through channels the app already treats as truth — **no demo mode, no fake code paths in the app** (rejected on ethos grounds). Design agreed in discussion:
+
+- **`scripts/screenshot.mjs`** drives the real app via **`playwright-core`** (devDep, no browser downloads — it drives Electron directly): crafts a staging `state.json`, launches, waits on real DOM, types real keystrokes, `page.screenshot()` per theme into `images/`.
+- **One new blessed deviation to add when building:** main honors an **`ARC_USERDATA`** env override (dev-only, ~3 lines) so the harness uses a scratch profile and never touches the real tower.
+- **Sessions are real, near-free:** shells cost nothing; background "fake" Claude rows are real claudes idling at their prompt (zero tokens). Rows get named via the real rename flow (idle → `/rename` injection works, optimistic title shows).
+- **Traffic-light variety is staged through the observability channel:** the harness reads `arc-hooks.json` from the scratch userData and POSTs synthetic hook events (running/waiting) for background rows — the app's observations are staged, the app itself is never faked.
+- **The hero session is genuinely real:** harness types a haiku prompt, waits for that row's `.dot.idle` selector (status doubles as the completion signal). Reruns can `--resume` the pinned session id and spend nothing.
+- **Accepted:** one tiny prompt per fresh run; transcript droppings under `~/.claude/projects/` for staging cwds (hermetic `CLAUDE_CONFIG_DIR` rejected — fresh config dir demands login).
+- **Open decisions (Carlos):** (1) approve `playwright-core` devDep + `ARC_USERDATA` deviation; (2) shot list — proposal: dark + light of the hero terminal view, plus one Preview-tab shot; (3) accept the one-prompt-per-fresh-run cost.
+
 ## Definition of done (v1)
 One window. A timing tower of sessions — Claude Code sessions with name, color, and live status, plus plain shell sessions for everything else — so no other terminal window needs to exist. Click a session to drive it. Spawn (either type), close, and resume. Nothing on the out-of-scope list. That's it — ship it and stop.
 
