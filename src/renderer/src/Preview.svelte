@@ -2,13 +2,17 @@
   import { onMount, tick } from 'svelte'
   import { marked } from 'marked'
   import DOMPurify from 'dompurify'
+  import { previewItems } from './sessions.svelte'
 
-  // Read-only conversation preview: renders the PreviewItem stream that
-  // main tails out of the session's transcript JSONL. Observation only —
-  // nothing here can write to the session.
+  // Read-only conversation preview: a pure view of the per-session item
+  // cache the store fills from main's transcript tail (the stream is routed
+  // once, in App — see applyPreviewItems). Mounting arms the tail,
+  // unmounting only disarms it — the cache and main's byte offset both
+  // survive, so remounting renders instantly from memory and ships just the
+  // delta. Observation only — nothing here can write to the session.
   let { sessionId, cwd }: { sessionId: string; cwd: string } = $props()
 
-  let items = $state<PreviewItem[]>([])
+  const items = $derived(previewItems[sessionId] ?? [])
   let scroller: HTMLDivElement
 
   // Auto-scroll to the live tail unless the user has scrolled up to read.
@@ -26,19 +30,15 @@
   }
 
   onMount(() => {
-    const off = window.arc.transcript.onItems((sid, incoming, reset) => {
-      if (sid !== sessionId) return
-      if (reset) items = incoming
-      else items.push(...incoming)
-      if (stick) {
-        void tick().then(() => scroller?.scrollTo({ top: scroller.scrollHeight }))
-      }
-    })
     window.arc.transcript.watch(sessionId, cwd)
-    return () => {
-      off()
-      window.arc.transcript.unwatch(sessionId)
-    }
+    return () => window.arc.transcript.unwatch(sessionId)
+  })
+
+  // Follow appended items — and the initial cached render — unless the user
+  // has scrolled up.
+  $effect(() => {
+    void items.length
+    if (stick) void tick().then(() => scroller?.scrollTo({ top: scroller.scrollHeight }))
   })
 </script>
 

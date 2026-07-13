@@ -132,18 +132,18 @@ class TranscriptTail {
   private disposed = false
 
   constructor(
-    private path: string,
+    readonly path: string,
     private push: Push
-  ) {
-    this.arm()
-  }
+  ) {}
 
   // Watch the transcript's directory — the file itself may not exist yet (a
   // never-prompted session writes nothing: empty preview, not an error). If
   // even the directory is missing (first session in a cwd), retry until
-  // Claude creates it on the first prompt.
-  private arm(): void {
-    if (this.disposed) return
+  // Claude creates it on the first prompt. Idempotent: arming an armed (or
+  // arming-in-progress) tail is a no-op. Arming schedules a catch-up read
+  // from the stored offset, so a re-opened preview ships only the delta.
+  arm(): void {
+    if (this.disposed || this.watcher || this.retryTimer) return
     try {
       this.watcher = watch(dirname(this.path), (_event, filename) => {
         // Windows paths are case-insensitive; a null filename means "unknown
@@ -155,14 +155,32 @@ class TranscriptTail {
       this.watcher.on('error', () => this.rearm())
       this.schedule()
     } catch {
-      this.retryTimer = setTimeout(() => this.arm(), 1000)
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null
+        this.arm()
+      }, 1000)
     }
   }
 
   private rearm(): void {
     this.watcher?.close()
     this.watcher = null
-    this.retryTimer = setTimeout(() => this.arm(), 1000)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      this.arm()
+    }, 1000)
+  }
+
+  // Stop watching but KEEP offset and remainder — the preview closed, not
+  // the session. An in-flight read completes and still delivers; the
+  // renderer's cache accepts items whether or not a preview is showing.
+  disarm(): void {
+    this.watcher?.close()
+    this.watcher = null
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    if (this.readTimer) clearTimeout(this.readTimer)
+    this.readTimer = null
   }
 
   // fs.watch fires in bursts during rapid appends — coalesce into one read.
@@ -209,21 +227,26 @@ class TranscriptTail {
       const size = (await file.stat()).size
       if (this.disposed) return
       if (size < this.offset) {
-        // Truncated/replaced — start over, tell the renderer to reset.
+        // Truncated/replaced — start over; the from-zero read below re-ships
+        // everything, and its first batch resets the renderer's cache.
         this.offset = 0
         this.remainder = Buffer.alloc(0)
-        this.push([], true)
       }
       if (size === this.offset) return
+      // The first batch of any from-zero read carries reset=true — the
+      // renderer REPLACES its cache instead of appending, so replays
+      // (truncation, a re-created tail, an in-flight delivery racing a
+      // re-watch) can never duplicate items by construction.
+      let reset = this.offset === 0
       const buffer = Buffer.alloc(size - this.offset)
       await file.read(buffer, 0, buffer.length, this.offset)
       this.offset = size
       // Split on newlines at the byte level — a chunk boundary can fall
       // inside a multi-byte character, so only complete lines get decoded.
-      // Parse and push in batches: the first read of a watch is the WHOLE
-      // transcript (possibly many MB), and main's event loop also pumps
-      // every PTY — it must never block for the full parse, and no single
-      // IPC message should carry an unbounded array.
+      // Parse and push in batches: a from-zero read is the WHOLE transcript
+      // (possibly many MB), and main's event loop also pumps every PTY — it
+      // must never block for the full parse, and no single IPC message
+      // should carry an unbounded array.
       const BATCH = 400
       let data = Buffer.concat([this.remainder, buffer])
       let items: PreviewItem[] = []
@@ -233,13 +256,14 @@ class TranscriptTail {
         data = data.subarray(nl + 1)
         if (items.length >= BATCH) {
           if (this.disposed) return
-          this.push(items, false)
+          this.push(items, reset)
+          reset = false
           items = []
           await new Promise((resolve) => setImmediate(resolve))
         }
       }
       this.remainder = data
-      if (items.length && !this.disposed) this.push(items, false)
+      if ((items.length || reset) && !this.disposed) this.push(items, reset)
     } catch {
       // transient read failure — the next watch event retries
     } finally {
@@ -249,26 +273,42 @@ class TranscriptTail {
 
   dispose(): void {
     this.disposed = true
-    this.watcher?.close()
-    if (this.retryTimer) clearTimeout(this.retryTimer)
-    if (this.readTimer) clearTimeout(this.readTimer)
+    this.disarm()
   }
 }
 
+// One persistent tail per session id, living from the first watch until the
+// session closes (drop) or the page goes away (disposeAllTails). watch arms,
+// unwatch merely disarms — offset, remainder, and the renderer's item cache
+// all survive a closed preview, so reopening ships just the delta.
 const tails = new Map<string, TranscriptTail>()
 
 export function registerTranscriptHandlers(getWebContents: () => WebContents | null): void {
   ipcMain.on('transcript:watch', (_event, sessionId: string, cwd: string) => {
-    tails.get(sessionId)?.dispose()
-    tails.set(
-      sessionId,
-      new TranscriptTail(transcriptPath(cwd, sessionId), (items, reset) => {
+    const path = transcriptPath(cwd, sessionId)
+    let tail = tails.get(sessionId)
+    if (tail && tail.path !== path) {
+      // Same id, different cwd (dead-path spawn fallback resolved late) —
+      // the old offset points into the wrong file. Start over; the fresh
+      // from-zero read resets the renderer's cache.
+      tail.dispose()
+      tail = undefined
+    }
+    if (!tail) {
+      tail = new TranscriptTail(path, (items, reset) => {
         getWebContents()?.send('transcript:items', sessionId, items, reset)
       })
-    )
+      tails.set(sessionId, tail)
+    }
+    tail.arm()
   })
 
   ipcMain.on('transcript:unwatch', (_event, sessionId: string) => {
+    tails.get(sessionId)?.disarm()
+  })
+
+  // The session is gone — forget the tail entirely.
+  ipcMain.on('transcript:drop', (_event, sessionId: string) => {
     tails.get(sessionId)?.dispose()
     tails.delete(sessionId)
   })

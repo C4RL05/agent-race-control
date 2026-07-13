@@ -17,6 +17,7 @@
     renameSession,
     nudgeStatusFromKey,
     applySpawnCwd,
+    applyPreviewItems,
     dirColors,
     recentDirs,
     setDirColor,
@@ -72,6 +73,14 @@
   // Hook-driven status stream (main's localhost status server → renderer).
   $effect(() => {
     const off = window.arc.status.onChange(applyStatus)
+    return off
+  })
+
+  // Preview item stream (main's transcript tails → per-session store cache).
+  // Routed here, once — Preview components are pure views of the cache, so
+  // items landing while no preview is mounted are never lost.
+  $effect(() => {
+    const off = window.arc.transcript.onItems(applyPreviewItems)
     return off
   })
 
@@ -497,8 +506,13 @@
         </div>
         {#if session.view === 'preview'}
           <div class="view">
-            {#if session.claudeSessionId}
+            {#if session.claudeSessionId && ui.focused === session.key}
+              <!-- mounted for the focused session only: unmounting disarms
+                   the tail, and the store cache makes refocus instant -->
               <Preview sessionId={session.claudeSessionId} cwd={session.cwd} />
+            {:else if session.claudeSessionId}
+              <!-- unfocused, parked on its preview tab: nothing to render,
+                   nothing to tail — the host is display:none anyway -->
             {:else}
               <!-- spawn still in flight, or it failed (the terminal tab has
                    the error) — never a silently blank pane -->

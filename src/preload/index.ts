@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('arc', {
       type?: 'shell' | 'claude'
       cwd?: string
       resume?: string
-    }): Promise<{ id: string; claudeSessionId?: string } | { error: string }> =>
+    }): Promise<{ id: string; claudeSessionId?: string; cwd: string } | { error: string }> =>
       ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {
       ipcRenderer.send('pty:write', id, data)
@@ -63,6 +63,9 @@ contextBridge.exposeInMainWorld('arc', {
     },
     unwatch: (sessionId: string): void => {
       ipcRenderer.send('transcript:unwatch', sessionId)
+    },
+    drop: (sessionId: string): void => {
+      ipcRenderer.send('transcript:drop', sessionId)
     },
     onItems: (
       callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void

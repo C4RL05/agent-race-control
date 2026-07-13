@@ -55,8 +55,11 @@ interface Window {
       onExit: (callback: (id: string, exitCode: number) => void) => () => void
     }
     transcript: {
+      // watch arms the session's persistent tail; unwatch only disarms it
+      // (byte offset survives); drop forgets it — the session closed.
       watch: (sessionId: string, cwd: string) => void
       unwatch: (sessionId: string) => void
+      drop: (sessionId: string) => void
       onItems: (
         callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
       ) => () => void

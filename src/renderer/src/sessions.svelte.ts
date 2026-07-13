@@ -137,6 +137,19 @@ export function applyStatus(claudeSessionId: string, status: 'running' | 'waitin
   if (session && session.status !== 'exited') session.status = status
 }
 
+// Read-only preview items, cached per Claude session id. The cache outlives
+// the Preview component: a tab flip re-renders from memory while main's
+// disarmed tail keeps its byte offset, so reopening ships only the delta.
+// reset=true (the first batch of any from-zero read) REPLACES the cache —
+// that's what makes replays duplication-proof. Dropped with the session.
+export const previewItems = $state<Record<string, PreviewItem[]>>({})
+
+export function applyPreviewItems(sessionId: string, items: PreviewItem[], reset: boolean): void {
+  const cached = previewItems[sessionId]
+  if (reset || !cached) previewItems[sessionId] = [...items]
+  else cached.push(...items)
+}
+
 // Hooks are blind to user interrupts — documented: Stop fires only on
 // normally-completed turns, and no hook fires when a permission/question
 // dialog is dismissed. Infer those transitions from the keystrokes we
@@ -264,6 +277,11 @@ export function snapshotState(): PersistedState {
 export function closeSession(key: number): void {
   const index = sessions.findIndex((s) => s.key === key)
   if (index === -1) return
+  const claudeSessionId = sessions[index].claudeSessionId
+  if (claudeSessionId) {
+    delete previewItems[claudeSessionId]
+    window.arc.transcript.drop(claudeSessionId)
+  }
   sessions.splice(index, 1)
   if (ui.focused === key) {
     ui.focused = sessions[Math.min(index, sessions.length - 1)]?.key ?? null
