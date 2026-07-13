@@ -1,0 +1,26 @@
+# Packaging (see the kickoff doc's Packaging section for the decisions).
+# One artifact: NSIS one-click, per-user, unsigned. Build with `npm run dist`.
+appId: com.helloenjoy.agent-race-control
+productName: Agent Race Control
+# node-pty is Node-API with shipped prebuilds and its tarball can't be
+# gyp-rebuilt — electron-builder's default rebuild step both fails AND
+# poisons node_modules/node-pty with a partial build/ dir (see CLAUDE.md's
+# "no @electron/rebuild, ever"). Never turn this back on.
+npmRebuild: false
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+# Load-bearing: node-pty's prebuilds (conpty.node, winpty.dll,
+# winpty-agent.exe) must exist as real files on disk — native binaries can't
+# be loaded or spawned from inside the asar archive. Never remove this.
+asarUnpack:
+  - node_modules/node-pty/**
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+nsis:
+  oneClick: true
+  perMachine: false

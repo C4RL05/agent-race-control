@@ -11,6 +11,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 
 - `npm run dev` — electron-vite dev with HMR (main/preload changes need an app restart; renderer is hot)
 - `npm run build` / `npm run preview` — production build / run it
+- `npm run dist` — build + NSIS installer into `dist/` (`npm run dist:dir` for the unpacked smoke-test build; `npx electron scripts/make-icon.mjs` regenerates `build/icon.ico` from the same canvas drawing the app uses)
 - `npm run typecheck` — `tsc` (main/preload) + `svelte-check` (renderer). No test suite; verification is running the app.
 
 ## Architecture
@@ -21,7 +22,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 
 ## Gotchas that cost real time (don't relearn these)
 
-- **node-pty ≥1.1 is Node-API with shipped prebuilds — no `@electron/rebuild`, ever.** The npm tarball can't even be gyp-rebuilt (missing winpty files). Never leave a `build/` dir inside `node_modules/node-pty` (loader prefers it over prebuilds).
+- **node-pty ≥1.1 is Node-API with shipped prebuilds — no `@electron/rebuild`, ever.** The npm tarball can't even be gyp-rebuilt (missing winpty files). Never leave a `build/` dir inside `node_modules/node-pty` (loader prefers it over prebuilds). Packaged builds must keep `asarUnpack: node_modules/node-pty/**` (electron-builder.yml) — the prebuilds can't be loaded or spawned from inside the asar.
 - **Scrub `CLAUDECODE`/`CLAUDE_CODE_*`/`CLAUDE_EFFORT`… from spawned env** (`pty.ts`). If the app is launched from inside a Claude Code session, leaked markers make spawned claudes act as nested children — which **silently disables transcript persistence** (no resume). Fidelity = fresh terminal, not launcher ancestry.
 - **Status comes from hooks over HTTP**, injected per-session via `--settings <userData>/arc-hooks.json` → token-guarded localhost server. Observability only — always answer `200 {}`. Never write to the user's `~/.claude/settings.json`. The `~/.claude/jobs/` dir is background-agents only; foreground sessions never appear there. Hooks are blind to user interrupts (documented: `Stop` fires only on completed turns; nothing fires on dialog dismissal), so the renderer nudges status from observed keystrokes (`nudgeStatusFromKey` in `sessions.svelte.ts`) — hooks stay authoritative. The 60s `idle_prompt` Notification (the idle nag) is deliberately dropped — mapping it to waiting was a false amber; `waiting` comes from `PermissionRequest` (instant), with other Notification types as the safety net (`permission_prompt` trails ~6s).
 - **Resume:** we pin `--session-id <uuid>` at spawn; on restore, `--resume` only if the transcript `~/.claude/projects/<cwd-encoded>/<uuid>.jsonl` exists, else fresh with the same id (a never-prompted session writes no transcript; resuming it errors).

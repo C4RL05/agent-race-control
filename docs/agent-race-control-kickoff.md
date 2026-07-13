@@ -134,6 +134,15 @@ A toggleable **markdown preview of the conversation** as a second view of the se
 - **Flags accepted going in:** (1) the transcript format is internal/undocumented and drifts across Claude Code versions — parse defensively, skip unknown entry types, expect occasional breakage on Claude updates; (2) the preview shows the *pinned* conversation — an in-TUI `/resume` diverges preview from screen (same accepted asymmetry as relaunch-restore, see agent-view open item); (3) a never-prompted session has no transcript file — empty preview, not an error.
 - **Byproduct:** the same watcher can later feed tower row extras (context-fill %, model, last-activity) if we ever want them — one pipe, two consumers. Also parked from that discussion, hook-payload data we already receive but discard: current `tool_name` (PostToolUse), waiting reason (Notification `message`), last prompt (UserPromptSubmit) — plus a zero-data "time in state" gap timer. None of these are committed; the preview pane is.
 
+## Packaging (post-v1, settled 2026-07-13)
+
+Ship a real Windows app without growing the stack: **electron-builder** (26.15.3, devDep, verified against the registry) packaging the electron-vite `out/` build into `dist/` (gitignored).
+
+- **One artifact: NSIS one-click, per-user installer** — no admin prompt, Start Menu entry, real uninstaller. No portable build (portables re-extract every launch and leave no uninstall path). **Unsigned** — SmartScreen will warn on machines that aren't ours; acceptable until there are users, signing certs cost real money. **No auto-update** (minimal).
+- **appId `com.helloenjoy.agent-race-control`** — the Windows install/uninstall identity and AppUserModelID; annoying to change later, chosen deliberately. `productName` stays "Agent Race Control", so the installed app shares the dev userData dir (`%APPDATA%\Agent Race Control`).
+- **Icon: generated, never hand-drawn.** `build/icon.ico` (checked in) is produced by `scripts/make-icon.mjs` (`npx electron scripts/make-icon.mjs`): a hidden Electron window draws the *exact* canvas the running app draws — `sports_motorsports`, weight 300, white on black — at 16–256px, and the script composes a PNG-compressed ICO by hand. Zero image dependencies, zero drift between the runtime icon and the exe icon. Regenerate when the drawing changes.
+- **The load-bearing gotcha: `asarUnpack: node_modules/node-pty/**`.** The prebuilds (`conpty.node`, `winpty.dll`, `winpty-agent.exe`) must exist as real files on disk — native binaries can't be loaded or spawned from inside the asar archive. This is the packaged-app sibling of the "no `@electron/rebuild`, ever" rule.
+
 ## Definition of done (v1)
 One window. A timing tower of sessions — Claude Code sessions with name, color, and live status, plus plain shell sessions for everything else — so no other terminal window needs to exist. Click a session to drive it. Spawn (either type), close, and resume. Nothing on the out-of-scope list. That's it — ship it and stop.
 

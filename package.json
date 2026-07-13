@@ -3,6 +3,7 @@
   "productName": "Agent Race Control",
   "version": "0.1.0",
   "description": "Agent Race Control — a session-aware terminal cockpit for Claude Code on native Windows",
+  "author": "HelloEnjoy <carlos@helloenjoy.com>",
   "license": "MIT",
   "private": true,
   "main": "./out/main/index.js",
@@ -10,7 +11,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit && svelte-check --tsconfig ./src/renderer/tsconfig.json"
+    "typecheck": "tsc --noEmit && svelte-check --tsconfig ./src/renderer/tsconfig.json",
+    "dist": "electron-vite build && electron-builder",
+    "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "6.2.4",
@@ -20,6 +23,7 @@
     "@xterm/xterm": "^6.0.0",
     "dompurify": "^3.4.12",
     "electron": "43.1.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "marked": "^18.0.6",
     "material-symbols": "^0.45.7",

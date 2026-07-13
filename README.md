@@ -36,9 +36,11 @@ npm run dev        # development (HMR)
 
 npm run build
 npm run preview    # production build
+
+npm run dist       # Windows installer (NSIS, per-user) into dist/
 ```
 
-No installer yet — packaging is planned post-v1.
+The installer is unsigned — expect a SmartScreen warning on machines that aren't yours.
 
 ## State
 
