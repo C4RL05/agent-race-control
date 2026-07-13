@@ -12,7 +12,9 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 - `npm run dev` — electron-vite dev with HMR (main/preload changes need an app restart; renderer is hot)
 - `npm run build` / `npm run preview` — production build / run it
 - `npm run dist` — build + NSIS installer into `dist/` (`npm run dist:dir` for the unpacked smoke-test build; `npx electron scripts/make-icon.mjs` regenerates `build/icon.ico` from the same canvas drawing the app uses)
-- `npm run typecheck` — `tsc` (main/preload) + `svelte-check` (renderer). No test suite; verification is running the app.
+- `npm run typecheck` — `tsc` (main/preload) + `svelte-check` (renderer)
+- `npm run test` — Vitest, **unit tests for pure logic only** (transcript reducer + path encoding, title/status/preview-cache helpers). No component tests, no E2E — UI verification is running the app. Tests `vi.mock('electron')` per file; the svelte plugin in `vitest.config.ts` lets them import runes modules directly.
+- `npm run format` — Prettier (config locks in the existing style; `*.md` and the lockfile are ignored)
 
 ## Architecture
 

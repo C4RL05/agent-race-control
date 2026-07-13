@@ -1,0 +1,8 @@
+# Locks in the style the codebase already has — a format run should be
+# (near-)zero churn. The electron-vite template's config, deliberately.
+singleQuote: true
+semi: false
+printWidth: 100
+trailingComma: none
+plugins:
+  - prettier-plugin-svelte

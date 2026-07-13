@@ -1,0 +1,4 @@
+# npm owns this file's formatting.
+package-lock.json
+# The kickoff doc is the living spec — keep it byte-stable, prose isn't code.
+*.md

@@ -310,144 +310,143 @@
         {@const inDir = sessions.filter((s) => s.cwd === dir)}
         {@const visible = inDir.filter(sessionMatches)}
         {#if inDir.length > 0 && (!filterActive || visible.length > 0)}
-        {@const label = dirLabel(dir)}
-        <div
-          class="folder-header"
-          class:drop-hint={dropHint === `dir-${dir}`}
-          role="button"
-          tabindex="0"
-          draggable="true"
-          title={dir}
-          style:--dir-color={dirColors[dir]}
-          ondragstart={() => (dragging = { kind: 'dir', dir })}
-          ondragend={endDrag}
-          ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
-          ondragleave={() => (dropHint = null)}
-          ondrop={() => dropOnDir(dir)}
-          oncontextmenu={(e) => {
-            e.preventDefault()
-            openMenu({ kind: 'color', dir, x: e.clientX, y: e.clientY }, 260)
-          }}
-        >
-          <span class="material-symbols-outlined folder-icon">folder</span>
-          <span class="folder-name">{label.base}</span>
-          <span class="dir-meta">
-            <span class="dir-path">{label.parent}</span>
-            <span class="spawn-cluster">
-              <button
-                class="spawn-btn"
-                title="New Claude session here"
-                aria-label="New Claude session here"
-                onclick={(e) => {
-                  e.stopPropagation()
-                  void newSession('claude', dir)
-                }}
-              >
-                <span class="material-symbols-outlined">asterisk</span>
-              </button>
-              <button
-                class="spawn-btn"
-                title="New shell session here"
-                aria-label="New shell session here"
-                onclick={(e) => {
-                  e.stopPropagation()
-                  void newSession('shell', dir)
-                }}
-              >
-                <span class="material-symbols-outlined">terminal_2</span>
-              </button>
-              <button
-                class="spawn-btn"
-                title="Show in Explorer"
-                aria-label="Show in Explorer"
-                onclick={(e) => {
-                  e.stopPropagation()
-                  window.arc.openInExplorer(dir)
-                }}
-              >
-                <span class="material-symbols-outlined">folder_open</span>
-              </button>
-            </span>
-          </span>
-        </div>
-
-        {#each visible as session (session.key)}
+          {@const label = dirLabel(dir)}
           <div
-            class="row"
-            class:focused={ui.focused === session.key}
-            class:drop-hint={dropHint === `session-${session.key}`}
+            class="folder-header"
+            class:drop-hint={dropHint === `dir-${dir}`}
             role="button"
             tabindex="0"
             draggable="true"
-            ondragstart={() => (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
+            title={dir}
+            style:--dir-color={dirColors[dir]}
+            ondragstart={() => (dragging = { kind: 'dir', dir })}
             ondragend={endDrag}
-            ondragover={(e) =>
-              allowDrop(
-                e,
-                `session-${session.key}`,
-                dragging?.kind === 'session' &&
-                  dragging.key !== session.key &&
-                  dragging.cwd === session.cwd
-              )}
+            ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
             ondragleave={() => (dropHint = null)}
-            ondrop={() => dropOnSession(session)}
-            onclick={() => (ui.focused = session.key)}
+            ondrop={() => dropOnDir(dir)}
             oncontextmenu={(e) => {
               e.preventDefault()
-              openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
+              openMenu({ kind: 'color', dir, x: e.clientX, y: e.clientY }, 260)
             }}
-            onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
           >
-          <span
-            class="dot {session.status}"
-            class:plain={session.type === 'shell'}
-            title={session.status}
-          ></span>
-
-          <span
-            class="type-icon material-symbols-outlined"
-            title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-            >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
-          >
-
-          {#if renaming === session.key}
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              class="rename"
-              value={session.name || cleanTitle(session.title)}
-              autofocus
-              onblur={(e) => commitRename(session.key, e.currentTarget.value)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') commitRename(session.key, e.currentTarget.value)
-                if (e.key === 'Escape') renaming = null
-              }}
-            />
-          {:else}
-            <span
-              class="name"
-              role="button"
-              tabindex="-1"
-              title={`${session.cwd} — double-click to rename`}
-              ondblclick={() => (renaming = session.key)}
-              >{displayName(session)}</span
-            >
-          {/if}
-
-          <button
-            class="close"
-            title="Close session"
-            aria-label="Close session"
-            onclick={(e) => {
-              e.stopPropagation()
-              closeSession(session.key)
-            }}>×</button
-          >
+            <span class="material-symbols-outlined folder-icon">folder</span>
+            <span class="folder-name">{label.base}</span>
+            <span class="dir-meta">
+              <span class="dir-path">{label.parent}</span>
+              <span class="spawn-cluster">
+                <button
+                  class="spawn-btn"
+                  title="New Claude session here"
+                  aria-label="New Claude session here"
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    void newSession('claude', dir)
+                  }}
+                >
+                  <span class="material-symbols-outlined">asterisk</span>
+                </button>
+                <button
+                  class="spawn-btn"
+                  title="New shell session here"
+                  aria-label="New shell session here"
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    void newSession('shell', dir)
+                  }}
+                >
+                  <span class="material-symbols-outlined">terminal_2</span>
+                </button>
+                <button
+                  class="spawn-btn"
+                  title="Show in Explorer"
+                  aria-label="Show in Explorer"
+                  onclick={(e) => {
+                    e.stopPropagation()
+                    window.arc.openInExplorer(dir)
+                  }}
+                >
+                  <span class="material-symbols-outlined">folder_open</span>
+                </button>
+              </span>
+            </span>
           </div>
-        {/each}
+
+          {#each visible as session (session.key)}
+            <div
+              class="row"
+              class:focused={ui.focused === session.key}
+              class:drop-hint={dropHint === `session-${session.key}`}
+              role="button"
+              tabindex="0"
+              draggable="true"
+              ondragstart={() =>
+                (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
+              ondragend={endDrag}
+              ondragover={(e) =>
+                allowDrop(
+                  e,
+                  `session-${session.key}`,
+                  dragging?.kind === 'session' &&
+                    dragging.key !== session.key &&
+                    dragging.cwd === session.cwd
+                )}
+              ondragleave={() => (dropHint = null)}
+              ondrop={() => dropOnSession(session)}
+              onclick={() => (ui.focused = session.key)}
+              oncontextmenu={(e) => {
+                e.preventDefault()
+                openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
+              }}
+              onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
+            >
+              <span
+                class="dot {session.status}"
+                class:plain={session.type === 'shell'}
+                title={session.status}
+              ></span>
+
+              <span
+                class="type-icon material-symbols-outlined"
+                title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
+                >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
+              >
+
+              {#if renaming === session.key}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  class="rename"
+                  value={session.name || cleanTitle(session.title)}
+                  autofocus
+                  onblur={(e) => commitRename(session.key, e.currentTarget.value)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') commitRename(session.key, e.currentTarget.value)
+                    if (e.key === 'Escape') renaming = null
+                  }}
+                />
+              {:else}
+                <span
+                  class="name"
+                  role="button"
+                  tabindex="-1"
+                  title={`${session.cwd} — double-click to rename`}
+                  ondblclick={() => (renaming = session.key)}>{displayName(session)}</span
+                >
+              {/if}
+
+              <button
+                class="close"
+                title="Close session"
+                aria-label="Close session"
+                onclick={(e) => {
+                  e.stopPropagation()
+                  closeSession(session.key)
+                }}>×</button
+              >
+            </div>
+          {/each}
         {/if}
       {/each}
     </div>
-
   </aside>
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

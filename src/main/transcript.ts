@@ -53,8 +53,9 @@ type Block = { type?: string; text?: string; name?: string; input?: unknown }
 
 // Wrapped so the "never throw" contract survives format drift (?. guards
 // null/undefined but not, say, text becoming a number) — a single bad entry
-// must cost one line, not the whole chunk.
-function parseLine(line: string): PreviewItem[] {
+// must cost one line, not the whole chunk. Exported for the unit tests,
+// which double as documentation of the transcript shapes we handle.
+export function parseLine(line: string): PreviewItem[] {
   try {
     return parseLineInner(line)
   } catch {
@@ -94,7 +95,9 @@ function parseLineInner(line: string): PreviewItem[] {
       // tool_result entries mirror tool_use — already covered by the one-liner.
       if (content.some((block) => block?.type === 'tool_result')) return []
       const text = content
-        .map((block) => (block?.type === 'text' ? block.text : block?.type === 'image' ? '[image]' : ''))
+        .map((block) =>
+          block?.type === 'text' ? block.text : block?.type === 'image' ? '[image]' : ''
+        )
         .filter(Boolean)
         .join('\n\n')
       return text.trim() ? [{ kind: 'user', text }] : []

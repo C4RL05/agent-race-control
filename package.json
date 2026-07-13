@@ -12,6 +12,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./src/renderer/tsconfig.json",
+    "test": "vitest run",
+    "format": "prettier --write .",
     "dist": "electron-vite build && electron-builder",
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
@@ -27,10 +29,13 @@
     "electron-vite": "5.0.0",
     "marked": "^18.0.6",
     "material-symbols": "^0.45.7",
+    "prettier": "3.9.5",
+    "prettier-plugin-svelte": "4.1.1",
     "svelte": "5.56.4",
     "svelte-check": "4.7.2",
     "typescript": "5.9.3",
-    "vite": "7.3.6"
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
   },
   "dependencies": {
     "node-pty": "^1.1.0"

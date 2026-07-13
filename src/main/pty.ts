@@ -34,7 +34,9 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
     ): SpawnResult => {
       const bash = findGitBash()
       if (!bash) {
-        return { error: 'Git Bash not found. Install Git for Windows and restart Agent Race Control.' }
+        return {
+          error: 'Git Bash not found. Install Git for Windows and restart Agent Race Control.'
+        }
       }
 
       // Full environment passthrough — fidelity requires the shell to see
