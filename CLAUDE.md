@@ -5,7 +5,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 ## Two non-negotiable ethos rules
 
 1. **Minimal.** Check every feature idea against the doc's out-of-scope list (no git/PR/kanban/graphs/themes/DB). When tempted, flag it instead of building it.
-2. **Full-fidelity Claude Code.** The unmodified `claude` CLI runs in a real ConPTY. Never intercept, rewrite, or steer the byte stream. If it works in Windows Terminal but not here, it's our bug. Blessed deviations (all documented): `--session-id`/`--settings` spawn flags, user-initiated `/color` and `/rename` typing (injected only at the idle prompt — never while a dialog is open), the Ctrl+=/−/0 zoom keys, dev-only F12.
+2. **Full-fidelity Claude Code.** The unmodified `claude` CLI runs in a real ConPTY. Never intercept, rewrite, or steer the byte stream. If it works in Windows Terminal but not here, it's our bug. Blessed deviations (all documented): `--session-id`/`--settings` spawn flags, user-initiated `/color` and `/rename` typing (injected only at the idle prompt — never while a dialog is open), the Ctrl+=/−/0 zoom keys, dev-only F12, and the dev-only `ARC_USERDATA` userData override (screenshot harness scratch profile — ignored when packaged).
 
 ## Commands
 
@@ -15,6 +15,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 - `npm run typecheck` — `tsc` (main/preload) + `svelte-check` (renderer)
 - `npm run test` — Vitest, **unit tests for pure logic only** (transcript reducer + path encoding, title/status/preview-cache helpers). No component tests, no E2E — UI verification is running the app. Tests `vi.mock('electron')` per file; the svelte plugin in `vitest.config.ts` lets them import runes modules directly.
 - `npm run format` — Prettier (config locks in the existing style; `*.md` and the lockfile are ignored)
+- `npm run screenshots` — build + `scripts/screenshot.mjs`: stages the doc scene in a scratch profile (`ARC_USERDATA`) and writes `images/arc-hero-{dark,light}.png` + `arc-preview.png`. Real claudes, real keystrokes, synthetic hook POSTs for status variety; a short scripted conversation on a fresh run, reruns resume free (delete `.screenshot-profile/` to restage — required after editing the prompts)
 
 ## Architecture
 

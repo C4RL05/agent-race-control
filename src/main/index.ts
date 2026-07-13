@@ -6,6 +6,14 @@ import { registerTranscriptHandlers, disposeAllTails } from './transcript'
 import { loadState, saveState, flushState } from './state'
 import type { AppState } from './state'
 
+// Blessed dev-only deviation (screenshot harness, see the kickoff doc): a
+// scratch profile so staged runs never touch the real tower. Must be set
+// before the single-instance lock below — userData is the lock's identity,
+// so a harness run and the real app can coexist.
+if (!app.isPackaged && process.env['ARC_USERDATA']) {
+  app.setPath('userData', process.env['ARC_USERDATA'])
+}
+
 // One window, one taskbar icon — a second launch focuses the existing window.
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
