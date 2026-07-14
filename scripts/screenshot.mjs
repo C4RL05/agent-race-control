@@ -180,12 +180,13 @@ for (const [index, entry] of scene.entries()) {
 // The hero conversation is real: one prompt comparing F1 tyre compounds —
 // on-brand, and sized so the WHOLE session — Claude Code's welcome logo
 // included — stays in frame, while the answer gives the Preview real
-// markdown (a table, bold). The status dot doubles as the turn's
-// completion signal (UserPromptSubmit → running, Stop → idle). Rerun:
-// --resume already restored the whole conversation, spend nothing — which
-// also means: after editing PROMPTS, delete .screenshot-profile/ to restage.
+// markdown variety (a table, section headers, bullets, bold). The status
+// dot doubles as the turn's completion signal (UserPromptSubmit → running,
+// Stop → idle). Rerun: --resume already restored the whole conversation,
+// spend nothing — which also means: after editing PROMPTS, delete
+// .screenshot-profile/ to restage.
 const PROMPTS = [
-  'Compare the three dry F1 tyre compounds in a small markdown table, then give one bold takeaway'
+  'Compare the three dry F1 tyre compounds in a small markdown table, then a couple of short bulleted sections on how to use them in a race, and one bold takeaway'
 ]
 
 // Focus the visible terminal WITHOUT clicking inside claude's TUI — a real
