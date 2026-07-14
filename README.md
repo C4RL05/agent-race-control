@@ -4,7 +4,7 @@ A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native 
 
 Inspired by the **F1 timing tower**: a column of colored entries, each with a name and a live status, telling you the state of the whole race at a glance — then you click one to go on board.
 
-![Agent Race Control](images/arc-screenshot.png)
+![Agent Race Control](images/arc-hero-dark.png)
 
 Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** (ConPTY via node-pty). No SDK, no wrapper, no reimplementation — so everything the terminal has works by construction: rewind, `/btw`, agent view, remote control, resume, plan mode, MCP, hooks. If it works in Windows Terminal, it works here.
 
