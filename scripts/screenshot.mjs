@@ -234,10 +234,35 @@ await rows.nth(1).locator('.dot.running').waitFor({ timeout: 5_000 })
 await rows.nth(3).locator('.dot.waiting').waitFor({ timeout: 5_000 })
 
 mkdirSync(imagesDir, { recursive: true })
-async function shot(name) {
+// The outline is BAKED INTO the PNG — GitHub strips inline styles from
+// README markdown, so a border can't live there. Drawn on a canvas inside
+// the already-running page (no image dependencies, same trick as
+// make-icon.mjs), in the theme's own Primer border color: without it the
+// dark shot's #0d1117 dissolves into GitHub dark's identical background.
+async function shot(name, border) {
   const path = join(imagesDir, name)
   // animations disabled: the waiting dot's pulse rests at full opacity
-  await page.screenshot({ path, animations: 'disabled' })
+  const capture = await page.screenshot({ animations: 'disabled' })
+  const dataUrl = await page.evaluate(
+    async ([b64, color]) => {
+      // createImageBitmap from a Blob, not <img src="data:...">: the app's
+      // CSP (default-src 'self') rightly blocks data: URLs, but a Blob
+      // decode performs no resource load, so no policy applies.
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+      const canvas = document.createElement('canvas')
+      canvas.width = bitmap.width
+      canvas.height = bitmap.height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(bitmap, 0, 0)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.strokeRect(1, 1, bitmap.width - 2, bitmap.height - 2)
+      return canvas.toDataURL('image/png')
+    },
+    [capture.toString('base64'), border]
+  )
+  writeFileSync(path, Buffer.from(dataUrl.split(',')[1], 'base64'))
   console.log(path)
 }
 
@@ -256,12 +281,12 @@ async function parkPointer() {
 await rows.nth(0).click()
 await focusTerminal()
 await parkPointer()
-await shot('arc-hero-dark.png')
+await shot('arc-hero-dark.png', '#30363d')
 
 await page.locator('.host:visible .tab', { hasText: 'Preview' }).click()
 await page.locator('.preview .user').first().waitFor({ timeout: 30_000 })
 await parkPointer()
-await shot('arc-preview.png')
+await shot('arc-preview.png', '#30363d')
 await page.locator('.host:visible .tab', { hasText: 'Terminal' }).click()
 
 // Theme cycles system → light → dark; crafted state starts dark, two clicks
@@ -271,7 +296,7 @@ await themeButton.click()
 await themeButton.click()
 await focusTerminal()
 await parkPointer()
-await shot('arc-hero-light.png')
+await shot('arc-hero-light.png', '#d0d7de')
 
 // Quit through the real path — will-quit kills the PTYs, no orphaned conpty.
 await electronApp.evaluate(({ app }) => app.quit())
