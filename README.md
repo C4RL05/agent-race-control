@@ -21,6 +21,12 @@ Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** 
 - **Windows Terminal conventions** — Ctrl+Shift+C/V copy/paste, right-click copy/paste, file drop pastes the quoted path, Ctrl+=/−/0 window zoom. Zero new muscle memory, nothing shadowed.
 - **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, apply folder color, close
 
+## Preview
+
+Every Claude session carries a second tab: a **read-only conversation preview**, rendered as markdown — headers, bullets, tables, code — straight from the transcript Claude Code itself writes. Pure observation: nothing is injected and the terminal byte stream is untouched. It follows the conversation live, collapses tool calls to one-liners, and flips back and forth from the terminal instantly.
+
+![Conversation preview](images/arc-preview.png)
+
 ## Requirements
 
 - Windows 10 1809+ (ConPTY)
