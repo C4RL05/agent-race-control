@@ -84,22 +84,22 @@ describe('parseLine', () => {
     ])
   })
 
-  it('drops tool_result user entries (mirrored by the tool one-liner)', () => {
+  it('drops tool_result user entries (agent mechanics, not conversation)', () => {
     const content = [{ type: 'tool_result', content: 'output' }]
     expect(parseLine(line({ type: 'user', message: { content } }))).toEqual([])
   })
 
-  it('reduces assistant text and collapses tool_use to labeled one-liners', () => {
+  it('reduces assistant text and drops tool_use/thinking (agent mechanics)', () => {
     const content = [
       { type: 'text', text: 'On it.' },
       { type: 'thinking', thinking: 'hmm' },
       { type: 'tool_use', name: 'Edit', input: { file_path: 'D:\\x\\a.ts', old_string: 'y' } },
-      { type: 'tool_use', name: 'Mystery', input: { weird: true } }
+      { type: 'tool_use', name: 'Mystery', input: { weird: true } },
+      { type: 'text', text: 'Done.' }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
       { kind: 'assistant', text: 'On it.' },
-      { kind: 'tool', label: 'Edit D:\\x\\a.ts' },
-      { kind: 'tool', label: 'Mystery' }
+      { kind: 'assistant', text: 'Done.' }
     ])
   })
 

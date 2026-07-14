@@ -50,13 +50,8 @@
     {#each items as item}
       {#if item.kind === 'assistant'}
         <div class="assistant">{@html render(item.text)}</div>
-      {:else if item.kind === 'user'}
-        <div class="user">{item.text}</div>
       {:else}
-        <div class="tool" title={item.label}>
-          <span class="material-symbols-outlined">manufacturing</span>
-          <span class="tool-label">{item.label}</span>
-        </div>
+        <div class="user">{item.text}</div>
       {/if}
     {/each}
   {/if}
@@ -87,28 +82,6 @@
 
   .preview > :first-child {
     margin-top: 0;
-  }
-
-  .tool {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 2px 0;
-    color: var(--fg-muted);
-    font-family: var(--mono);
-    font-size: 11px;
-  }
-
-  .tool .material-symbols-outlined {
-    font-size: 13px;
-    flex-shrink: 0;
-  }
-
-  .tool-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .assistant {

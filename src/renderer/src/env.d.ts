@@ -26,7 +26,6 @@ interface PersistedState {
 type PreviewItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'tool'; label: string }
 
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {

@@ -8,8 +8,9 @@ import { basename, dirname, join } from 'node:path'
 
 // Read-only conversation preview: tail the transcript JSONL Claude Code
 // writes for the pinned session id, reduce it to the readable conversation
-// (user + assistant text; tool activity collapsed to one-liners), push the
-// items to the renderer. Pure observation — the PTY byte stream is untouched.
+// (user + assistant prose only; tool activity is dropped as agent mechanics),
+// push the items to the renderer. Pure observation — the PTY byte stream is
+// untouched.
 //
 // The transcript format is internal and drifts across Claude Code versions:
 // parse defensively, skip anything unrecognized, never throw.
@@ -29,27 +30,8 @@ export function transcriptPath(cwd: string, sessionId: string): string {
 export type PreviewItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'tool'; label: string }
 
-// One-liner for a tool_use block: tool name + its most telling input field
-// ("Edit D:\...\foo.ts", "Bash npm run dev"). Fields probed in rough order
-// of how identifying they are; unknown tools fall back to the bare name.
-function toolLabel(name: string, input: unknown): string {
-  const fields = ['file_path', 'command', 'pattern', 'query', 'url', 'skill', 'description']
-  let detail = ''
-  if (input && typeof input === 'object') {
-    for (const field of fields) {
-      const value = (input as Record<string, unknown>)[field]
-      if (typeof value === 'string' && value.trim()) {
-        detail = value
-        break
-      }
-    }
-  }
-  return `${name} ${detail.replace(/\s+/g, ' ').trim().slice(0, 200)}`.trim()
-}
-
-type Block = { type?: string; text?: string; name?: string; input?: unknown }
+type Block = { type?: string; text?: string }
 
 // Wrapped so the "never throw" contract survives format drift (?. guards
 // null/undefined but not, say, text becoming a number) — a single bad entry
@@ -92,7 +74,7 @@ function parseLineInner(line: string): PreviewItem[] {
       return content.trim() ? [{ kind: 'user', text: content }] : []
     }
     if (Array.isArray(content)) {
-      // tool_result entries mirror tool_use — already covered by the one-liner.
+      // tool_result is agent mechanics, not conversation — drop it.
       if (content.some((block) => block?.type === 'tool_result')) return []
       const text = content
         .map((block) =>
@@ -106,14 +88,13 @@ function parseLineInner(line: string): PreviewItem[] {
   }
 
   if (entry.type === 'assistant' && Array.isArray(entry.message?.content)) {
+    // Prose only. tool_use (and thinking, and anything else) is agent
+    // mechanics, not conversation — it never reaches the preview.
     const items: PreviewItem[] = []
     for (const block of entry.message.content) {
       if (block?.type === 'text' && block.text?.trim()) {
         items.push({ kind: 'assistant', text: block.text })
-      } else if (block?.type === 'tool_use' && typeof block.name === 'string') {
-        items.push({ kind: 'tool', label: toolLabel(block.name, block.input) })
       }
-      // thinking et al: skipped
     }
     return items
   }
