@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 // Type-only: erased at build, so no runtime coupling to main.
 import type { PreviewItem } from '../main/transcript'
+import type { HookEvent } from '../main/status'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
@@ -80,15 +81,13 @@ contextBridge.exposeInMainWorld('arc', {
     }
   },
   status: {
-    onChange: (
-      callback: (claudeSessionId: string, status: 'running' | 'waiting' | 'idle') => void
-    ): (() => void) => {
+    onChange: (callback: (claudeSessionId: string, event: HookEvent) => void): (() => void) => {
       const listener = (
         _event: IpcRendererEvent,
         claudeSessionId: string,
-        status: 'running' | 'waiting' | 'idle'
+        event: HookEvent
       ): void => {
-        callback(claudeSessionId, status)
+        callback(claudeSessionId, event)
       }
       ipcRenderer.on('session:status', listener)
       return () => ipcRenderer.removeListener('session:status', listener)

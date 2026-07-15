@@ -145,9 +145,38 @@ export function applySpawnCwd(key: number, cwd: string): void {
   touchDir(cwd)
 }
 
-export function applyStatus(claudeSessionId: string, status: 'running' | 'waiting' | 'idle'): void {
+// Mirrors HookEvent in src/main/status.ts (the renderer can't import from main).
+type HookEvent = 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
+
+// The hook half of the status state machine (the other half is
+// nudgeStatusFromKey). Main forwards the raw hook event; we own the meaning.
+// PermissionRequest fires the instant a dialog appears (incl. AskUserQuestion);
+// Notification is the safety net for other needs-input types (the idle_prompt
+// nag is dropped in main). PostToolUse is the subtle one: these are
+// non-blocking POSTs that can arrive out of order, so a PostToolUse landing
+// just after a turn's Stop would otherwise flip a just-finished session back
+// to red — and a backgrounded session has no keystroke nudge to correct it.
+// A tool finishing only means "still in a turn", so it may keep running/waiting
+// red but must never resurrect `idle`; only UserPromptSubmit (a new turn)
+// leaves idle. exited is terminal — nothing revives a dead session.
+export function applyStatus(claudeSessionId: string, event: HookEvent): void {
   const session = sessions.find((s) => s.claudeSessionId === claudeSessionId)
-  if (session && session.status !== 'exited') session.status = status
+  if (!session || session.status === 'exited') return
+  switch (event) {
+    case 'Stop':
+      session.status = 'idle'
+      break
+    case 'PermissionRequest':
+    case 'Notification':
+      session.status = 'waiting'
+      break
+    case 'UserPromptSubmit':
+      session.status = 'running'
+      break
+    case 'PostToolUse':
+      if (session.status !== 'idle') session.status = 'running'
+      break
+  }
 }
 
 // Read-only preview items, cached per Claude session id. The cache outlives

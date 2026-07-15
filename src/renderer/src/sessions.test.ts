@@ -5,7 +5,8 @@ import {
   cleanTitle,
   nudgeStatusFromKey,
   previewItems,
-  applyPreviewItems
+  applyPreviewItems,
+  applyStatus
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -73,6 +74,45 @@ describe('nudgeStatusFromKey', () => {
     nudgeStatusFromKey(2, '\x1b')
     nudgeStatusFromKey(3, '\r') // Enter only answers dialogs (waiting)
     expect(sessions.map((s) => s.status)).toEqual(['running', 'exited', 'running'])
+  })
+})
+
+// The hook → dot state machine. The load-bearing case is PostToolUse: a
+// non-blocking hook POST that arrives out of order (just after Stop) must not
+// resurrect a finished turn to red — see the applyStatus comment.
+describe('applyStatus', () => {
+  it('maps each hook event to its dot state', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyStatus('sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('running')
+    applyStatus('sid', 'PermissionRequest')
+    expect(sessions[0].status).toBe('waiting')
+    applyStatus('sid', 'Notification')
+    expect(sessions[0].status).toBe('waiting')
+    applyStatus('sid', 'Stop')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('PostToolUse continues an active turn but never resurrects a finished one', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    // stray/out-of-order PostToolUse after Stop must leave the finished turn idle
+    applyStatus('sid', 'PostToolUse')
+    expect(sessions[0].status).toBe('idle')
+    // mid-turn (e.g. a permission was just granted) it resumes red
+    sessions[0].status = 'waiting'
+    applyStatus('sid', 'PostToolUse')
+    expect(sessions[0].status).toBe('running')
+    // and keeps a running turn running
+    applyStatus('sid', 'PostToolUse')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('never revives an exited session, and ignores an unknown id', () => {
+    sessions.push(fakeSession({ key: 1, status: 'exited' }))
+    applyStatus('sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('exited')
+    applyStatus('nope', 'Stop') // no matching session — no throw, no-op
+    expect(sessions[0].status).toBe('exited')
   })
 })
 

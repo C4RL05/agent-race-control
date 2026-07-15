@@ -11,21 +11,26 @@ import { join } from 'node:path'
 // Observability only — every request is answered 200 `{}` immediately, so
 // hooks never block, deny, or modify anything Claude does.
 
-export type ClaudeStatus = 'running' | 'waiting' | 'idle'
+// The hook events each Agent Race Control Claude session POSTs here. Main only
+// forwards them (minus the idle_prompt nag, filtered below); the renderer's
+// status state machine owns what each one MEANS for the dot (applyStatus in
+// sessions.svelte.ts) — one owner, co-located with the keystroke nudge. It
+// needs the raw event, not a pre-mapped status, to reject an out-of-order
+// PostToolUse that would otherwise resurrect a just-finished turn.
+export type HookEvent =
+  | 'UserPromptSubmit'
+  | 'PostToolUse'
+  | 'PermissionRequest'
+  | 'Notification'
+  | 'Stop'
 
-// PermissionRequest fires the instant a dialog appears (permission dialogs
-// AND AskUserQuestion); the permission_prompt Notification trails it by ~6s
-// (it's the OS-notification pathway). Notification stays mapped as the
-// safety net for any other needs-input notification type.
-const EVENT_STATUS: Record<string, ClaudeStatus> = {
-  UserPromptSubmit: 'running',
-  PostToolUse: 'running',
-  PermissionRequest: 'waiting',
-  Notification: 'waiting',
-  Stop: 'idle'
-}
-
-const HOOK_EVENTS = Object.keys(EVENT_STATUS)
+const HOOK_EVENTS: HookEvent[] = [
+  'UserPromptSubmit',
+  'PostToolUse',
+  'PermissionRequest',
+  'Notification',
+  'Stop'
+]
 
 let settingsPath: string | null = null
 
@@ -35,7 +40,7 @@ export function getHookSettingsPath(): string | null {
 }
 
 export function startStatusServer(
-  onStatus: (claudeSessionId: string, status: ClaudeStatus) => void
+  onEvent: (claudeSessionId: string, event: HookEvent) => void
 ): Promise<void> {
   // Random token in the URL path so other local processes can't spoof status.
   const token = randomBytes(16).toString('hex')
@@ -64,8 +69,10 @@ export function startStatusServer(
           ) {
             return
           }
-          const status = payload.hook_event_name && EVENT_STATUS[payload.hook_event_name]
-          if (payload.session_id && status) onStatus(payload.session_id, status)
+          const event = payload.hook_event_name
+          if (payload.session_id && event && (HOOK_EVENTS as string[]).includes(event)) {
+            onEvent(payload.session_id, event as HookEvent)
+          }
         } catch {
           // malformed payload — ignore
         }

@@ -66,9 +66,15 @@ interface Window {
         callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
       ) => () => void
     }
+    // event is Claude Code's hook name (HookEvent in src/main/status.ts,
+    // hand-copied — the renderer can't import from main); applyStatus in
+    // sessions.svelte.ts maps each to a dot state.
     status: {
       onChange: (
-        callback: (claudeSessionId: string, status: 'running' | 'waiting' | 'idle') => void
+        callback: (
+          claudeSessionId: string,
+          event: 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
+        ) => void
       ) => () => void
     }
   }
