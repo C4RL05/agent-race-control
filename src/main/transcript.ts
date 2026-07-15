@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { open } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
@@ -216,6 +216,7 @@ class TranscriptTail {
   private watcher: FSWatcher | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private readTimer: NodeJS.Timeout | null = null
+  private pollTimer: NodeJS.Timeout | null = null
   private queue: Promise<void> = Promise.resolve()
   private disposed = false
 
@@ -242,12 +243,39 @@ class TranscriptTail {
       })
       this.watcher.on('error', () => this.rearm())
       this.schedule()
+      this.startPoll()
     } catch {
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null
         this.arm()
       }, 1000)
     }
+  }
+
+  // fs.watch on Windows drops change events — notably the *final* append of a
+  // turn, the exact byte range that carries the last assistant message. The
+  // watch has no retry for a missed event, so without a backstop the preview
+  // sits one turn behind until the next append happens to fire. A low-
+  // frequency stat poll is that backstop: if the file has grown past what we
+  // read, schedule a read. Only runs while armed (one preview at a time), so
+  // it's ~1 stat/sec, and the watch stays the low-latency path. Survives a
+  // rearm() on purpose — it's the safety net precisely when the watch is flaky.
+  private startPoll(): void {
+    if (this.pollTimer || this.disposed) return
+    this.pollTimer = setInterval(() => {
+      void stat(this.path)
+        .then(({ size }) => {
+          if (size !== this.offset) this.schedule()
+        })
+        .catch(() => {
+          // missing/transient — existence is the watch + retry path's job
+        })
+    }, 1000)
+  }
+
+  private stopPoll(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer)
+    this.pollTimer = null
   }
 
   private rearm(): void {
@@ -269,6 +297,7 @@ class TranscriptTail {
     this.retryTimer = null
     if (this.readTimer) clearTimeout(this.readTimer)
     this.readTimer = null
+    this.stopPoll()
   }
 
   // fs.watch fires in bursts during rapid appends — coalesce into one read.
