@@ -61,10 +61,19 @@ function touchRecent(cwd: string): void {
   if (recentDirs.length > RECENT_MAX) recentDirs.length = RECENT_MAX
 }
 
-export const ui = $state<{ focused: number | null; mode: Mode; towerWidth: number }>({
+export const ui = $state<{
+  focused: number | null
+  mode: Mode
+  towerWidth: number
+  // Settings toggle: recolor the status dots to pure traffic-light RGB
+  // (red/green/amber) instead of the Primer semantic tones, in both themes.
+  // Off by default — the Primer tones are the documented default.
+  statusRgb: boolean
+}>({
   focused: null,
   mode: 'system',
-  towerWidth: 240
+  towerWidth: 240,
+  statusRgb: false
 })
 
 // Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
@@ -210,6 +219,7 @@ export async function restoreState(): Promise<void> {
   const saved = await window.arc.state.load()
   if (!saved) return
   ui.mode = saved.mode
+  ui.statusRgb = saved.statusRgb ?? false
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
   // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
@@ -246,6 +256,7 @@ export function snapshotState(): PersistedState {
   return {
     version: 2,
     mode: ui.mode,
+    statusRgb: ui.statusRgb,
     towerWidth: ui.towerWidth,
     focusedIndex,
     dirOrder: dirOrder.filter((dir) => alive.some((s) => s.cwd === dir)),

@@ -36,6 +36,7 @@
     | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
     | { kind: 'color'; dir: string; x: number; y: number }
     | { kind: 'session'; key: number; x: number; y: number }
+    | { kind: 'settings'; x: number; y: number }
   let menu = $state<Menu | null>(null)
 
   // Clamp y so no menu opens off the bottom edge — the per-menu copies of
@@ -133,6 +134,19 @@
   const effective = $derived(ui.mode === 'system' ? (systemDark ? 'dark' : 'light') : ui.mode)
   const palette = $derived(palettes[effective])
 
+  // Status-dot fills. Default: the Primer semantic tones (per theme). With the
+  // Status RGB setting on: pure traffic-light RGB, identical in both themes.
+  // Scoped to the dots only — the close/clear hovers keep reading --danger.
+  const dots = $derived(
+    ui.statusRgb
+      ? { running: '#ff0000', waiting: '#ffaa00', idle: '#00ff00' }
+      : {
+          running: palette.chrome.danger,
+          waiting: palette.chrome.attention,
+          idle: palette.chrome.success
+        }
+  )
+
   let renaming = $state<number | null>(null)
 
   // Tower filter: text matches name/title/cwd; chips narrow by session type.
@@ -217,9 +231,10 @@
   style:--fg-muted={palette.chrome.fgMuted}
   style:--border={palette.chrome.border}
   style:--accent={palette.chrome.accent}
-  style:--success={palette.chrome.success}
-  style:--attention={palette.chrome.attention}
   style:--danger={palette.chrome.danger}
+  style:--dot-running={dots.running}
+  style:--dot-waiting={dots.waiting}
+  style:--dot-idle={dots.idle}
 >
   <aside class="tower" style:width={`${ui.towerWidth}px`}>
     <div class="tower-filter">
@@ -302,6 +317,17 @@
         onclick={cycleMode}
       >
         <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
+      </button>
+      <button
+        class="icon-btn"
+        title="Settings"
+        aria-label="Settings"
+        onclick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 50)
+        }}
+      >
+        <span class="material-symbols-outlined">tune</span>
       </button>
     </div>
 
@@ -584,6 +610,18 @@
             <span class="swatch" style:background={entry.hex}></span>{entry.name}
           </button>
         {/each}
+      {:else if menu.kind === 'settings'}
+        <!-- Toggles in place and stays open; the backdrop/Escape dismisses. -->
+        <button
+          class="menu-item"
+          role="menuitemcheckbox"
+          aria-checked={ui.statusRgb}
+          onclick={() => (ui.statusRgb = !ui.statusRgb)}
+        >
+          <span class="material-symbols-outlined"
+            >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
+          >Status RGB
+        </button>
       {:else}
         {@const menuSession = sessions.find((s) => menu?.kind === 'session' && s.key === menu.key)}
         {#if menuSession}
@@ -887,10 +925,11 @@
 
   /* Traffic lights from the user's point of view — every color answers
      "is this session mine to act on?": red = the agent is driving (hands
-     off), pulsing amber = it's asking for you, green = your turn. Hexes
-     are the Primer semantic tokens, roles remapped. */
+     off), pulsing amber = it's asking for you, green = your turn. The fills
+     come from --dot-* (see the `dots` derived): Primer semantic tokens with
+     roles remapped by default, pure RGB when the Status RGB setting is on. */
   .dot.running {
-    background: var(--danger);
+    background: var(--dot-running);
   }
 
   /* A live shell is not an agent state — neutral ink, a power LED.
@@ -901,12 +940,12 @@
   }
 
   .dot.waiting {
-    background: var(--attention);
+    background: var(--dot-waiting);
     animation: pulse 1.2s ease-in-out infinite;
   }
 
   .dot.idle {
-    background: var(--success);
+    background: var(--dot-idle);
   }
 
   .dot.exited {

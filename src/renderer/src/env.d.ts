@@ -6,6 +6,9 @@
 interface PersistedState {
   version: 2
   mode: 'system' | 'light' | 'dark'
+  // Optional/additive — absent means false, so it needs no version bump
+  // (the no-compat policy governs breaking changes, not compatible ones).
+  statusRgb?: boolean
   towerWidth?: number
   focusedIndex: number
   dirOrder?: string[]
