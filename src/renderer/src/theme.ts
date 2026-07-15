@@ -38,8 +38,13 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       fgMuted: '#656d76',
       border: '#d0d7de',
       accent: '#0969da',
-      success: '#1a7f37',
-      attention: '#9a6700',
+      // Status dots read from success/attention/danger. On white the Primer
+      // *.fg* tones (success #1a7f37, attention #9a6700) are text colors —
+      // muddy as small filled dots — so light uses the brighter *.emphasis*
+      // mid-tones. danger is unchanged (its .fg and .emphasis are both
+      // #cf222e). Dark keeps .fg below, already bright on its dark canvas.
+      success: '#2da44e',
+      attention: '#bf8700',
       danger: '#cf222e'
     },
     xterm: {
