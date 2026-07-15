@@ -89,11 +89,12 @@ describe('parseLine', () => {
     expect(parseLine(line({ type: 'user', message: { content } }))).toEqual([])
   })
 
-  it('reduces assistant text and drops tool_use/thinking (agent mechanics)', () => {
+  it('keeps assistant prose and drops thinking + non-code tools (Read/Bash/…)', () => {
     const content = [
       { type: 'text', text: 'On it.' },
       { type: 'thinking', thinking: 'hmm' },
-      { type: 'tool_use', name: 'Edit', input: { file_path: 'D:\\x\\a.ts', old_string: 'y' } },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'D:\\x\\a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'npm run dev' } },
       { type: 'tool_use', name: 'Mystery', input: { weird: true } },
       { type: 'text', text: 'Done.' }
     ]
@@ -101,6 +102,62 @@ describe('parseLine', () => {
       { kind: 'assistant', text: 'On it.' },
       { kind: 'assistant', text: 'Done.' }
     ])
+  })
+
+  // The code Claude writes lives only in tool_use — render it as a filename-
+  // labeled fenced block (revised 2026-07-15). These document the shapes.
+  it('renders a Write as a labeled fenced block, language from the extension', () => {
+    const content = [
+      {
+        type: 'tool_use',
+        name: 'Write',
+        input: { file_path: 'D:\\x\\a.ts', content: 'const x = 1' }
+      }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`a.ts`\n\n```ts\nconst x = 1\n```' }
+    ])
+  })
+
+  it('renders an Edit as a labeled +/- diff block', () => {
+    const content = [
+      {
+        type: 'tool_use',
+        name: 'Edit',
+        input: { file_path: 'a.svelte', old_string: 'old', new_string: 'new' }
+      }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`a.svelte`\n\n```diff\n- old\n+ new\n```' }
+    ])
+  })
+
+  it('renders a MultiEdit as one diff block over all edits', () => {
+    const edits = [
+      { old_string: 'a', new_string: 'b' },
+      { old_string: 'c', new_string: 'd' }
+    ]
+    const content = [{ type: 'tool_use', name: 'MultiEdit', input: { file_path: 'x.ts', edits } }]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`x.ts`\n\n```diff\n- a\n+ b\n\n- c\n+ d\n```' }
+    ])
+  })
+
+  it('outruns backtick runs inside the code so a fence cannot break out', () => {
+    // editing a Markdown file puts ``` in the body — the fence must be longer
+    const content = [
+      { type: 'tool_use', name: 'Write', input: { file_path: 'f.md', content: 'a\n```\nb' } }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`f.md`\n\n````markdown\na\n```\nb\n````' }
+    ])
+  })
+
+  it('drops a malformed code tool_use (no content/new_string) instead of throwing', () => {
+    const content = [
+      { type: 'tool_use', name: 'Edit', input: { file_path: 'a.ts', old_string: 'y' } }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([])
   })
 
   it('never throws on drifted shapes — one bad entry costs one line', () => {

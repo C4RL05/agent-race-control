@@ -8,9 +8,9 @@ import { basename, dirname, join } from 'node:path'
 
 // Read-only conversation preview: tail the transcript JSONL Claude Code
 // writes for the pinned session id, reduce it to the readable conversation
-// (user + assistant prose only; tool activity is dropped as agent mechanics),
-// push the items to the renderer. Pure observation — the PTY byte stream is
-// untouched.
+// (user + assistant prose, plus the code Claude writes rendered as fenced
+// blocks; other tool activity is dropped as agent mechanics), push the items
+// to the renderer. Pure observation — the PTY byte stream is untouched.
 //
 // The transcript format is internal and drifts across Claude Code versions:
 // parse defensively, skip anything unrecognized, never throw.
@@ -27,11 +27,108 @@ export function transcriptPath(cwd: string, sessionId: string): string {
   return join(configDir, 'projects', encoded, `${sessionId}.jsonl`)
 }
 
-export type PreviewItem =
-  | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+export type PreviewItem = { kind: 'user'; text: string } | { kind: 'assistant'; text: string }
 
-type Block = { type?: string; text?: string }
+type Block = { type?: string; text?: string; name?: string; input?: unknown }
+
+// File extension → fenced-code language hint. Cosmetic today (no syntax
+// highlighter ships) but keeps the fence honest and is ready if one ever
+// does. Unknown extensions get a bare fence — still a code box.
+const LANGS: Record<string, string> = {
+  ts: 'ts',
+  tsx: 'tsx',
+  mts: 'ts',
+  cts: 'ts',
+  js: 'js',
+  jsx: 'jsx',
+  mjs: 'js',
+  cjs: 'js',
+  svelte: 'svelte',
+  json: 'json',
+  css: 'css',
+  scss: 'scss',
+  html: 'html',
+  md: 'markdown',
+  yml: 'yaml',
+  yaml: 'yaml',
+  sh: 'bash',
+  bash: 'bash',
+  py: 'python',
+  rs: 'rust',
+  go: 'go',
+  toml: 'toml',
+  xml: 'xml'
+}
+
+function langOf(filePath: string): string {
+  const ext = /\.([a-z0-9]+)$/i.exec(filePath)?.[1]?.toLowerCase()
+  return (ext && LANGS[ext]) || ''
+}
+
+// Basename across either separator — transcripts carry absolute Windows paths,
+// and node's basename is platform-sensitive (a no-op on '\' under posix), so
+// don't rely on it here.
+function fileName(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || filePath
+}
+
+// A fenced block whose fence outruns any backtick run inside the body: editing
+// a Markdown file can put ``` in the code, and a too-short fence would break
+// out of the block. Minimum fence length 3.
+function fenced(body: string, lang: string): string {
+  const longest = Math.max(0, ...[...body.matchAll(/`+/g)].map((m) => m[0].length))
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  return `${fence}${lang}\n${body}\n${fence}`
+}
+
+// old → new as a +/- diff body. Not an LCS diff — the whole old block is
+// removed, the whole new block added — but the +/- prefixes read as a diff
+// even with no highlighter, which is the point. Strip one trailing newline so
+// it doesn't tack on a blank +/- line.
+function diffBody(oldStr: string, newStr: string): string {
+  const sign = (s: string, mark: string): string[] =>
+    s === ''
+      ? []
+      : s
+          .replace(/\n$/, '')
+          .split('\n')
+          .map((l) => mark + l)
+  return [...sign(oldStr, '- '), ...sign(newStr, '+ ')].join('\n')
+}
+
+// Code-writing tool_use → a filename-labeled fenced block, so the code Claude
+// writes reaches the preview (it lives ONLY in tool_use — see the assistant
+// branch). Write shows its content; Edit and MultiEdit show a +/- diff. Every
+// other tool (Read, Bash, Grep, tool_result…) returns null and stays dropped.
+function codeItem(name: string | undefined, input: unknown): PreviewItem | null {
+  if (!input || typeof input !== 'object') return null
+  const inp = input as Record<string, unknown>
+  const filePath = typeof inp['file_path'] === 'string' ? inp['file_path'] : ''
+  const label = filePath ? `\`${fileName(filePath)}\`\n\n` : ''
+
+  if (name === 'Write' && typeof inp['content'] === 'string') {
+    return { kind: 'assistant', text: label + fenced(inp['content'], langOf(filePath)) }
+  }
+  if (name === 'Edit' && typeof inp['new_string'] === 'string') {
+    const old = typeof inp['old_string'] === 'string' ? inp['old_string'] : ''
+    return { kind: 'assistant', text: label + fenced(diffBody(old, inp['new_string']), 'diff') }
+  }
+  if (name === 'MultiEdit' && Array.isArray(inp['edits'])) {
+    const parts = inp['edits']
+      .map((e) =>
+        e && typeof e === 'object'
+          ? diffBody(
+              String((e as Record<string, unknown>)['old_string'] ?? ''),
+              String((e as Record<string, unknown>)['new_string'] ?? '')
+            )
+          : ''
+      )
+      .filter(Boolean)
+    if (parts.length === 0) return null
+    return { kind: 'assistant', text: label + fenced(parts.join('\n\n'), 'diff') }
+  }
+  return null
+}
 
 // Wrapped so the "never throw" contract survives format drift (?. guards
 // null/undefined but not, say, text becoming a number) — a single bad entry
@@ -88,12 +185,20 @@ function parseLineInner(line: string): PreviewItem[] {
   }
 
   if (entry.type === 'assistant' && Array.isArray(entry.message?.content)) {
-    // Prose only. tool_use (and thinking, and anything else) is agent
-    // mechanics, not conversation — it never reaches the preview.
+    // Prose plus the code Claude writes. Text blocks render as-is; the
+    // code-writing tools (Write/Edit/MultiEdit) become filename-labeled fenced
+    // blocks (revised 2026-07-15). Dropping ALL tool activity — the 2026-07-14
+    // call — also dropped the code, which lives only in tool_use: in a working
+    // session no assistant turn interleaves prose with tool_use, so every code
+    // turn is tool-only and vanished entirely. thinking and non-code tools
+    // (Read, Bash, Grep…) still never reach the preview.
     const items: PreviewItem[] = []
     for (const block of entry.message.content) {
       if (block?.type === 'text' && block.text?.trim()) {
         items.push({ kind: 'assistant', text: block.text })
+      } else if (block?.type === 'tool_use') {
+        const code = codeItem(block.name, block.input)
+        if (code) items.push(code)
       }
     }
     return items
