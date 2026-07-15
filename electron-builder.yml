@@ -1,5 +1,6 @@
 # Packaging (see the kickoff doc's Packaging section for the decisions).
-# One artifact: NSIS one-click, per-user, unsigned. Build with `npm run dist`.
+# Two artifacts: NSIS one-click (per-user, unsigned) + a portable self-
+# extracting exe. Build with `npm run dist`.
 appId: com.helloenjoy.agent-race-control
 productName: Agent Race Control
 # node-pty is Node-API with shipped prebuilds and its tarball can't be
@@ -21,6 +22,13 @@ win:
   icon: build/icon.ico
   target:
     - nsis
+    - portable
 nsis:
   oneClick: true
   perMachine: false
+# Portable self-extracts to %TEMP% each launch and runs from there. node-pty's
+# unpacked prebuilds land in that temp dir as real files, so ConPTY spawning
+# works — but it's the reason the doc originally rejected portable; keep it
+# smoke-tested. requestExecutionLevel stays 'user' (default) — no admin prompt.
+portable:
+  artifactName: ${productName} Portable ${version}.${ext}
