@@ -9,6 +9,8 @@ interface PersistedState {
   // Optional/additive — absent means false, so it needs no version bump
   // (the no-compat policy governs breaking changes, not compatible ones).
   statusRgb?: boolean
+  // Selected terminal-font id (see theme.ts FONTS). Absent → the default.
+  font?: string
   towerWidth?: number
   focusedIndex: number
   dirOrder?: string[]
@@ -26,9 +28,7 @@ interface PersistedState {
 // src/main/transcript.ts (the exported source of truth, which preload
 // imports directly): the renderer program deliberately excludes node types,
 // so it cannot import from main — keep this copy in sync by hand.
-type PreviewItem =
-  | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string }
+type PreviewItem = { kind: 'user'; text: string } | { kind: 'assistant'; text: string }
 
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {

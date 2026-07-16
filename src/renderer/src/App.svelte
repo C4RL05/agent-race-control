@@ -25,7 +25,7 @@
     moveDir,
     moveSession
   } from './sessions.svelte'
-  import { DOT_COLORS } from './theme'
+  import { DOT_COLORS, FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
   // for all three. spawn: the filter bar's per-type dropdowns — recent
@@ -133,6 +133,11 @@
 
   const effective = $derived(ui.mode === 'system' ? (systemDark ? 'dark' : 'light') : ui.mode)
   const palette = $derived(palettes[effective])
+
+  // The selected terminal-font stack — fed to every terminal (xterm option)
+  // and preview (--mono). Changing it live-swaps all panes; see Terminal's
+  // font effect for the load-before-remeasure handling.
+  const monoFont = $derived(fontStack(ui.font))
 
   // Status-dot fills. Default: the Primer semantic tones (per theme). With the
   // Status RGB setting on: pure traffic-light RGB, identical in both themes.
@@ -324,7 +329,7 @@
         aria-label="Settings"
         onclick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect()
-          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 50)
+          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 230)
         }}
       >
         <span class="material-symbols-outlined">tune</span>
@@ -525,6 +530,7 @@
             resume={session.resumeId ?? undefined}
             active={ui.focused === session.key && session.view === 'terminal'}
             theme={palette.xterm}
+            fontFamily={monoFont}
             onSpawned={(ptyId, claudeSessionId, cwd) => {
               session.ptyId = ptyId
               session.claudeSessionId = claudeSessionId ?? null
@@ -540,7 +546,11 @@
             {#if session.claudeSessionId && ui.focused === session.key}
               <!-- mounted for the focused session only: unmounting disarms
                    the tail, and the store cache makes refocus instant -->
-              <Preview sessionId={session.claudeSessionId} cwd={session.cwd} />
+              <Preview
+                sessionId={session.claudeSessionId}
+                cwd={session.cwd}
+                fontFamily={monoFont}
+              />
             {:else if session.claudeSessionId}
               <!-- unfocused, parked on its preview tab: nothing to render,
                    nothing to tail — the host is display:none anyway -->
@@ -622,6 +632,23 @@
             >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
           >Status RGB
         </button>
+        <div class="menu-divider"></div>
+        <div class="menu-label">Font</div>
+        <!-- Each label previews itself in its own family (the icon keeps its
+             own font). font-family only — size stays the Ctrl+=/−/0 zoom. -->
+        {#each FONTS as font (font.id)}
+          <button
+            class="menu-item"
+            role="menuitemradio"
+            aria-checked={ui.font === font.id}
+            style:font-family={font.stack}
+            onclick={() => (ui.font = font.id)}
+          >
+            <span class="material-symbols-outlined"
+              >{ui.font === font.id ? 'radio_button_checked' : 'radio_button_unchecked'}</span
+            >{font.label}
+          </button>
+        {/each}
       {:else}
         {@const menuSession = sessions.find((s) => menu?.kind === 'session' && s.key === menu.key)}
         {#if menuSession}
@@ -708,7 +735,8 @@
   .shell {
     display: flex;
     height: 100%;
-    font-family: system-ui, sans-serif;
+    /* Bundled Inter (main.ts); system-ui falls in for non-latin titles/paths. */
+    font-family: 'Inter', system-ui, sans-serif;
     background: var(--bg);
     color: var(--fg);
   }
@@ -1223,6 +1251,15 @@
     height: 1px;
     margin: 4px 0;
     background: var(--border);
+  }
+
+  .menu-label {
+    padding: 2px 8px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
   }
 
   .dir-parent {

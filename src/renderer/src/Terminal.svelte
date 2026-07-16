@@ -5,7 +5,6 @@
   import { FitAddon } from '@xterm/addon-fit'
   import { ClipboardAddon } from '@xterm/addon-clipboard'
   import '@xterm/xterm/css/xterm.css'
-  import { MONO_FONT } from './theme'
 
   let {
     type = 'shell',
@@ -13,6 +12,7 @@
     resume,
     active = false,
     theme,
+    fontFamily,
     onSpawned,
     onExited,
     onTitle,
@@ -23,6 +23,7 @@
     resume?: string
     active?: boolean
     theme: ITheme
+    fontFamily: string
     // cwd is where the PTY actually started — may differ from the requested
     // directory (dead paths fall back to the home dir in main).
     onSpawned?: (ptyId: string, claudeSessionId: string | undefined, cwd: string) => void
@@ -55,9 +56,26 @@
     }
   })
 
+  // Live font swap (Settings picker). The bundled webfonts load lazily, so
+  // wait for the face before xterm re-measures the cell — otherwise the grid
+  // sizes to the fallback metrics and never reflows when the woff2 arrives.
+  // load() resolves immediately for the native choices (no @font-face) and
+  // near-instantly for the local files; apply on failure too (fallback is fine).
+  $effect(() => {
+    const family = fontFamily
+    const t = term
+    if (!t) return
+    const apply = (): void => {
+      if (term !== t) return
+      t.options.fontFamily = family
+      safeFit()
+    }
+    void document.fonts.load(`12px ${family}`).then(apply, apply)
+  })
+
   onMount(() => {
     const t = new Terminal({
-      fontFamily: MONO_FONT,
+      fontFamily,
       // Match the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
       fontSize: 12,
       theme

@@ -5,10 +5,53 @@ import type { ITheme } from '@xterm/xterm'
 // pins — plus the fg/accent overrides github-vscode-theme applies on top.
 // Do not tweak by eye; re-derive from the source if GitHub updates.
 
-// The one monospace decision — Terminal's xterm option and the preview's
-// CSS (via --mono) both read it. Box-drawing/glyph coverage matters here
-// (see the kickoff doc's terminal-font open item).
-export const MONO_FONT = '"Cascadia Mono", Consolas, monospace'
+// The terminal-font picker (Settings menu). Both the xterm option and the
+// preview's CSS (via --mono) read the selected stack. `id` is the stable key
+// persisted as ui.font; `bundled` fonts are self-hosted via @fontsource
+// (imported in main.ts) — the rest are Windows-native. Ligatures don't render
+// (xterm draws glyph-by-glyph, box-drawing via customGlyphs), so these earn
+// their place on letterforms — see the kickoff doc's resolved font item.
+export interface FontOption {
+  id: string
+  label: string
+  stack: string
+  bundled: boolean
+}
+
+export const FONTS: FontOption[] = [
+  {
+    id: 'cascadia',
+    label: 'Cascadia Mono',
+    stack: '"Cascadia Mono", Consolas, monospace',
+    bundled: false
+  },
+  { id: 'consolas', label: 'Consolas', stack: 'Consolas, monospace', bundled: false },
+  {
+    id: 'jetbrains-mono',
+    label: 'JetBrains Mono',
+    stack: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace',
+    bundled: true
+  },
+  {
+    id: 'fira-code',
+    label: 'Fira Code',
+    stack: '"Fira Code", "Cascadia Mono", Consolas, monospace',
+    bundled: true
+  },
+  {
+    id: 'ibm-plex-mono',
+    label: 'IBM Plex Mono',
+    stack: '"IBM Plex Mono", "Cascadia Mono", Consolas, monospace',
+    bundled: true
+  }
+]
+
+export const DEFAULT_FONT_ID = FONTS[0].id
+
+// Unknown/absent id (hand-edited state, a removed font) falls back to the default.
+export function fontStack(id: string): string {
+  return (FONTS.find((f) => f.id === id) ?? FONTS[0]).stack
+}
 
 export type Mode = 'system' | 'light' | 'dark'
 

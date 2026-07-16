@@ -3,7 +3,6 @@
   import { marked } from 'marked'
   import DOMPurify from 'dompurify'
   import { previewItems } from './sessions.svelte'
-  import { MONO_FONT } from './theme'
 
   // Read-only conversation preview: a pure view of the per-session item
   // cache the store fills from main's transcript tail (the stream is routed
@@ -11,7 +10,8 @@
   // unmounting only disarms it — the cache and main's byte offset both
   // survive, so remounting renders instantly from memory and ships just the
   // delta. Observation only — nothing here can write to the session.
-  let { sessionId, cwd }: { sessionId: string; cwd: string } = $props()
+  let { sessionId, cwd, fontFamily }: { sessionId: string; cwd: string; fontFamily: string } =
+    $props()
 
   const items = $derived(previewItems[sessionId] ?? [])
   let scroller: HTMLDivElement
@@ -43,7 +43,7 @@
   })
 </script>
 
-<div class="preview" style:--mono={MONO_FONT} bind:this={scroller} onscroll={onScroll}>
+<div class="preview" style:--mono={fontFamily} bind:this={scroller} onscroll={onScroll}>
   {#if items.length === 0}
     <div class="empty">No conversation yet.</div>
   {:else}
