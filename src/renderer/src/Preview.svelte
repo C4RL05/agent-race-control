@@ -1,6 +1,52 @@
+<script module lang="ts">
+  import { marked } from 'marked'
+
+  // Diff coloring (issue #1). The reducer emits Edit/MultiEdit as ```diff
+  // blocks with `+ `/`- ` prefixes (transcript.ts) — this is the highlighter
+  // that was missing. A `diff`-language fence renders each line as a block
+  // span tinted by its leading marker; every other code block falls through to
+  // marked's default (return false), so full-file Write listings stay plain.
+  // Registered at module scope so it runs once, not per preview mount.
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
+  // `+`/`-` mark added/removed; `+++`/`---` (file headers), `@@`, and context
+  // lines stay neutral, so a hand-written ```diff in prose colors correctly
+  // too. We build raw HTML, so escape the line ourselves; DOMPurify keeps the
+  // classes. Empty lines get a zero-width space to preserve their height.
+  function renderDiff(text: string): string {
+    const html = text
+      .replace(/\n$/, '')
+      .split('\n')
+      .map((line) => {
+        const cls = /^\+(?!\+\+)/.test(line)
+          ? ' diff-add'
+          : /^-(?!--)/.test(line)
+            ? ' diff-del'
+            : ''
+        return `<span class="dl${cls}">${escapeHtml(line) || '&#8203;'}</span>`
+      })
+      .join('')
+    return `<pre class="diff"><code class="language-diff">${html}</code></pre>`
+  }
+
+  marked.use({
+    renderer: {
+      code(token) {
+        if ((token.lang ?? '').split(/\s+/)[0] === 'diff') return renderDiff(token.text)
+        return false
+      }
+    }
+  })
+</script>
+
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { marked } from 'marked'
   import DOMPurify from 'dompurify'
   import { previewItems } from './sessions.svelte'
 
@@ -143,6 +189,36 @@
   .assistant :global(pre code) {
     background: none;
     padding: 0;
+  }
+
+  /* Diff blocks (issue #1) — faint per-line tint, green added / red deleted,
+     from the theme's success/danger tokens via color-mix so it tracks
+     light/dark. The +/- prefixes stay the non-color signal. code is
+     inline-block/min-width:100% so each line's tint bleeds to the block edges
+     and across horizontal scroll; the pre keeps vertical padding only, which
+     also keeps the tint clear of the rounded corners. */
+  .assistant :global(pre.diff) {
+    padding: 8px 0;
+  }
+
+  .assistant :global(pre.diff code) {
+    display: inline-block;
+    min-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .assistant :global(pre.diff .dl) {
+    display: block;
+    padding: 0 10px;
+    box-sizing: border-box;
+  }
+
+  .assistant :global(pre.diff .diff-add) {
+    background: color-mix(in srgb, var(--success) 15%, transparent);
+  }
+
+  .assistant :global(pre.diff .diff-del) {
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
   }
 
   .assistant :global(ul),

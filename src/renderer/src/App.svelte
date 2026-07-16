@@ -246,6 +246,7 @@
   style:--border={palette.chrome.border}
   style:--accent={palette.chrome.accent}
   style:--danger={palette.chrome.danger}
+  style:--success={palette.chrome.success}
   style:--dot-running={dots.running}
   style:--dot-waiting={dots.waiting}
   style:--dot-idle={dots.idle}
