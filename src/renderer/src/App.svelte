@@ -25,7 +25,7 @@
     moveDir,
     moveSession
   } from './sessions.svelte'
-  import { DOT_COLORS, FONTS, fontStack } from './theme'
+  import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
   // for all three. spawn: the filter bar's per-type dropdowns — recent
@@ -42,7 +42,10 @@
   // Clamp y so no menu opens off the bottom edge — the per-menu copies of
   // this had drifted (spawn menus never clamped). height ≈ panel pixels.
   function openMenu(next: Menu, height: number): void {
-    menu = { ...next, y: Math.min(next.y, window.innerHeight - height) }
+    // Clamp within the viewport (8px margins). A tall menu (Settings, with
+    // three font groups) scrolls via the .menu max-height instead of running
+    // off-screen — the floor keeps its top on-screen when height ≈ viewport.
+    menu = { ...next, y: Math.max(8, Math.min(next.y, window.innerHeight - height)) }
   }
 
   function dirLabel(dir: string): { base: string; parent: string } {
@@ -135,9 +138,14 @@
   const palette = $derived(palettes[effective])
 
   // The selected terminal-font stack — fed to every terminal (xterm option)
-  // and preview (--mono). Changing it live-swaps all panes; see Terminal's
-  // font effect for the load-before-remeasure handling.
+  // and the preview's code blocks (--mono). Changing it live-swaps all panes;
+  // see Terminal's font effect for the load-before-remeasure handling.
   const monoFont = $derived(fontStack(ui.font))
+
+  // The sans stacks (UI_FONTS): app chrome (--ui-font on .shell) and preview
+  // prose. Independent settings that happen to share the same font list.
+  const chromeFont = $derived(fontStack(ui.uiFont, UI_FONTS))
+  const previewFont = $derived(fontStack(ui.previewFont, UI_FONTS))
 
   // Status-dot fills. Default: the Primer semantic tones (per theme). With the
   // Status RGB setting on: pure traffic-light RGB, identical in both themes.
@@ -230,6 +238,7 @@
 
 <div
   class="shell"
+  style:--ui-font={chromeFont}
   style:--bg={palette.chrome.bg}
   style:--bg-subtle={palette.chrome.bgSubtle}
   style:--fg={palette.chrome.fg}
@@ -329,7 +338,7 @@
         aria-label="Settings"
         onclick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect()
-          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 230)
+          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 540)
         }}
       >
         <span class="material-symbols-outlined">tune</span>
@@ -549,7 +558,8 @@
               <Preview
                 sessionId={session.claudeSessionId}
                 cwd={session.cwd}
-                fontFamily={monoFont}
+                proseFont={previewFont}
+                codeFont={monoFont}
               />
             {:else if session.claudeSessionId}
               <!-- unfocused, parked on its preview tab: nothing to render,
@@ -569,6 +579,32 @@
       </div>
     {/if}
   </main>
+
+  <!-- One radio group per font setting. Each label previews itself in its own
+       family (the icon keeps its own font). font-family only — terminal/preview
+       size is the Ctrl+=/−/0 zoom. -->
+  {#snippet fontGroup(
+    label: string,
+    list: typeof FONTS,
+    selected: string,
+    pick: (id: string) => void
+  )}
+    <div class="menu-divider"></div>
+    <div class="menu-label">{label}</div>
+    {#each list as font (font.id)}
+      <button
+        class="menu-item"
+        role="menuitemradio"
+        aria-checked={selected === font.id}
+        style:font-family={font.stack}
+        onclick={() => pick(font.id)}
+      >
+        <span class="material-symbols-outlined"
+          >{selected === font.id ? 'radio_button_checked' : 'radio_button_unchecked'}</span
+        >{font.label}
+      </button>
+    {/each}
+  {/snippet}
 
   {#if menu}
     <div
@@ -632,23 +668,9 @@
             >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
           >Status RGB
         </button>
-        <div class="menu-divider"></div>
-        <div class="menu-label">Font</div>
-        <!-- Each label previews itself in its own family (the icon keeps its
-             own font). font-family only — size stays the Ctrl+=/−/0 zoom. -->
-        {#each FONTS as font (font.id)}
-          <button
-            class="menu-item"
-            role="menuitemradio"
-            aria-checked={ui.font === font.id}
-            style:font-family={font.stack}
-            onclick={() => (ui.font = font.id)}
-          >
-            <span class="material-symbols-outlined"
-              >{ui.font === font.id ? 'radio_button_checked' : 'radio_button_unchecked'}</span
-            >{font.label}
-          </button>
-        {/each}
+        {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
+        {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
+        {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}
       {:else}
         {@const menuSession = sessions.find((s) => menu?.kind === 'session' && s.key === menu.key)}
         {#if menuSession}
@@ -735,8 +757,9 @@
   .shell {
     display: flex;
     height: 100%;
-    /* Bundled Inter (main.ts); system-ui falls in for non-latin titles/paths. */
-    font-family: 'Inter', system-ui, sans-serif;
+    /* Interface-font picker (--ui-font, default Inter). system-ui in the
+       stacks catches non-latin titles/paths. */
+    font-family: var(--ui-font);
     background: var(--bg);
     color: var(--fg);
   }
@@ -1212,6 +1235,8 @@
     display: flex;
     flex-direction: column;
     min-width: 150px;
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     padding: 4px;
     background: var(--bg);
     border: 1px solid var(--border);

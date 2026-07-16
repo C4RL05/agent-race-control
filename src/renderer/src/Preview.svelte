@@ -10,8 +10,14 @@
   // unmounting only disarms it — the cache and main's byte offset both
   // survive, so remounting renders instantly from memory and ships just the
   // delta. Observation only — nothing here can write to the session.
-  let { sessionId, cwd, fontFamily }: { sessionId: string; cwd: string; fontFamily: string } =
-    $props()
+  // proseFont (sans, the Preview picker) styles the conversation text; codeFont
+  // (the terminal mono) styles code spans/blocks via --mono — code stays mono.
+  let {
+    sessionId,
+    cwd,
+    proseFont,
+    codeFont
+  }: { sessionId: string; cwd: string; proseFont: string; codeFont: string } = $props()
 
   const items = $derived(previewItems[sessionId] ?? [])
   let scroller: HTMLDivElement
@@ -43,7 +49,13 @@
   })
 </script>
 
-<div class="preview" style:--mono={fontFamily} bind:this={scroller} onscroll={onScroll}>
+<div
+  class="preview"
+  style:font-family={proseFont}
+  style:--mono={codeFont}
+  bind:this={scroller}
+  onscroll={onScroll}
+>
   {#if items.length === 0}
     <div class="empty">No conversation yet.</div>
   {:else}

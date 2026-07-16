@@ -9,8 +9,10 @@ interface PersistedState {
   // Optional/additive — absent means false, so it needs no version bump
   // (the no-compat policy governs breaking changes, not compatible ones).
   statusRgb?: boolean
-  // Selected terminal-font id (see theme.ts FONTS). Absent → the default.
+  // Selected font ids (see theme.ts FONTS/UI_FONTS). Absent → the default.
   font?: string
+  uiFont?: string
+  previewFont?: string
   towerWidth?: number
   focusedIndex: number
   dirOrder?: string[]

@@ -19,8 +19,10 @@ export interface AppState {
   // Optional/additive — absent means false, so it needs no version bump
   // (the no-compat policy governs breaking changes, not compatible ones).
   statusRgb?: boolean
-  // Selected terminal-font id (see the renderer's FONTS). Absent → the default.
+  // Selected font ids (see the renderer's FONTS/UI_FONTS). Absent → the default.
   font?: string
+  uiFont?: string
+  previewFont?: string
   towerWidth?: number
   zoomLevel?: number
   focusedIndex: number

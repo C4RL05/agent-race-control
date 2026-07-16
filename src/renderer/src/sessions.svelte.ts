@@ -1,4 +1,4 @@
-import { DOT_COLORS, DEFAULT_FONT_ID, type Mode } from './theme'
+import { DOT_COLORS, DEFAULT_FONT_ID, DEFAULT_UI_FONT_ID, type Mode } from './theme'
 
 export interface Session {
   key: number
@@ -69,14 +69,19 @@ export const ui = $state<{
   // (red/green/amber) instead of the Primer semantic tones, in both themes.
   // Off by default — the Primer tones are the documented default.
   statusRgb: boolean
-  // Selected terminal-font id (see theme.ts FONTS / fontStack).
+  // Selected font ids: terminal (mono, theme.ts FONTS), interface/app chrome
+  // and preview prose (both sans, theme.ts UI_FONTS).
   font: string
+  uiFont: string
+  previewFont: string
 }>({
   focused: null,
   mode: 'system',
   towerWidth: 240,
   statusRgb: false,
-  font: DEFAULT_FONT_ID
+  font: DEFAULT_FONT_ID,
+  uiFont: DEFAULT_UI_FONT_ID,
+  previewFont: DEFAULT_UI_FONT_ID
 })
 
 // Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
@@ -253,6 +258,8 @@ export async function restoreState(): Promise<void> {
   ui.mode = saved.mode
   ui.statusRgb = saved.statusRgb ?? false
   ui.font = saved.font ?? DEFAULT_FONT_ID
+  ui.uiFont = saved.uiFont ?? DEFAULT_UI_FONT_ID
+  ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
   // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
@@ -291,6 +298,8 @@ export function snapshotState(): PersistedState {
     mode: ui.mode,
     statusRgb: ui.statusRgb,
     font: ui.font,
+    uiFont: ui.uiFont,
+    previewFont: ui.previewFont,
     towerWidth: ui.towerWidth,
     focusedIndex,
     dirOrder: dirOrder.filter((dir) => alive.some((s) => s.cwd === dir)),

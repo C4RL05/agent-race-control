@@ -48,9 +48,30 @@ export const FONTS: FontOption[] = [
 
 export const DEFAULT_FONT_ID = FONTS[0].id
 
-// Unknown/absent id (hand-edited state, a removed font) falls back to the default.
-export function fontStack(id: string): string {
-  return (FONTS.find((f) => f.id === id) ?? FONTS[0]).stack
+// The sans list — shared by both the Interface (app chrome) and Preview (prose)
+// pickers. Inter (default) is bundled; Segoe UI and Arial are Windows-native
+// (Arial is Windows' Helvetica substitute — real Helvetica isn't free to ship);
+// Roboto and IBM Plex Sans are self-hosted (main.ts). Every stack keeps
+// system-ui as the fallback so non-latin titles/paths still render.
+export const UI_FONTS: FontOption[] = [
+  { id: 'inter', label: 'Inter', stack: "'Inter', system-ui, sans-serif", bundled: true },
+  { id: 'segoe', label: 'Segoe UI', stack: "'Segoe UI', system-ui, sans-serif", bundled: false },
+  { id: 'arial', label: 'Arial', stack: 'Arial, Helvetica, sans-serif', bundled: false },
+  { id: 'roboto', label: 'Roboto', stack: "'Roboto', system-ui, sans-serif", bundled: true },
+  {
+    id: 'ibm-plex-sans',
+    label: 'IBM Plex Sans',
+    stack: "'IBM Plex Sans', system-ui, sans-serif",
+    bundled: true
+  }
+]
+
+export const DEFAULT_UI_FONT_ID = UI_FONTS[0].id
+
+// Unknown/absent id (hand-edited state, a removed font) falls back to the
+// list's default. `list` picks the vocabulary — FONTS (mono) or UI_FONTS (sans).
+export function fontStack(id: string, list: FontOption[] = FONTS): string {
+  return (list.find((f) => f.id === id) ?? list[0]).stack
 }
 
 export type Mode = 'system' | 'light' | 'dark'
