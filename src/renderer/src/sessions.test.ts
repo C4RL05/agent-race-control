@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from './sessions.svelte'
 import {
   sessions,
   cleanTitle,
+  hasSpinner,
   nudgeStatusFromKey,
+  noteTitleForStatus,
   previewItems,
   applyPreviewItems,
   applyStatus,
@@ -37,6 +39,7 @@ describe('cleanTitle', () => {
   it('strips Claude state glyphs and MSYS prefixes, passes plain titles through', () => {
     expect(cleanTitle('✳ Fix the bug')).toBe('Fix the bug')
     expect(cleanTitle('✻✶ churning')).toBe('churning')
+    expect(cleanTitle('⠂ deploy')).toBe('deploy') // braille spinner frame
     expect(cleanTitle('MINGW64: /d/Projects/x')).toBe('/d/Projects/x')
     expect(cleanTitle('Fix the bug')).toBe('Fix the bug')
     expect(cleanTitle('')).toBe('')
@@ -47,14 +50,26 @@ describe('cleanTitle', () => {
 // so these keystroke nudges are the only cancel/answer signal — see the
 // kickoff doc's interrupts entry.
 describe('nudgeStatusFromKey', () => {
-  it('a lone Esc or Ctrl+C while running/waiting flips to idle', () => {
+  it('Ctrl+C interrupts from running or waiting → idle', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    nudgeStatusFromKey(1, '\x03')
+    expect(sessions[0].status).toBe('idle')
+
+    sessions[0].status = 'waiting'
+    nudgeStatusFromKey(1, '\x03')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('Esc dismisses a waiting dialog → idle, but leaves a running turn alone (issue #6)', () => {
     sessions.push(fakeSession({ key: 1, status: 'waiting' }))
     nudgeStatusFromKey(1, '\x1b')
     expect(sessions[0].status).toBe('idle')
 
+    // Esc while running may just be closing the /btw menu — it must not green a
+    // busy Claude (same lone 0x1b as a real interrupt, indistinguishable).
     sessions[0].status = 'running'
-    nudgeStatusFromKey(1, '\x03')
-    expect(sessions[0].status).toBe('idle')
+    nudgeStatusFromKey(1, '\x1b')
+    expect(sessions[0].status).toBe('running')
   })
 
   it('Enter while waiting means the dialog was answered — running', () => {
@@ -168,6 +183,58 @@ describe('TODO flag', () => {
     nudgeStatusFromKey(1, '\x03')
     expect(sessions[0].status).toBe('idle')
     expect(sessions[0].todo).toBe(false)
+  })
+})
+
+// The title-spinner interrupt watchdog: while a running turn's spinner keeps
+// animating we stay running; when frames stop for the grace window the turn
+// ended (completed OR interrupted, the hook-blind case) → idle. Scoped to
+// running so a waiting dialog is left alone. See the spinner-status probe.
+describe('noteTitleForStatus', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('hasSpinner picks out asterisk + braille frames, not plain names', () => {
+    expect(hasSpinner('✳ Fixing the bug')).toBe(true)
+    expect(hasSpinner('⠂ Claude Code')).toBe(true) // braille frame
+    expect(hasSpinner('claude')).toBe(false) // OS/ConPTY process title
+    expect(hasSpinner('my session')).toBe(false)
+  })
+
+  it('a running turn whose spinner stops for the grace window → idle', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, '✳ working')
+    vi.advanceTimersByTime(1199)
+    expect(sessions[0].status).toBe('running') // still within the grace window
+    vi.advanceTimersByTime(2)
+    expect(sessions[0].status).toBe('idle') // frames stopped → turn ended
+  })
+
+  it('continuing spinner frames keep it running (decay re-armed each frame)', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, '✳ a')
+    vi.advanceTimersByTime(1000)
+    noteTitleForStatus(1, '⠂ b') // another frame before the grace elapses
+    vi.advanceTimersByTime(1000)
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('leaves a waiting dialog alone — the decay only idles from running', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, '✳ working') // arm the decay while running
+    sessions[0].status = 'waiting' // a permission dialog appeared (hook)
+    vi.advanceTimersByTime(1300) // decay fires, but status is no longer running
+    expect(sessions[0].status).toBe('waiting')
+  })
+
+  it('a non-spinner title (or a non-running session) arms nothing', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, 'claude') // OS title, no spinner
+    sessions.push(fakeSession({ key: 2, status: 'idle' }))
+    noteTitleForStatus(2, '✳ working') // spinner, but session isn't running
+    vi.advanceTimersByTime(2000)
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[1].status).toBe('idle')
   })
 })
 

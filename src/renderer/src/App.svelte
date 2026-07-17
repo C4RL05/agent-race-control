@@ -25,7 +25,8 @@
     moveDir,
     moveSession,
     setStatus,
-    toggleTodo
+    toggleTodo,
+    noteTitleForStatus
   } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
@@ -564,7 +565,11 @@
             }}
             onExited={() => setStatus(session, 'exited')}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
-            onTitle={(title) => (session.title = title)}
+            onTitle={(title) => {
+              session.title = title
+              // The spinner in the title is our interrupt watchdog (issue #6).
+              noteTitleForStatus(session.key, title)
+            }}
           />
         </div>
         {#if session.view === 'preview'}

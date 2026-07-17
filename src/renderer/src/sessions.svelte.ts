@@ -96,12 +96,25 @@ export const ui = $state<{
   previewFont: DEFAULT_UI_FONT_ID
 })
 
-// Claude Code prefixes titles with a state glyph (✳ ✶ ✻ …) that churns while
-// it works; Git Bash prefixes the cwd with the MSYS system name (MINGW64:).
-// Strip both — the tower wants the conversation name / the path, nothing else.
+// Claude Code's animated title spinner: the asterisk churn (✳ ✶ ✻ …) it
+// originally used PLUS the braille frames (⠀-⣿) newer builds also cycle
+// through — both observed in the spinner-status probe. Shared so cleanTitle
+// (strip it from the name) and hasSpinner (detect it for status) never drift.
+const SPINNER_LEAD = /^[✳✶✻✽·∴※+*●○◐◑⠀-⣿]+\s*/u
+
+// Whether a raw terminal title carries the working spinner — i.e. Claude is
+// processing. The OS/ConPTY process title ("claude") and a settled name have no
+// leading spinner glyph, so this cleanly picks out the "busy" title frames.
+export function hasSpinner(title: string): boolean {
+  return SPINNER_LEAD.test(title)
+}
+
+// Claude Code prefixes titles with the spinner above while it works; Git Bash
+// prefixes the cwd with the MSYS system name (MINGW64:). Strip both — the tower
+// wants the conversation name / the path, nothing else.
 export function cleanTitle(title: string): string {
   return title
-    .replace(/^[✳✶✻✽·∴※+*●○◐◑]+\s*/u, '')
+    .replace(SPINNER_LEAD, '')
     .replace(/^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/, '')
 }
 
@@ -266,14 +279,58 @@ export function applyPreviewItems(sessionId: string, items: PreviewItem[], reset
 export function nudgeStatusFromKey(key: number, data: string): void {
   const session = sessions.find((s) => s.key === key)
   if (!session || session.type !== 'claude' || session.status === 'exited') return
-  // A lone ESC byte is the Esc key (arrows etc. arrive as longer 0x1b-prefixed
-  // chunks); 0x03 is Ctrl+C. Both abort the dialog/turn → back at the prompt.
-  if (data === '\x1b' || data === '\x03') {
+  // 0x03 is Ctrl+C — an unambiguous interrupt/cancel, so idle from either
+  // active state. A lone ESC byte is the Esc key (arrows etc. arrive as longer
+  // 0x1b-prefixed chunks).
+  if (data === '\x03') {
     if (session.status === 'running' || session.status === 'waiting') setStatus(session, 'idle')
+  } else if (data === '\x1b') {
+    // Esc dismisses an open dialog (waiting → idle). While RUNNING it is
+    // ambiguous — it ALSO just closes the slash-command menu / /btw overlay
+    // without stopping the turn (issue #6), and sends the same lone 0x1b, so it
+    // must NOT green a busy Claude. Ctrl+C remains the way to interrupt-to-idle.
+    if (session.status === 'waiting') setStatus(session, 'idle')
   } else if (data === '\r' && session.status === 'waiting') {
     // Enter answers the dialog — approve and deny-with-feedback both resume the turn.
     setStatus(session, 'running')
   }
+}
+
+// The terminal-title spinner is the one signal that survives a user interrupt:
+// Claude animates the title while a turn runs and stops when it ends — but NO
+// hook fires on an Esc/Ctrl+C interrupt (verified — the spinner-status probe),
+// and a lone Esc mid-turn is ambiguous with closing the /btw menu (issue #6).
+// So watch the RUNNING turn's spinner: every spinner-bearing title re-arms a
+// decay; when frames stop for SPINNER_IDLE_MS the turn ended (completed OR
+// interrupted) → idle. Scoped to `running` — the decay's own `running` guard
+// leaves a `waiting` dialog (hook-owned, spinner already stopped) alone, and
+// normal completion (Stop) / Ctrl+C (keystroke) still idle instantly; this is
+// the ~1.2s-latency safety net for the hook-blind interrupt. The OS/ConPTY
+// "claude" title has no spinner (hasSpinner), so the title's flap is ignored.
+const SPINNER_IDLE_MS = 1200
+const spinnerTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+function clearSpinnerTimer(key: number): void {
+  const timer = spinnerTimers.get(key)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    spinnerTimers.delete(key)
+  }
+}
+
+export function noteTitleForStatus(key: number, title: string): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.type !== 'claude' || session.status !== 'running') return
+  if (!hasSpinner(title)) return
+  clearSpinnerTimer(key)
+  spinnerTimers.set(
+    key,
+    setTimeout(() => {
+      spinnerTimers.delete(key)
+      const s = sessions.find((x) => x.key === key)
+      if (s && s.status === 'running') setStatus(s, 'idle')
+    }, SPINNER_IDLE_MS)
+  )
 }
 
 // Reorder directory groups: move `dir` before `beforeDir`.
@@ -380,6 +437,7 @@ export function snapshotState(): PersistedState {
 export function closeSession(key: number): void {
   const index = sessions.findIndex((s) => s.key === key)
   if (index === -1) return
+  clearSpinnerTimer(key)
   const claudeSessionId = sessions[index].claudeSessionId
   if (claudeSessionId) {
     delete previewItems[claudeSessionId]
