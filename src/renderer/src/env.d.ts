@@ -68,12 +68,16 @@ interface Window {
         callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
       ) => () => void
     }
-    // event is Claude Code's hook name (HookEvent in src/main/status.ts,
-    // hand-copied — the renderer can't import from main); applyStatus in
-    // sessions.svelte.ts maps each to a dot state.
+    // hookToken is the session's stable URL routing token (its spawn id);
+    // claudeSessionId is the payload's CURRENT conversation id, which changes
+    // on `/clear`. event is Claude Code's hook name (HookEvent in
+    // src/main/status.ts, hand-copied — the renderer can't import from main);
+    // applyStatus in sessions.svelte.ts maps each to a dot state and follows a
+    // changed conversation id to the new transcript.
     status: {
       onChange: (
         callback: (
+          hookToken: string,
           claudeSessionId: string,
           event: 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
         ) => void

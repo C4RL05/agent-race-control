@@ -544,6 +544,9 @@
             onSpawned={(ptyId, claudeSessionId, cwd) => {
               session.ptyId = ptyId
               session.claudeSessionId = claudeSessionId ?? null
+              // Immutable hook routing token; claudeSessionId may change on
+              // /clear, hookToken never does (see applyStatus, issue #2).
+              session.hookToken = claudeSessionId ?? null
               applySpawnCwd(session.key, cwd)
             }}
             onExited={() => (session.status = 'exited')}

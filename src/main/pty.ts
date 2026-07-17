@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { findGitBash } from './bash'
-import { getHookSettingsPath } from './status'
+import { writeSessionHooks } from './status'
 import { transcriptPath } from './transcript'
 
 // A session that never exchanged a prompt writes no transcript, so --resume
@@ -88,7 +88,10 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         let cmd = canResume
           ? `exec claude --resume ${claudeSessionId}`
           : `exec claude --session-id ${claudeSessionId}`
-        const hookSettings = getHookSettingsPath()
+        // Per-session hooks: the spawn id is the URL's routing token, so this
+        // session's hooks keep arriving here even after `/clear` mints a new
+        // conversation id (see status.ts + issue #2).
+        const hookSettings = writeSessionHooks(claudeSessionId)
         if (hookSettings) cmd += ` --settings '${hookSettings.replace(/\\/g, '/')}'`
         args = ['--login', '-i', '-c', cmd]
       } else {

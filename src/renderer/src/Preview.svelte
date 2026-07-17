@@ -46,7 +46,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { tick } from 'svelte'
   import DOMPurify from 'dompurify'
   import { previewItems } from './sessions.svelte'
 
@@ -82,9 +82,13 @@
     return DOMPurify.sanitize(marked.parse(text, { async: false }), { FORBID_ATTR: ['style'] })
   }
 
-  onMount(() => {
-    window.arc.transcript.watch(sessionId, cwd)
-    return () => window.arc.transcript.unwatch(sessionId)
+  // Arm the tail for the current conversation id, re-arming if it changes —
+  // `/clear` re-points sessionId to a fresh transcript mid-mount (issue #2), so
+  // the cleanup disarms the old id and the re-run watches the new one.
+  $effect(() => {
+    const id = sessionId
+    window.arc.transcript.watch(id, cwd)
+    return () => window.arc.transcript.unwatch(id)
   })
 
   // Follow appended items — and the initial cached render — unless the user

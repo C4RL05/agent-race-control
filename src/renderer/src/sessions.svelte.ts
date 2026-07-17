@@ -16,7 +16,15 @@ export interface Session {
   // conversation's name; Git Bash sets it to the cwd. Observation only.
   title: string
   ptyId: string | null
+  // The session's CURRENT Claude conversation id — the pinned spawn id, but
+  // Claude Code mints a fresh one on `/clear`, so the hook stream re-points it
+  // (see applyStatus). Owns the transcript file the preview tails and the id
+  // resumed on restart.
   claudeSessionId: string | null
+  // Immutable per-session hook routing token (== the spawn id), set alongside
+  // claudeSessionId at spawn. Hooks route on this even after `/clear` changes
+  // claudeSessionId, so status stays attributed to the right session.
+  hookToken: string | null
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
   // Which pane tab is showing: the live terminal or the read-only
@@ -111,6 +119,7 @@ function createSession(init: {
     title: '',
     ptyId: null,
     claudeSessionId: null,
+    hookToken: null,
     resumeId: init.resumeId ?? null,
     view: 'terminal'
   }
@@ -156,20 +165,40 @@ export function applySpawnCwd(key: number, cwd: string): void {
 // Mirrors HookEvent in src/main/status.ts (the renderer can't import from main).
 type HookEvent = 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
 
+// `/clear` (and an in-TUI `/resume`) makes Claude Code mint a new conversation
+// id + transcript file mid-session. Hooks route on the stable hookToken, so we
+// still find the session; when the payload's id diverges from the one we hold,
+// follow it — adopt the new id, forget the old transcript tail and preview
+// cache, and let the Preview's watch re-point (its sessionId prop is this id).
+// Without this the preview froze on the pre-clear conversation (issue #2).
+function switchClaudeSession(session: Session, nextId: string): void {
+  const prev = session.claudeSessionId
+  if (prev) {
+    delete previewItems[prev]
+    // window is absent in the unit-test env; the store is otherwise pure.
+    globalThis.window?.arc?.transcript.drop(prev)
+  }
+  session.claudeSessionId = nextId
+}
+
 // The hook half of the status state machine (the other half is
-// nudgeStatusFromKey). Main forwards the raw hook event; we own the meaning.
-// PermissionRequest fires the instant a dialog appears (incl. AskUserQuestion);
-// Notification is the safety net for other needs-input types (the idle_prompt
-// nag is dropped in main). PostToolUse is the subtle one: these are
-// non-blocking POSTs that can arrive out of order, so a PostToolUse landing
-// just after a turn's Stop would otherwise flip a just-finished session back
-// to red — and a backgrounded session has no keystroke nudge to correct it.
-// A tool finishing only means "still in a turn", so it may keep running/waiting
-// red but must never resurrect `idle`; only UserPromptSubmit (a new turn)
-// leaves idle. exited is terminal — nothing revives a dead session.
-export function applyStatus(claudeSessionId: string, event: HookEvent): void {
-  const session = sessions.find((s) => s.claudeSessionId === claudeSessionId)
+// nudgeStatusFromKey). Main forwards the raw hook event keyed by the session's
+// stable hookToken, plus the payload's current conversation id; we own the
+// meaning. PermissionRequest fires the instant a dialog appears (incl.
+// AskUserQuestion); Notification is the safety net for other needs-input types
+// (the idle_prompt nag is dropped in main). PostToolUse is the subtle one:
+// these are non-blocking POSTs that can arrive out of order, so a PostToolUse
+// landing just after a turn's Stop would otherwise flip a just-finished session
+// back to red — and a backgrounded session has no keystroke nudge to correct
+// it. A tool finishing only means "still in a turn", so it may keep
+// running/waiting red but must never resurrect `idle`; only UserPromptSubmit (a
+// new turn) leaves idle. exited is terminal — nothing revives a dead session.
+export function applyStatus(hookToken: string, claudeSessionId: string, event: HookEvent): void {
+  const session = sessions.find((s) => s.hookToken === hookToken)
   if (!session || session.status === 'exited') return
+  if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
+    switchClaudeSession(session, claudeSessionId)
+  }
   switch (event) {
     case 'Stop':
       session.status = 'idle'

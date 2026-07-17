@@ -81,13 +81,16 @@ contextBridge.exposeInMainWorld('arc', {
     }
   },
   status: {
-    onChange: (callback: (claudeSessionId: string, event: HookEvent) => void): (() => void) => {
+    onChange: (
+      callback: (hookToken: string, claudeSessionId: string, event: HookEvent) => void
+    ): (() => void) => {
       const listener = (
         _event: IpcRendererEvent,
+        hookToken: string,
         claudeSessionId: string,
         event: HookEvent
       ): void => {
-        callback(claudeSessionId, event)
+        callback(hookToken, claudeSessionId, event)
       }
       ipcRenderer.on('session:status', listener)
       return () => ipcRenderer.removeListener('session:status', listener)

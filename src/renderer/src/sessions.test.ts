@@ -19,6 +19,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     title: '',
     ptyId: '1',
     claudeSessionId: 'sid',
+    hookToken: 'tok',
     resumeId: null,
     view: 'terminal',
     ...overrides
@@ -83,35 +84,53 @@ describe('nudgeStatusFromKey', () => {
 describe('applyStatus', () => {
   it('maps each hook event to its dot state', () => {
     sessions.push(fakeSession({ key: 1, status: 'idle' }))
-    applyStatus('sid', 'UserPromptSubmit')
+    applyStatus('tok', 'sid', 'UserPromptSubmit')
     expect(sessions[0].status).toBe('running')
-    applyStatus('sid', 'PermissionRequest')
+    applyStatus('tok', 'sid', 'PermissionRequest')
     expect(sessions[0].status).toBe('waiting')
-    applyStatus('sid', 'Notification')
+    applyStatus('tok', 'sid', 'Notification')
     expect(sessions[0].status).toBe('waiting')
-    applyStatus('sid', 'Stop')
+    applyStatus('tok', 'sid', 'Stop')
     expect(sessions[0].status).toBe('idle')
   })
 
   it('PostToolUse continues an active turn but never resurrects a finished one', () => {
     sessions.push(fakeSession({ key: 1, status: 'idle' }))
     // stray/out-of-order PostToolUse after Stop must leave the finished turn idle
-    applyStatus('sid', 'PostToolUse')
+    applyStatus('tok', 'sid', 'PostToolUse')
     expect(sessions[0].status).toBe('idle')
     // mid-turn (e.g. a permission was just granted) it resumes red
     sessions[0].status = 'waiting'
-    applyStatus('sid', 'PostToolUse')
+    applyStatus('tok', 'sid', 'PostToolUse')
     expect(sessions[0].status).toBe('running')
     // and keeps a running turn running
-    applyStatus('sid', 'PostToolUse')
+    applyStatus('tok', 'sid', 'PostToolUse')
     expect(sessions[0].status).toBe('running')
   })
 
-  it('never revives an exited session, and ignores an unknown id', () => {
+  it('routes by the stable hookToken, not the conversation id', () => {
+    sessions.push(fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle' }))
+    // an unknown token is a no-op even if the conversation id matches
+    applyStatus('other', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('idle')
+    applyStatus('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('follows a changed conversation id (/clear): adopts the new id, drops the old cache', () => {
+    sessions.push(fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle' }))
+    previewItems['sid'] = [{ kind: 'user', text: 'pre-clear' }]
+    applyStatus('tok', 'newsid', 'UserPromptSubmit')
+    expect(sessions[0].claudeSessionId).toBe('newsid')
+    expect(previewItems['sid']).toBeUndefined()
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('never revives an exited session, and ignores an unknown token', () => {
     sessions.push(fakeSession({ key: 1, status: 'exited' }))
-    applyStatus('sid', 'UserPromptSubmit')
+    applyStatus('tok', 'sid', 'UserPromptSubmit')
     expect(sessions[0].status).toBe('exited')
-    applyStatus('nope', 'Stop') // no matching session — no throw, no-op
+    applyStatus('nope', 'sid', 'Stop') // no matching session — no throw, no-op
     expect(sessions[0].status).toBe('exited')
   })
 })

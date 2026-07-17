@@ -183,8 +183,8 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
-    await startStatusServer((claudeSessionId, event) => {
-      win?.webContents.send('session:status', claudeSessionId, event)
+    await startStatusServer((hookToken, claudeSessionId, event) => {
+      win?.webContents.send('session:status', hookToken, claudeSessionId, event)
     })
     registerPtyHandlers(() => win?.webContents ?? null)
     registerTranscriptHandlers(() => win?.webContents ?? null)
