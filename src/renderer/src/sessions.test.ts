@@ -6,7 +6,8 @@ import {
   nudgeStatusFromKey,
   previewItems,
   applyPreviewItems,
-  applyStatus
+  applyStatus,
+  toggleTodo
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -22,6 +23,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     hookToken: 'tok',
     resumeId: null,
     view: 'terminal',
+    todo: false,
     ...overrides
   }
 }
@@ -132,6 +134,40 @@ describe('applyStatus', () => {
     expect(sessions[0].status).toBe('exited')
     applyStatus('nope', 'sid', 'Stop') // no matching session — no throw, no-op
     expect(sessions[0].status).toBe('exited')
+  })
+})
+
+// Cosmetic TODO flag (issue #3): toggled by clicking the dot, auto-cleared the
+// next time the underlying status changes color (each status is a distinct
+// color, so a value change is a color change — routed through setStatus).
+describe('TODO flag', () => {
+  it('toggles on and off', () => {
+    sessions.push(fakeSession({ key: 1, todo: false }))
+    toggleTodo(1)
+    expect(sessions[0].todo).toBe(true)
+    toggleTodo(1)
+    expect(sessions[0].todo).toBe(false)
+  })
+
+  it('auto-clears when the underlying status changes color', () => {
+    sessions.push(
+      fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle', todo: true })
+    )
+    applyStatus('tok', 'sid', 'UserPromptSubmit') // idle -> running
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[0].todo).toBe(false)
+  })
+
+  it('survives a status update that keeps the same color, clears on a real change', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running', todo: true }))
+    // Enter while running isn't a dialog answer — no status change, flag holds
+    nudgeStatusFromKey(1, '\r')
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[0].todo).toBe(true)
+    // Ctrl+C (running -> idle) is a color change — flag clears
+    nudgeStatusFromKey(1, '\x03')
+    expect(sessions[0].status).toBe('idle')
+    expect(sessions[0].todo).toBe(false)
   })
 })
 

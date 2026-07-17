@@ -23,7 +23,9 @@
     setDirColor,
     applyFolderColor,
     moveDir,
-    moveSession
+    moveSession,
+    setStatus,
+    toggleTodo
   } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
@@ -150,13 +152,16 @@
   // Status-dot fills. Default: the Primer semantic tones (per theme). With the
   // Status RGB setting on: pure traffic-light RGB, identical in both themes.
   // Scoped to the dots only — the close/clear hovers keep reading --danger.
+  // `todo` is the TODO-overlay blue (issue #3): the theme accent normally, pure
+  // #0000FF under Status RGB (matching the pure-RGB traffic lights).
   const dots = $derived(
     ui.statusRgb
-      ? { running: '#ff0000', waiting: '#ffaa00', idle: '#00ff00' }
+      ? { running: '#ff0000', waiting: '#ffaa00', idle: '#00ff00', todo: '#0000ff' }
       : {
           running: palette.chrome.danger,
           waiting: palette.chrome.attention,
-          idle: palette.chrome.success
+          idle: palette.chrome.success,
+          todo: palette.chrome.accent
         }
   )
 
@@ -250,6 +255,7 @@
   style:--dot-running={dots.running}
   style:--dot-waiting={dots.waiting}
   style:--dot-idle={dots.idle}
+  style:--dot-todo={dots.todo}
 >
   <aside class="tower" style:width={`${ui.towerWidth}px`}>
     <div class="tower-filter">
@@ -440,11 +446,18 @@
               }}
               onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
             >
-              <span
+              <button
                 class="dot {session.status}"
                 class:plain={session.type === 'shell'}
-                title={session.status}
-              ></span>
+                class:todo={session.todo}
+                title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
+                aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
+                aria-pressed={session.todo}
+                onclick={(e) => {
+                  e.stopPropagation()
+                  toggleTodo(session.key)
+                }}
+              ></button>
 
               <span
                 class="type-icon material-symbols-outlined"
@@ -549,7 +562,7 @@
               session.hookToken = claudeSessionId ?? null
               applySpawnCwd(session.key, cwd)
             }}
-            onExited={() => (session.status = 'exited')}
+            onExited={() => setStatus(session, 'exited')}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => (session.title = title)}
           />
@@ -946,11 +959,25 @@
     outline: 1px solid var(--border);
   }
 
+  /* A clickable control now (toggles the TODO flag) — reset the button chrome
+     down to the 10px disc; the status classes still paint the fill. */
   .dot {
     width: 10px;
     height: 10px;
     flex-shrink: 0;
     border-radius: 50%;
+    border: none;
+    padding: 0;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  /* Hover affordance: an instant ring around the dot (no tween). The outline
+     follows the border-radius, so it reads as a concentric circle — colored
+     like the session title text (--fg), spaced out for clear separation. */
+  .dot:hover {
+    outline: 1px solid var(--fg);
+    outline-offset: 4px;
   }
 
   .type-icon {
@@ -1006,6 +1033,25 @@
   .dot.exited {
     background: var(--fg-muted);
     opacity: 0.5;
+  }
+
+  /* TODO overlay (issue #3): a cosmetic per-session "revisit later" flag,
+     toggled by clicking the dot. Pulses blue over whatever the underlying
+     status color is — the theme accent by default, pure #0000FF under Status
+     RGB (--dot-todo, see the `dots` derived). !important so it outranks the
+     3-class .dot.plain.running fill; opacity resets the .exited dimming. */
+  .dot.todo {
+    background: var(--dot-todo) !important;
+    opacity: 1;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  /* The pulse animates element opacity, which drags the hover outline with it.
+     Freeze it on hover for any pulsing dot (waiting, todo) so the ring never
+     pulsates — the dot goes solid while pointed at. */
+  .dot.waiting:hover,
+  .dot.todo:hover {
+    animation: none;
   }
 
   @keyframes pulse {

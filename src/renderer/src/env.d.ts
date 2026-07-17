@@ -23,6 +23,8 @@ interface PersistedState {
     name: string
     cwd: string
     claudeSessionId: string | null
+    // Cosmetic TODO flag (issue #3) — additive/optional, absent → false.
+    todo?: boolean
   }>
 }
 

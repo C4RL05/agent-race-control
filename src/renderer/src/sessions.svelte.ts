@@ -30,6 +30,10 @@ export interface Session {
   // Which pane tab is showing: the live terminal or the read-only
   // conversation preview (Claude sessions only). Transient — not persisted.
   view: 'terminal' | 'preview'
+  // Cosmetic "revisit later" flag overlaid on the status dot (both types).
+  // Purely visual — no effect on sorting/focus/logic. Persisted so it survives
+  // restart; auto-cleared when the underlying status changes color (setStatus).
+  todo: boolean
 }
 
 let nextKey = 1
@@ -121,8 +125,29 @@ function createSession(init: {
     claudeSessionId: null,
     hookToken: null,
     resumeId: init.resumeId ?? null,
-    view: 'terminal'
+    view: 'terminal',
+    todo: false
   }
+}
+
+// The single choke point for status changes — every path that moves a session's
+// status (hooks, the keystroke nudge, exit) goes through here so the cosmetic
+// TODO flag can auto-clear "the next time the underlying status changes color"
+// (issue #3). Each status maps to a distinct dot color, so a value change IS a
+// color change; restore sets status/todo directly (not via here) so a relaunch
+// never counts as the clearing change.
+export function setStatus(session: Session, next: Session['status']): void {
+  if (session.todo && next !== session.status) session.todo = false
+  session.status = next
+}
+
+// Left-clicking the status dot toggles the TODO flag (both session types).
+// Toggle-only — it does not focus the session (App stops the click bubbling).
+// Clearing just drops the overlay; the dot returns to session.status's live
+// color, which was tracked underneath the whole time.
+export function toggleTodo(key: number): void {
+  const session = sessions.find((s) => s.key === key)
+  if (session) session.todo = !session.todo
 }
 
 // dir given: spawn there (group header + buttons). No dir: OS folder picker.
@@ -199,21 +224,25 @@ export function applyStatus(hookToken: string, claudeSessionId: string, event: H
   if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
     switchClaudeSession(session, claudeSessionId)
   }
+  // Compute the next status, then commit via setStatus (one choke point, so the
+  // TODO overlay auto-clears on a color change). PostToolUse holds idle idle.
+  let next = session.status
   switch (event) {
     case 'Stop':
-      session.status = 'idle'
+      next = 'idle'
       break
     case 'PermissionRequest':
     case 'Notification':
-      session.status = 'waiting'
+      next = 'waiting'
       break
     case 'UserPromptSubmit':
-      session.status = 'running'
+      next = 'running'
       break
     case 'PostToolUse':
-      if (session.status !== 'idle') session.status = 'running'
+      if (session.status !== 'idle') next = 'running'
       break
   }
+  setStatus(session, next)
 }
 
 // Read-only preview items, cached per Claude session id. The cache outlives
@@ -240,10 +269,10 @@ export function nudgeStatusFromKey(key: number, data: string): void {
   // A lone ESC byte is the Esc key (arrows etc. arrive as longer 0x1b-prefixed
   // chunks); 0x03 is Ctrl+C. Both abort the dialog/turn → back at the prompt.
   if (data === '\x1b' || data === '\x03') {
-    if (session.status === 'running' || session.status === 'waiting') session.status = 'idle'
+    if (session.status === 'running' || session.status === 'waiting') setStatus(session, 'idle')
   } else if (data === '\r' && session.status === 'waiting') {
     // Enter answers the dialog — approve and deny-with-feedback both resume the turn.
-    session.status = 'running'
+    setStatus(session, 'running')
   }
 }
 
@@ -298,17 +327,19 @@ export async function restoreState(): Promise<void> {
   }
   for (const s of saved.sessions) {
     touchDir(s.cwd)
-    sessions.push(
-      createSession({
-        type: s.type,
-        cwd: s.cwd,
-        // name is a shell-only label (enforced here against hand-edited
-        // state files — the title is a Claude session's source of truth).
-        name: s.type === 'shell' ? s.name : '',
-        // Claude sessions resume their conversation; shells reopen fresh.
-        resumeId: s.type === 'claude' ? s.claudeSessionId : null
-      })
-    )
+    const restored = createSession({
+      type: s.type,
+      cwd: s.cwd,
+      // name is a shell-only label (enforced here against hand-edited
+      // state files — the title is a Claude session's source of truth).
+      name: s.type === 'shell' ? s.name : '',
+      // Claude sessions resume their conversation; shells reopen fresh.
+      resumeId: s.type === 'claude' ? s.claudeSessionId : null
+    })
+    // Restore the TODO flag directly (not via setStatus) — the spawn's status
+    // defaults must not count as the color change that would clear it.
+    restored.todo = s.todo ?? false
+    sessions.push(restored)
     colorIndex++
   }
   if (saved.towerWidth) ui.towerWidth = saved.towerWidth
@@ -340,7 +371,8 @@ export function snapshotState(): PersistedState {
       type: s.type,
       name: s.name,
       cwd: s.cwd,
-      claudeSessionId: s.claudeSessionId
+      claudeSessionId: s.claudeSessionId,
+      todo: s.todo
     }))
   }
 }
