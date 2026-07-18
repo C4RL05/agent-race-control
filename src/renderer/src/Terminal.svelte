@@ -78,7 +78,19 @@
       fontFamily,
       // Match the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
       fontSize: 12,
-      theme
+      theme,
+      // xterm's default OSC-8 link activation opens a blank popup first, then
+      // sets its location — a popup-blocker dodge that doesn't survive our
+      // setWindowOpenHandler (main/index.ts), which only sees the blank URL
+      // and denies it, so the real navigation never happens. Open the real
+      // URL directly so it hits that same http(s)-only guard correctly.
+      linkHandler: {
+        activate: (_event, uri) => {
+          if (/^https?:/i.test(uri) && confirm(`Open ${uri} in your browser?`)) {
+            window.open(uri, '_blank')
+          }
+        }
+      }
     })
     const f = new FitAddon()
     t.loadAddon(f)
