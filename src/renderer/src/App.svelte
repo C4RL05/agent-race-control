@@ -984,14 +984,17 @@
     background: var(--dir-color);
   }
 
-  /* Every row (title, branch, session) is its own 12-equal-column grid of the
-     same width, so the tracks line up across rows without subgrid. */
+  /* Every row (title, branch, session) shares one track template: fixed leading
+     tracks (col 1 marker / col 2 dot / col 3 icon), one flexible label track
+     (the only thing that stretches), and an auto right track (worktree
+     annotation + spawn cluster, or the session close). Tracks line up across
+     rows without subgrid. */
   .card-title,
   .branch-row,
   .row {
     position: relative;
     display: grid;
-    grid-template-columns: repeat(12, 1fr);
+    grid-template-columns: 18px 16px 18px minmax(0, 1fr) auto;
     align-items: center;
   }
 
@@ -1006,7 +1009,7 @@
   }
 
   .folder-name {
-    grid-column: 1 / 9;
+    grid-column: 1 / 5;
     /* stretch (not start) so the box fills its tracks and the name ellipsizes
        before the edge instead of overrunning to the card's clipped edge */
     justify-self: stretch;
@@ -1017,12 +1020,13 @@
     font-size: 14px;
   }
 
-  /* Right slot (cols 9–12): the worktree annotation, swapping to the spawn
-     cluster on hover. */
+  /* Right (auto) track: the worktree annotation, swapping to the spawn cluster
+     on hover. Capped so a long annotation can't starve the label track. */
   .dir-meta {
-    grid-column: 9 / -1;
+    grid-column: 5 / -1;
     justify-self: end;
     min-width: 0;
+    max-width: 96px;
     display: grid;
     align-items: center;
     justify-items: end;
@@ -1091,7 +1095,7 @@
   }
 
   .branch-name {
-    grid-column: 2 / 9;
+    grid-column: 2 / 5;
     justify-self: stretch;
     min-width: 0;
     overflow: hidden;
@@ -1100,8 +1104,9 @@
     font-weight: 500;
   }
 
-  /* Session-row placement on the shared 12-column grid: dot col 2 (flush-left
-     under the branch names), type icon col 3, name cols 4–11, close col 12. */
+  /* Session-row placement on the shared track template: dot col 2 (flush-left
+     under the branch names), type icon col 3, name in the flexible label track,
+     close in the auto right track. */
   .row .dot {
     grid-column: 2;
     justify-self: start;
@@ -1114,13 +1119,15 @@
 
   .row .name,
   .row .rename {
-    grid-column: 4 / 12;
+    grid-column: 4 / 5;
     justify-self: stretch;
   }
 
   .row .close {
-    grid-column: 12;
+    grid-column: 5 / -1;
     justify-self: end;
+    /* nudge the × a few px in from the card's right edge */
+    margin-right: 6px;
   }
 
   .spawn-btn {
@@ -1154,10 +1161,11 @@
     background: var(--bg);
   }
 
-  /* Grid (repeat(12,1fr)) comes from the shared .card-title/.branch-row/.row
-     rule; here only the row's own chrome. Element placement is above. */
+  /* Grid comes from the shared .card-title/.branch-row/.row rule; here only the
+     row's own chrome. A bit more vertical padding gives the focused/hover box
+     more height and separates the rows. */
   .row {
-    padding: 3px 0;
+    padding: 5px 0;
     border-radius: 4px;
     cursor: pointer;
     user-select: none;
