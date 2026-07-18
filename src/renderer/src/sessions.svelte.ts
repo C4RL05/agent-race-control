@@ -1,5 +1,16 @@
 import { DOT_COLORS, DEFAULT_FONT_ID, DEFAULT_UI_FONT_ID, type Mode } from './theme'
 
+// Read-only branch/worktree facts for the tower's repo→branch tree (issue #5),
+// fetched from main (window.arc.git) and cached per cwd in `gitInfo`. Mirrors
+// GitInfo in src/main/git.ts (the renderer can't import from main).
+export interface GitInfo {
+  isRepo: boolean
+  repoRoot: string
+  repoName: string
+  worktreeName: string
+  branch: string
+}
+
 export interface Session {
   key: number
   type: 'shell' | 'claude'
@@ -51,13 +62,56 @@ export const dirOrder = $state<string[]>([])
 // from Claude's /color vocabulary, right-click the header to change it.
 export const dirColors = $state<Record<string, string>>({})
 
+// Per-cwd branch/worktree info (issue #5), populated async from main. Absent =
+// not yet fetched (the cwd renders as a flat folder until it lands); a stored
+// `{ isRepo: false }` / null = not a git repo (a permanently flat folder).
+// Never persisted — a live fact, recomputed on load.
+export const gitInfo = $state<Record<string, GitInfo | null>>({})
+const gitInFlight = new Set<string>()
+
+// Fetch (or re-fetch) a cwd's git info. Fail-open by construction — main's
+// getGitInfo never rejects; the .catch is belt-and-suspenders. The in-flight
+// guard only dedups CONCURRENT calls, so a later refresh still re-reads (a
+// shell may have changed branch). window is absent under the unit tests; the
+// store stays pure there.
+export function loadGitInfo(cwd: string): void {
+  const api = globalThis.window?.arc?.git
+  if (!api || gitInFlight.has(cwd)) return
+  gitInFlight.add(cwd)
+  void api
+    .info(cwd)
+    .then((info) => (gitInfo[cwd] = info))
+    .catch(() => (gitInfo[cwd] = null))
+    .finally(() => gitInFlight.delete(cwd))
+}
+
+// Re-read every known cwd — App calls this when the window regains focus, so a
+// `git checkout` in a shell updates the tree without an fs-watch.
+export function refreshAllGitInfo(): void {
+  for (const cwd of dirOrder) loadGitInfo(cwd)
+}
+
 function touchDir(cwd: string): void {
   if (!dirOrder.includes(cwd)) dirOrder.push(cwd)
   if (!dirColors[cwd]) dirColors[cwd] = DOT_COLORS[colorIndex++ % DOT_COLORS.length].hex
+  loadGitInfo(cwd)
 }
 
-export function setDirColor(dir: string, hex: string): void {
-  dirColors[dir] = hex
+// A cwd's tower group key: its repo (all worktrees of a repo share it) when
+// it's a git repo, else the cwd itself (a plain, flat folder). The one key used
+// for clustering, ordering (moveGroup), and color.
+export function groupKeyOf(cwd: string): string {
+  const info = gitInfo[cwd]
+  return info?.isRepo ? info.repoRoot : cwd
+}
+
+// Recolor a whole group. For a repo that writes every worktree cwd, so the
+// header stripe (which reads the primary worktree's color) stays put even as
+// the primary changes; for a plain folder the group key IS the cwd.
+export function setGroupColor(groupKey: string, hex: string): void {
+  const cwds = dirOrder.filter((cwd) => groupKeyOf(cwd) === groupKey)
+  if (cwds.length === 0) dirColors[groupKey] = hex
+  for (const cwd of cwds) dirColors[cwd] = hex
 }
 
 // Recently used directories for the spawn menus — unlike dirOrder this
@@ -333,14 +387,51 @@ export function noteTitleForStatus(key: number, title: string): void {
   )
 }
 
-// Reorder directory groups: move `dir` before `beforeDir`.
-export function moveDir(dir: string, beforeDir: string): void {
-  if (dir === beforeDir) return
-  const from = dirOrder.indexOf(dir)
-  if (from === -1) return
-  dirOrder.splice(from, 1)
-  const to = dirOrder.indexOf(beforeDir)
-  dirOrder.splice(to === -1 ? dirOrder.length : to, 0, dir)
+// Cluster the cwd order into the tower's top-level groups: repos gather all
+// their worktree cwds, plain folders stand alone, all in first-appearance
+// order. Pure — unit-tested; the component layers sessions and branch labels on
+// top. A cwd whose git info hasn't landed yet clusters as a plain folder, then
+// re-groups into its repo once loadGitInfo resolves.
+export type CwdGroup =
+  | { kind: 'plain'; key: string; cwd: string }
+  | { kind: 'repo'; key: string; repoName: string; cwds: string[] }
+
+export function groupCwds(
+  order: string[],
+  info: Record<string, GitInfo | null | undefined>
+): CwdGroup[] {
+  const groups: CwdGroup[] = []
+  const byKey = new Map<string, CwdGroup>()
+  for (const cwd of order) {
+    const g = info[cwd]
+    if (g?.isRepo) {
+      let group = byKey.get(g.repoRoot)
+      if (!group) {
+        group = { kind: 'repo', key: g.repoRoot, repoName: g.repoName, cwds: [] }
+        byKey.set(g.repoRoot, group)
+        groups.push(group)
+      }
+      if (group.kind === 'repo') group.cwds.push(cwd)
+    } else if (!byKey.has(cwd)) {
+      const group: CwdGroup = { kind: 'plain', key: cwd, cwd }
+      byKey.set(cwd, group)
+      groups.push(group)
+    }
+  }
+  return groups
+}
+
+// Reorder top-level groups: move the whole block of `fromKey`'s cwds before
+// `beforeKey`'s first cwd (keeping a repo's worktrees contiguous). Works for
+// both repo and plain groups — a plain group is a single-cwd block.
+export function moveGroup(fromKey: string, beforeKey: string): void {
+  if (fromKey === beforeKey) return
+  const moving = dirOrder.filter((cwd) => groupKeyOf(cwd) === fromKey)
+  if (moving.length === 0) return
+  const rest = dirOrder.filter((cwd) => groupKeyOf(cwd) !== fromKey)
+  const at = rest.findIndex((cwd) => groupKeyOf(cwd) === beforeKey)
+  rest.splice(at === -1 ? rest.length : at, 0, ...moving)
+  dirOrder.splice(0, dirOrder.length, ...rest)
 }
 
 // Reorder a session within its directory group (a session's directory is a

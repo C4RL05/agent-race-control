@@ -20,14 +20,18 @@
     applyPreviewItems,
     dirColors,
     recentDirs,
-    setDirColor,
+    setGroupColor,
     applyFolderColor,
-    moveDir,
+    moveGroup,
     moveSession,
     setStatus,
     toggleTodo,
-    noteTitleForStatus
+    noteTitleForStatus,
+    gitInfo,
+    groupCwds,
+    refreshAllGitInfo
   } from './sessions.svelte'
+  import type { Session } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
@@ -97,6 +101,15 @@
   $effect(() => {
     const off = window.arc.transcript.onItems(applyPreviewItems)
     return off
+  })
+
+  // Re-read every cwd's branch/worktree when the window regains focus, so a
+  // `git checkout` done in a shell (or another app) updates the tree (issue
+  // #5). Cheap and fs-watch-free — the tree is only ever this-stale on focus.
+  $effect(() => {
+    const onFocus = (): void => refreshAllGitInfo()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   })
 
   // Window/taskbar icon: the sports_motorsports glyph (racing helmet, weight
@@ -212,10 +225,71 @@
     )
   }
 
+  // The tower tree (issue #5). groupCwds clusters dirOrder into repos (all their
+  // worktree cwds) and plain folders; here we hang each cwd's sessions (and the
+  // filtered `visible` subset) off it, plus each branch's label. `repCwd` is the
+  // color source — a repo's primary (first) worktree. A repo whose git info
+  // hasn't landed yet renders as a plain folder until it does.
+  type BranchView = {
+    cwd: string
+    branch: string
+    worktreeName: string
+    showWorktree: boolean
+    sessions: Session[]
+    visible: Session[]
+  }
+  type GroupView =
+    | {
+        kind: 'plain'
+        key: string
+        cwd: string
+        repCwd: string
+        sessions: Session[]
+        visible: Session[]
+      }
+    | { kind: 'repo'; key: string; repoName: string; repCwd: string; branches: BranchView[] }
+
+  const tower = $derived.by<GroupView[]>(() =>
+    groupCwds(dirOrder, gitInfo).map((group): GroupView => {
+      if (group.kind === 'plain') {
+        const inDir = sessions.filter((s) => s.cwd === group.cwd)
+        return {
+          kind: 'plain',
+          key: group.key,
+          cwd: group.cwd,
+          repCwd: group.cwd,
+          sessions: inDir,
+          visible: inDir.filter(sessionMatches)
+        }
+      }
+      const branches: BranchView[] = group.cwds.map((cwd) => {
+        const info = gitInfo[cwd]
+        const inDir = sessions.filter((s) => s.cwd === cwd)
+        return {
+          cwd,
+          branch: info?.branch ?? '',
+          worktreeName: info?.worktreeName ?? '',
+          showWorktree: !!info && info.worktreeName !== info.repoName,
+          sessions: inDir,
+          visible: inDir.filter(sessionMatches)
+        }
+      })
+      return {
+        kind: 'repo',
+        key: group.key,
+        repoName: group.repoName,
+        repCwd: group.cwds[0] ?? group.key,
+        branches
+      }
+    })
+  )
+
   // --- drag & drop (same-window; component state, not dataTransfer) ---
-  // Directory headers reorder against each other; sessions reorder within
-  // their own directory group only (a session's directory is a fact).
-  type Drag = { kind: 'session'; key: number; cwd: string } | { kind: 'dir'; dir: string }
+  // Group headers (repo or plain folder) reorder against each other, moving the
+  // whole group's cwd block; sessions reorder within their own cwd only (a
+  // session's directory is a fact). Branch subfolders aren't independently
+  // draggable — they order by first appearance.
+  type Drag = { kind: 'session'; key: number; cwd: string } | { kind: 'group'; groupKey: string }
   let dragging = $state<Drag | null>(null)
   let dropHint = $state<string | null>(null)
 
@@ -236,8 +310,8 @@
     endDrag()
   }
 
-  function dropOnDir(dir: string): void {
-    if (dragging?.kind === 'dir') moveDir(dragging.dir, dir)
+  function dropOnGroup(groupKey: string): void {
+    if (dragging?.kind === 'group') moveGroup(dragging.groupKey, groupKey)
     endDrag()
   }
 </script>
@@ -354,151 +428,92 @@
     </div>
 
     <div class="tower-body">
-      {#each dirOrder as dir (dir)}
-        {@const inDir = sessions.filter((s) => s.cwd === dir)}
-        {@const visible = inDir.filter(sessionMatches)}
-        {#if inDir.length > 0 && (!filterActive || visible.length > 0)}
-          {@const label = dirLabel(dir)}
-          <div
-            class="folder-header"
-            class:drop-hint={dropHint === `dir-${dir}`}
-            role="button"
-            tabindex="0"
-            draggable="true"
-            title={dir}
-            style:--dir-color={dirColors[dir]}
-            ondragstart={() => (dragging = { kind: 'dir', dir })}
-            ondragend={endDrag}
-            ondragover={(e) => allowDrop(e, `dir-${dir}`, dragging?.kind === 'dir')}
-            ondragleave={() => (dropHint = null)}
-            ondrop={() => dropOnDir(dir)}
-            oncontextmenu={(e) => {
-              e.preventDefault()
-              openMenu({ kind: 'color', dir, x: e.clientX, y: e.clientY }, 260)
-            }}
-          >
-            <span class="material-symbols-outlined folder-icon">folder</span>
-            <span class="folder-name">{label.base}</span>
-            <span class="dir-meta">
-              <span class="dir-path">{label.parent}</span>
-              <span class="spawn-cluster">
-                <button
-                  class="spawn-btn"
-                  title="New Claude session here"
-                  aria-label="New Claude session here"
-                  onclick={(e) => {
-                    e.stopPropagation()
-                    void newSession('claude', dir)
-                  }}
-                >
-                  <span class="material-symbols-outlined">asterisk</span>
-                </button>
-                <button
-                  class="spawn-btn"
-                  title="New shell session here"
-                  aria-label="New shell session here"
-                  onclick={(e) => {
-                    e.stopPropagation()
-                    void newSession('shell', dir)
-                  }}
-                >
-                  <span class="material-symbols-outlined">terminal_2</span>
-                </button>
-                <button
-                  class="spawn-btn"
-                  title="Show in Explorer"
-                  aria-label="Show in Explorer"
-                  onclick={(e) => {
-                    e.stopPropagation()
-                    window.arc.openInExplorer(dir)
-                  }}
-                >
-                  <span class="material-symbols-outlined">folder_open</span>
-                </button>
-              </span>
-            </span>
-          </div>
-
-          {#each visible as session (session.key)}
-            <div
-              class="row"
-              class:focused={ui.focused === session.key}
-              class:drop-hint={dropHint === `session-${session.key}`}
-              role="button"
-              tabindex="0"
-              draggable="true"
-              ondragstart={() =>
-                (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
-              ondragend={endDrag}
-              ondragover={(e) =>
-                allowDrop(
-                  e,
-                  `session-${session.key}`,
-                  dragging?.kind === 'session' &&
-                    dragging.key !== session.key &&
-                    dragging.cwd === session.cwd
-                )}
-              ondragleave={() => (dropHint = null)}
-              ondrop={() => dropOnSession(session)}
-              onclick={() => (ui.focused = session.key)}
-              oncontextmenu={(e) => {
-                e.preventDefault()
-                openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
-              }}
-              onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
-            >
-              <button
-                class="dot {session.status}"
-                class:plain={session.type === 'shell'}
-                class:todo={session.todo}
-                title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
-                aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
-                aria-pressed={session.todo}
-                onclick={(e) => {
-                  e.stopPropagation()
-                  toggleTodo(session.key)
+      {#each tower as group (group.key)}
+        {#if group.kind === 'plain'}
+          {#if group.sessions.length > 0 && (!filterActive || group.visible.length > 0)}
+            <div class="card" style:--dir-color={dirColors[group.repCwd]}>
+              <div
+                class="card-title"
+                class:drop-hint={dropHint === `group-${group.key}`}
+                role="button"
+                tabindex="0"
+                draggable="true"
+                title={group.cwd}
+                ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
+                ondragend={endDrag}
+                ondragover={(e) => allowDrop(e, `group-${group.key}`, dragging?.kind === 'group')}
+                ondragleave={() => (dropHint = null)}
+                ondrop={() => dropOnGroup(group.key)}
+                oncontextmenu={(e) => {
+                  e.preventDefault()
+                  openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
                 }}
-              ></button>
-
-              <span
-                class="type-icon material-symbols-outlined"
-                title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-                >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
               >
-
-              {#if renaming === session.key}
-                <!-- svelte-ignore a11y_autofocus -->
-                <input
-                  class="rename"
-                  value={session.name || cleanTitle(session.title)}
-                  autofocus
-                  onblur={(e) => commitRename(session.key, e.currentTarget.value)}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') commitRename(session.key, e.currentTarget.value)
-                    if (e.key === 'Escape') renaming = null
-                  }}
-                />
-              {:else}
-                <span
-                  class="name"
-                  role="button"
-                  tabindex="-1"
-                  title={`${session.cwd} — double-click to rename`}
-                  ondblclick={() => (renaming = session.key)}>{displayName(session)}</span
-                >
-              {/if}
-
-              <button
-                class="close"
-                title="Close session"
-                aria-label="Close session"
-                onclick={(e) => {
-                  e.stopPropagation()
-                  closeSession(session.key)
-                }}>×</button
-              >
+                <span class="folder-name">{dirLabel(group.cwd).base}</span>
+                <span class="dir-meta">
+                  <span class="spawn-cluster">{@render spawnButtons(group.cwd)}</span>
+                </span>
+              </div>
+              {#each group.visible as session (session.key)}
+                {@render sessionRow(session)}
+              {/each}
             </div>
-          {/each}
+          {/if}
+        {:else}
+          {@const branches = group.branches.filter(
+            (b) => b.sessions.length > 0 && (!filterActive || b.visible.length > 0)
+          )}
+          {#if branches.length > 0}
+            <div class="card" style:--dir-color={dirColors[group.repCwd]}>
+              <div
+                class="card-title"
+                class:drop-hint={dropHint === `group-${group.key}`}
+                role="button"
+                tabindex="0"
+                draggable="true"
+                title={group.key}
+                ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
+                ondragend={endDrag}
+                ondragover={(e) => allowDrop(e, `group-${group.key}`, dragging?.kind === 'group')}
+                ondragleave={() => (dropHint = null)}
+                ondrop={() => dropOnGroup(group.key)}
+                oncontextmenu={(e) => {
+                  e.preventDefault()
+                  openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
+                }}
+              >
+                <span class="folder-name">{group.repoName}</span>
+                <span class="dir-meta">
+                  <span class="spawn-cluster">
+                    <button
+                      class="spawn-btn"
+                      title="Show repo in Explorer"
+                      aria-label="Show repo in Explorer"
+                      onclick={(e) => {
+                        e.stopPropagation()
+                        window.arc.openInExplorer(group.key)
+                      }}
+                    >
+                      <span class="material-symbols-outlined">folder_open</span>
+                    </button>
+                  </span>
+                </span>
+              </div>
+              {#each branches as branch (branch.cwd)}
+                <div class="branch-row" title={branch.cwd}>
+                  <span class="material-symbols-outlined branch-icon">account_tree</span>
+                  <span class="branch-name">{branch.branch}</span>
+                  <span class="dir-meta">
+                    <span class="dir-path">{branch.showWorktree ? branch.worktreeName : ''}</span>
+                    <span class="spawn-cluster">{@render spawnButtons(branch.cwd)}</span>
+                  </span>
+                </div>
+                {#each branch.visible as session (session.key)}
+                  {@render sessionRow(session)}
+                {/each}
+              {/each}
+            </div>
+          {/if}
         {/if}
       {/each}
     </div>
@@ -628,6 +643,127 @@
     {/each}
   {/snippet}
 
+  <!-- The header hover cluster: new Claude / new shell / Show in Explorer, all
+       targeting one cwd. Shared by the plain-folder header and each git branch
+       subfolder (issue #5) — the leaf group always owns the spawn affordances. -->
+  {#snippet spawnButtons(dir: string)}
+    <button
+      class="spawn-btn"
+      title="New Claude session here"
+      aria-label="New Claude session here"
+      onclick={(e) => {
+        e.stopPropagation()
+        void newSession('claude', dir)
+      }}
+    >
+      <span class="material-symbols-outlined">asterisk</span>
+    </button>
+    <button
+      class="spawn-btn"
+      title="New shell session here"
+      aria-label="New shell session here"
+      onclick={(e) => {
+        e.stopPropagation()
+        void newSession('shell', dir)
+      }}
+    >
+      <span class="material-symbols-outlined">terminal_2</span>
+    </button>
+    <button
+      class="spawn-btn"
+      title="Show in Explorer"
+      aria-label="Show in Explorer"
+      onclick={(e) => {
+        e.stopPropagation()
+        window.arc.openInExplorer(dir)
+      }}
+    >
+      <span class="material-symbols-outlined">folder_open</span>
+    </button>
+  {/snippet}
+
+  <!-- One session row — same 12-column grid placement in every card (dot col 2,
+       type icon col 3, name col 4+), so plain and repo cards share it. -->
+  {#snippet sessionRow(session: Session)}
+    <div
+      class="row"
+      class:focused={ui.focused === session.key}
+      class:drop-hint={dropHint === `session-${session.key}`}
+      role="button"
+      tabindex="0"
+      draggable="true"
+      ondragstart={() => (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
+      ondragend={endDrag}
+      ondragover={(e) =>
+        allowDrop(
+          e,
+          `session-${session.key}`,
+          dragging?.kind === 'session' &&
+            dragging.key !== session.key &&
+            dragging.cwd === session.cwd
+        )}
+      ondragleave={() => (dropHint = null)}
+      ondrop={() => dropOnSession(session)}
+      onclick={() => (ui.focused = session.key)}
+      oncontextmenu={(e) => {
+        e.preventDefault()
+        openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
+      }}
+      onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
+    >
+      <button
+        class="dot {session.status}"
+        class:plain={session.type === 'shell'}
+        class:todo={session.todo}
+        title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
+        aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
+        aria-pressed={session.todo}
+        onclick={(e) => {
+          e.stopPropagation()
+          toggleTodo(session.key)
+        }}
+      ></button>
+
+      <span
+        class="type-icon material-symbols-outlined"
+        title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
+        >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
+      >
+
+      {#if renaming === session.key}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="rename"
+          value={session.name || cleanTitle(session.title)}
+          autofocus
+          onblur={(e) => commitRename(session.key, e.currentTarget.value)}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') commitRename(session.key, e.currentTarget.value)
+            if (e.key === 'Escape') renaming = null
+          }}
+        />
+      {:else}
+        <span
+          class="name"
+          role="button"
+          tabindex="-1"
+          title={`${session.cwd} — double-click to rename`}
+          ondblclick={() => (renaming = session.key)}>{displayName(session)}</span
+        >
+      {/if}
+
+      <button
+        class="close"
+        title="Close session"
+        aria-label="Close session"
+        onclick={(e) => {
+          e.stopPropagation()
+          closeSession(session.key)
+        }}>×</button
+      >
+    </div>
+  {/snippet}
+
   {#if menu}
     <div
       class="menu-backdrop"
@@ -671,7 +807,7 @@
           <button
             class="menu-item color"
             onclick={() => {
-              if (menu?.kind === 'color') setDirColor(menu.dir, entry.hex)
+              if (menu?.kind === 'color') setGroupColor(menu.dir, entry.hex)
               menu = null
             }}
           >
@@ -824,46 +960,68 @@
     padding: 0 8px 0 4px;
   }
 
-  .folder-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0 6px 4px;
+  /* Repo/folder cards (issue #5): each group is a card — a faint wash of its
+     colour with a 2px colour tab welded to the left edge, on a 12-column grid so
+     titles, dots, icons and names align to fixed tracks. */
+  .card {
+    position: relative;
+    overflow: hidden;
     margin-top: 4px;
-    border-radius: 6px;
-    color: var(--fg-muted);
-    font-size: 13px;
+    /* left padding clears the 2px edge tab (2 + 11) */
+    padding: 4px 8px 10px 13px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--dir-color) 8%, var(--bg-subtle));
+  }
+
+  /* The colour tab, welded to the card's left edge. */
+  .card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--dir-color);
+  }
+
+  /* Every row (title, branch, session) is its own 12-equal-column grid of the
+     same width, so the tracks line up across rows without subgrid. */
+  .card-title,
+  .branch-row,
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    align-items: center;
+  }
+
+  /* Repo/folder title. Marker "none-left": the name is a flush-left heading in
+     col 1 (no icon). The title is the group's drag handle + colour menu. */
+  .card-title {
+    padding: 3px 0 4px;
+    color: var(--fg);
     font-weight: 600;
     user-select: none;
     cursor: grab;
   }
 
-  /* F1 team stripe — the directory color lives here */
-  .folder-header::before {
-    content: '';
-    align-self: stretch;
-    flex-shrink: 0;
-    width: 3px;
-    /* -3px centers the 18px folder glyph over the rows' 10px status dots */
-    margin-right: -3px;
-    border-radius: 999px;
-    background: var(--dir-color);
-  }
-
-  .folder-icon {
-    font-size: 18px;
-  }
-
   .folder-name {
-    flex-shrink: 0;
+    grid-column: 1 / 9;
+    /* stretch (not start) so the box fills its tracks and the name ellipsizes
+       before the edge instead of overrunning to the card's clipped edge */
+    justify-self: stretch;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 14px;
   }
 
-  /* Path text and spawn cluster share the right slot; hover swaps them */
+  /* Right slot (cols 9–12): the worktree annotation, swapping to the spawn
+     cluster on hover. */
   .dir-meta {
-    margin-left: auto;
+    grid-column: 9 / -1;
+    justify-self: end;
     min-width: 0;
     display: grid;
     align-items: center;
@@ -879,15 +1037,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 400;
+    color: var(--fg-muted);
     transition:
       opacity 0.12s,
       visibility 0.12s;
   }
 
-  .folder-header:hover .dir-path,
-  .folder-header:focus-within .dir-path {
+  /* Only branch rows carry a .dir-path (the worktree annotation); the repo/
+     folder title has none, so this swap is branch-only. */
+  .branch-row:hover .dir-path,
+  .branch-row:focus-within .dir-path {
     visibility: hidden;
     opacity: 0;
   }
@@ -898,17 +1059,68 @@
     opacity: 0;
     border: 1px solid var(--border);
     border-radius: 5px;
-    background: var(--bg-subtle);
+    background: var(--bg);
     overflow: hidden;
     transition:
       opacity 0.12s,
       visibility 0.12s;
   }
 
-  .folder-header:hover .spawn-cluster,
-  .folder-header:focus-within .spawn-cluster {
+  .card-title:hover .spawn-cluster,
+  .card-title:focus-within .spawn-cluster,
+  .branch-row:hover .spawn-cluster,
+  .branch-row:focus-within .spawn-cluster {
     visibility: visible;
     opacity: 1;
+  }
+
+  /* A git repo's branch/worktree row: icon in col 1, name in col 2 (flush-left
+     under the session dots), the worktree annotation / spawn cluster on the
+     right tracks. */
+  .branch-row {
+    padding: 3px 0;
+    color: var(--fg-muted);
+    font-size: 12px;
+    user-select: none;
+  }
+
+  .branch-icon {
+    grid-column: 1;
+    justify-self: start;
+    font-size: 12px;
+  }
+
+  .branch-name {
+    grid-column: 2 / 9;
+    justify-self: stretch;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  /* Session-row placement on the shared 12-column grid: dot col 2 (flush-left
+     under the branch names), type icon col 3, name cols 4–11, close col 12. */
+  .row .dot {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .row .type-icon {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .row .name,
+  .row .rename {
+    grid-column: 4 / 12;
+    justify-self: stretch;
+  }
+
+  .row .close {
+    grid-column: 12;
+    justify-self: end;
   }
 
   .spawn-btn {
@@ -942,15 +1154,11 @@
     background: var(--bg);
   }
 
+  /* Grid (repeat(12,1fr)) comes from the shared .card-title/.branch-row/.row
+     rule; here only the row's own chrome. Element placement is above. */
   .row {
-    /* columns: status dot | type icon | name | close */
-    display: grid;
-    grid-template-columns: 10px 18px minmax(0, 1fr) 14px;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    margin-left: 8px;
-    border-radius: 6px;
+    padding: 3px 0;
+    border-radius: 4px;
     cursor: pointer;
     user-select: none;
   }
@@ -986,7 +1194,7 @@
   }
 
   .type-icon {
-    font-size: 18px;
+    font-size: 12px;
     color: var(--fg-muted);
   }
 
@@ -995,12 +1203,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .rename {
     min-width: 0;
-    font-size: 13px;
+    font-size: 12px;
     font-family: inherit;
     background: var(--bg);
     color: var(--fg);

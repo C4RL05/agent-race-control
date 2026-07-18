@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Session } from './sessions.svelte'
+import type { Session, GitInfo } from './sessions.svelte'
 import {
   sessions,
   cleanTitle,
@@ -9,7 +9,12 @@ import {
   previewItems,
   applyPreviewItems,
   applyStatus,
-  toggleTodo
+  toggleTodo,
+  dirOrder,
+  gitInfo,
+  groupCwds,
+  groupKeyOf,
+  moveGroup
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -263,5 +268,79 @@ describe('applyPreviewItems', () => {
     applyPreviewItems('b', [{ kind: 'user', text: 'y' }], false)
     expect(previewItems['a']).toHaveLength(1)
     expect(previewItems['b']).toHaveLength(1)
+  })
+})
+
+// The tower's repo→branch tree (issue #5): git cwds cluster by their shared
+// repo root (so all worktrees group together), non-git cwds stand alone, and a
+// cwd whose git info hasn't loaded yet is a plain folder until it does.
+function repo(repoRoot: string, worktreeName: string, branch = 'main'): GitInfo {
+  return {
+    isRepo: true,
+    repoRoot,
+    repoName: repoRoot.split(/[\\/]/).pop() ?? repoRoot,
+    worktreeName,
+    branch
+  }
+}
+
+describe('groupCwds', () => {
+  it('groups a repo’s worktrees under one repo, in first-appearance order', () => {
+    const order = ['D:\\wt\\main', 'D:\\wt\\hotfix']
+    const info = {
+      'D:\\wt\\main': repo('D:/R', 'main', 'main'),
+      'D:\\wt\\hotfix': repo('D:/R', 'hotfix', 'hotfix')
+    }
+    expect(groupCwds(order, info)).toEqual([
+      { kind: 'repo', key: 'D:/R', repoName: 'R', cwds: ['D:\\wt\\main', 'D:\\wt\\hotfix'] }
+    ])
+  })
+
+  it('clusters a repo’s worktrees even when interleaved with another repo', () => {
+    const order = ['D:\\a', 'D:\\x', 'D:\\b']
+    const info = {
+      'D:\\a': repo('D:/R1', 'a'),
+      'D:\\x': repo('D:/R2', 'x'),
+      'D:\\b': repo('D:/R1', 'b')
+    }
+    // R1 keeps its first-appearance slot and gathers both of its worktrees.
+    expect(groupCwds(order, info)).toEqual([
+      { kind: 'repo', key: 'D:/R1', repoName: 'R1', cwds: ['D:\\a', 'D:\\b'] },
+      { kind: 'repo', key: 'D:/R2', repoName: 'R2', cwds: ['D:\\x'] }
+    ])
+  })
+
+  it('non-git and not-yet-loaded cwds are plain folders', () => {
+    const order = ['D:\\plain', 'D:\\pending']
+    const info = { 'D:\\plain': { isRepo: false } as GitInfo } // 'D:\\pending' absent
+    expect(groupCwds(order, info)).toEqual([
+      { kind: 'plain', key: 'D:\\plain', cwd: 'D:\\plain' },
+      { kind: 'plain', key: 'D:\\pending', cwd: 'D:\\pending' }
+    ])
+  })
+})
+
+describe('moveGroup', () => {
+  beforeEach(() => {
+    dirOrder.length = 0
+    for (const key of Object.keys(gitInfo)) delete gitInfo[key]
+  })
+
+  it('moves a whole repo block before another group, keeping worktrees contiguous', () => {
+    dirOrder.push('D:\\a', 'D:\\b', 'D:\\c')
+    Object.assign(gitInfo, {
+      'D:\\a': repo('D:/R1', 'a'),
+      'D:\\b': repo('D:/R1', 'b'),
+      'D:\\c': repo('D:/R2', 'c')
+    })
+    expect(groupKeyOf('D:\\a')).toBe('D:/R1')
+    moveGroup('D:/R2', 'D:/R1')
+    expect([...dirOrder]).toEqual(['D:\\c', 'D:\\a', 'D:\\b'])
+  })
+
+  it('groupKeyOf falls back to the cwd for a non-git folder', () => {
+    gitInfo['D:\\plain'] = { isRepo: false } as GitInfo
+    expect(groupKeyOf('D:\\plain')).toBe('D:\\plain')
+    expect(groupKeyOf('D:\\unknown')).toBe('D:\\unknown') // absent → itself
   })
 })
