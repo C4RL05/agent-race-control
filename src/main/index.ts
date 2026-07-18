@@ -5,6 +5,7 @@ import { startStatusServer } from './status'
 import { registerTranscriptHandlers, disposeAllTails } from './transcript'
 import { loadState, saveState, flushState } from './state'
 import type { AppState } from './state'
+import { getGitInfo } from './git'
 
 // Blessed dev-only deviation (screenshot harness, see the kickoff doc): a
 // scratch profile so staged runs never touch the real tower. Must be set
@@ -150,6 +151,10 @@ if (!gotLock) {
   ipcMain.on('shell:openPath', (_event, path: string) => {
     void shell.openPath(path)
   })
+
+  // Read-only git observability for the tower's repo→branch tree (issue #5).
+  // getGitInfo is fail-open, so this handler never rejects.
+  ipcMain.handle('git:info', (_event, cwd: string) => getGitInfo(cwd))
 
   // Window/taskbar icon, rendered by the renderer from the bundled Material
   // Symbols font (sports_motorsports — the racing helmet, white on black).

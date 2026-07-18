@@ -34,6 +34,16 @@ interface PersistedState {
 // so it cannot import from main — keep this copy in sync by hand.
 type PreviewItem = { kind: 'user'; text: string } | { kind: 'assistant'; text: string }
 
+// Read-only git info for the tower's repo→branch tree — hand-copied from
+// src/main/git.ts (GitInfo), same can't-import-from-main reason as PreviewItem.
+type GitInfo = {
+  isRepo: boolean
+  repoRoot: string
+  repoName: string
+  worktreeName: string
+  branch: string
+}
+
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {
   arc: {
@@ -45,6 +55,9 @@ interface Window {
     state: {
       load: () => Promise<PersistedState | null>
       save: (state: PersistedState) => void
+    }
+    git: {
+      info: (cwd: string) => Promise<GitInfo>
     }
     pty: {
       spawn: (opts: {

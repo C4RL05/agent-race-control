@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 // Type-only: erased at build, so no runtime coupling to main.
 import type { PreviewItem } from '../main/transcript'
 import type { HookEvent } from '../main/status'
+import type { GitInfo } from '../main/git'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
@@ -21,6 +22,11 @@ contextBridge.exposeInMainWorld('arc', {
     save: (state: unknown): void => {
       ipcRenderer.send('state:save', state)
     }
+  },
+  // Read-only branch/worktree info for the tower tree (issue #5) — always
+  // resolves (main's getGitInfo is fail-open).
+  git: {
+    info: (cwd: string): Promise<GitInfo> => ipcRenderer.invoke('git:info', cwd)
   },
   pty: {
     spawn: (opts: {
