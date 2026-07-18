@@ -285,12 +285,17 @@
   )
 
   // --- drag & drop (same-window; component state, not dataTransfer) ---
-  // Group headers (repo or plain folder) reorder against each other, moving the
-  // whole group's cwd block; sessions reorder within their own cwd only (a
-  // session's directory is a fact). Branch subfolders aren't independently
-  // draggable — they order by first appearance.
+  // Whole group cards (repo or plain folder) reorder against each other, moving
+  // the whole group's cwd block — the card is the drag handle, so grabbing
+  // anywhere on it that isn't a session row moves it. Sessions reorder within
+  // their own cwd only (a session's directory is a fact); their row stops
+  // dragstart from bubbling so a reorder doesn't become a card move. Branch
+  // subfolders aren't independently draggable — they order by first appearance.
   type Drag = { kind: 'session'; key: number; cwd: string } | { kind: 'group'; groupKey: string }
   let dragging = $state<Drag | null>(null)
+  // The drop preview. Sessions: `session-<key>` (the row highlights). Groups: an
+  // insertion line at a gap — `group-before-<key>` (line above that card) or
+  // `group-after-<key>` (line below it), so you see where the card will land.
   let dropHint = $state<string | null>(null)
 
   function allowDrop(event: DragEvent, hint: string, accept: boolean): void {
@@ -310,9 +315,39 @@
     endDrag()
   }
 
-  function dropOnGroup(groupKey: string): void {
-    if (dragging?.kind === 'group') moveGroup(dragging.groupKey, groupKey)
+  // Which gap the pointer is over a card: the top half means "insert before this
+  // card", the bottom half "insert after it". moveGroup only knows "before key
+  // X", so after-a-card is expressed as before the next visible card — and the
+  // DOM is the source of visible order (hidden groups aren't rendered), so the
+  // next `.card` sibling is exactly it (null → drop at the very end).
+  function groupDragOver(event: DragEvent, targetKey: string): void {
+    if (dragging?.kind !== 'group') return
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+    // No line over the card you're holding — dropping on it is a no-op anyway.
+    if (dragging.groupKey === targetKey) {
+      dropHint = null
+      return
+    }
+    dropHint = `group-${afterHalf(event) ? 'after' : 'before'}-${targetKey}`
+  }
+
+  function dropOnGroup(event: DragEvent, targetKey: string): void {
+    if (dragging?.kind === 'group') {
+      let beforeKey = targetKey
+      if (afterHalf(event)) {
+        const next = (event.currentTarget as HTMLElement).nextElementSibling as HTMLElement | null
+        beforeKey = next?.dataset.groupKey ?? '' // '' matches no group → append at end
+      }
+      moveGroup(dragging.groupKey, beforeKey)
+    }
     endDrag()
+  }
+
+  // True when the pointer sits in the lower half of the card under it.
+  function afterHalf(event: DragEvent): boolean {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    return event.clientY > rect.top + rect.height / 2
   }
 </script>
 
@@ -427,23 +462,29 @@
       </button>
     </div>
 
-    <div class="tower-body">
+    <div class="tower-body" data-dragging={dragging?.kind}>
       {#each tower as group (group.key)}
         {#if group.kind === 'plain'}
           {#if group.sessions.length > 0 && (!filterActive || group.visible.length > 0)}
-            <div class="card" style:--dir-color={dirColors[group.repCwd]}>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="card"
+              class:drop-before={dropHint === `group-before-${group.key}`}
+              class:drop-after={dropHint === `group-after-${group.key}`}
+              data-group-key={group.key}
+              style:--dir-color={dirColors[group.repCwd]}
+              draggable="true"
+              ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
+              ondragend={endDrag}
+              ondragover={(e) => groupDragOver(e, group.key)}
+              ondragleave={() => (dropHint = null)}
+              ondrop={(e) => dropOnGroup(e, group.key)}
+            >
               <div
                 class="card-title"
-                class:drop-hint={dropHint === `group-${group.key}`}
                 role="button"
                 tabindex="0"
-                draggable="true"
                 title={group.cwd}
-                ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
-                ondragend={endDrag}
-                ondragover={(e) => allowDrop(e, `group-${group.key}`, dragging?.kind === 'group')}
-                ondragleave={() => (dropHint = null)}
-                ondrop={() => dropOnGroup(group.key)}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
@@ -464,19 +505,25 @@
             (b) => b.sessions.length > 0 && (!filterActive || b.visible.length > 0)
           )}
           {#if branches.length > 0}
-            <div class="card" style:--dir-color={dirColors[group.repCwd]}>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="card"
+              class:drop-before={dropHint === `group-before-${group.key}`}
+              class:drop-after={dropHint === `group-after-${group.key}`}
+              data-group-key={group.key}
+              style:--dir-color={dirColors[group.repCwd]}
+              draggable="true"
+              ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
+              ondragend={endDrag}
+              ondragover={(e) => groupDragOver(e, group.key)}
+              ondragleave={() => (dropHint = null)}
+              ondrop={(e) => dropOnGroup(e, group.key)}
+            >
               <div
                 class="card-title"
-                class:drop-hint={dropHint === `group-${group.key}`}
                 role="button"
                 tabindex="0"
-                draggable="true"
                 title={group.key}
-                ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
-                ondragend={endDrag}
-                ondragover={(e) => allowDrop(e, `group-${group.key}`, dragging?.kind === 'group')}
-                ondragleave={() => (dropHint = null)}
-                ondrop={() => dropOnGroup(group.key)}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
@@ -692,7 +739,12 @@
       role="button"
       tabindex="0"
       draggable="true"
-      ondragstart={() => (dragging = { kind: 'session', key: session.key, cwd: session.cwd })}
+      ondragstart={(e) => {
+        // Don't let this bubble to the card's group-drag handler — otherwise it
+        // overwrites `dragging` and a row reorder becomes a whole-card move.
+        e.stopPropagation()
+        dragging = { kind: 'session', key: session.key, cwd: session.cwd }
+      }}
       ondragend={endDrag}
       ondragover={(e) =>
         allowDrop(
@@ -965,15 +1017,61 @@
      titles, dots, icons and names align to fixed tracks. */
   .card {
     position: relative;
-    overflow: hidden;
+    /* visible (not hidden) so the drop-line ::after can sit in the margin gap
+       between cards; the colour tab rounds its own left corners to match. */
+    overflow: visible;
     margin-top: 4px;
     /* left padding clears the 2px edge tab (2 + 11) */
     padding: 4px 8px 10px 13px;
     border-radius: 2px;
     background: color-mix(in srgb, var(--dir-color) 8%, var(--bg-subtle));
+    /* the whole card is the group's drag handle (session rows override to
+       pointer) — grab anywhere on it to reorder the group */
+    cursor: grab;
   }
 
-  /* The colour tab, welded to the card's left edge. */
+  /* While a drag is in flight, collapse each drop target to a single hit
+     surface: its inner content stops taking pointer events. Native DnD still
+     fires :hover under the cursor and fires dragenter/dragleave as the pointer
+     crosses child boundaries — that's what makes chrome light up and the drop
+     hint flicker mid-drag. Killing pointer-events on the contents stops both.
+     A group drag drops onto whole cards, so the entire card interior goes
+     inert; a session drag drops onto rows, so only the row stays live (its own
+     children go inert) while titles and branch rows freeze. */
+  .tower-body[data-dragging='group'] .card * {
+    pointer-events: none;
+  }
+
+  .tower-body[data-dragging='session'] .card-title,
+  .tower-body[data-dragging='session'] .branch-row,
+  .tower-body[data-dragging='session'] .row > * {
+    pointer-events: none;
+  }
+
+  /* Group drop preview: a 2px accent line floating in the margin gap the dragged
+     card will land in — above the card (before) or below it (after). Centred in
+     the 4px gap (top/bottom -3px), so it reads as "between cards", not a border. */
+  .card.drop-before::after,
+  .card.drop-after::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+  }
+
+  .card.drop-before::after {
+    top: -3px;
+  }
+
+  .card.drop-after::after {
+    bottom: -3px;
+  }
+
+  /* The colour tab, welded to the card's left edge. Its left corners round to
+     match the card's 2px radius (the card no longer clips it via overflow). */
   .card::before {
     content: '';
     position: absolute;
@@ -981,6 +1079,7 @@
     top: 0;
     bottom: 0;
     width: 2px;
+    border-radius: 2px 0 0 2px;
     background: var(--dir-color);
   }
 
@@ -999,13 +1098,13 @@
   }
 
   /* Repo/folder title. Marker "none-left": the name is a flush-left heading in
-     col 1 (no icon). The title is the group's drag handle + colour menu. */
+     col 1 (no icon). The title carries the group's colour menu; the whole card
+     (its parent) is the drag handle. */
   .card-title {
     padding: 3px 0 4px;
     color: var(--fg);
     font-weight: 600;
     user-select: none;
-    cursor: grab;
   }
 
   .folder-name {
