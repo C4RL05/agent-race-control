@@ -363,7 +363,11 @@ function repo(repoRoot: string, worktreeName: string, branch = 'main'): GitInfo 
     repoRoot,
     repoName: repoRoot.split(/[\\/]/).pop() ?? repoRoot,
     worktreeName,
-    branch
+    branch,
+    dirty: false,
+    ahead: 0,
+    behind: 0,
+    base: ''
   }
 }
 

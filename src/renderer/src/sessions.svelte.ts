@@ -9,6 +9,12 @@ export interface GitInfo {
   repoName: string
   worktreeName: string
   branch: string
+  // Branch state markers ("safe to merge/close?"): uncommitted/untracked
+  // changes, and ahead/behind counts vs `base` ('' = no comparison).
+  dirty: boolean
+  ahead: number
+  behind: number
+  base: string
 }
 
 export interface Session {
@@ -225,6 +231,12 @@ function createSession(init: {
 // never counts as the clearing change.
 export function setStatus(session: Session, next: Session['status']): void {
   if (session.todo && next !== session.status) session.todo = false
+  // A turn just ended — the files likely changed with it, and idle is exactly
+  // when "safe to merge/close?" gets asked, so refresh this cwd's branch
+  // state (observation-driven cadence; window focus covers everything else,
+  // no polling). Deliberately NOT on exited: after Claude's worktree cleanup
+  // the dir is gone, and a refresh would flip the row into a plain folder.
+  if (next === 'idle' && next !== session.status) loadGitInfo(session.cwd)
   session.status = next
 }
 

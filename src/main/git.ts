@@ -21,6 +21,16 @@ export interface GitInfo {
   worktreeName: string
   // Current branch (`--abbrev-ref HEAD`); detached HEAD → a short SHA.
   branch: string
+  // Branch state — "is this feature safe to merge/close?" at a glance.
+  // dirty: uncommitted or untracked changes in this worktree. ahead/behind:
+  // commit counts vs `base` — the branch's upstream when set, else the repo's
+  // default base (origin/HEAD → main → master, never the branch itself), so a
+  // worktree feature branch reads as unmerged work / needs-rebase. All
+  // fail-open per-field: unknown → false/0/''.
+  dirty: boolean
+  ahead: number
+  behind: number
+  base: string
 }
 
 const NON_REPO: GitInfo = {
@@ -28,7 +38,11 @@ const NON_REPO: GitInfo = {
   repoRoot: '',
   repoName: '',
   worktreeName: '',
-  branch: ''
+  branch: '',
+  dirty: false,
+  ahead: 0,
+  behind: 0,
+  base: ''
 }
 
 // A short ceiling so a wedged git (a network filesystem, a credential prompt)
@@ -42,6 +56,64 @@ function git(cwd: string, args: string[]): Promise<string> {
       else resolve(stdout.trim())
     })
   })
+}
+
+// The `git status --porcelain=v2 --branch` reduction: the `# branch.*`
+// headers carry the upstream name and its ahead/behind counts; ANY non-header
+// line is a change entry (modified, staged, untracked, unmerged — all count
+// as dirty for "safe to close?"). Pure and exported for the unit tests.
+export function parseStatusV2(out: string): {
+  dirty: boolean
+  ahead: number
+  behind: number
+  upstream: string
+} {
+  let dirty = false
+  let ahead = 0
+  let behind = 0
+  let upstream = ''
+  for (const line of out.split('\n')) {
+    if (line.startsWith('# branch.upstream ')) {
+      upstream = line.slice('# branch.upstream '.length).trim()
+    } else if (line.startsWith('# branch.ab ')) {
+      const counts = /\+(\d+) -(\d+)/.exec(line)
+      if (counts) {
+        ahead = Number(counts[1])
+        behind = Number(counts[2])
+      }
+    } else if (line && !line.startsWith('#')) {
+      dirty = true
+    }
+  }
+  return { dirty, ahead, behind, upstream }
+}
+
+// The comparison base for a branch with no upstream — never the branch itself
+// (comparing main to main is noise, not signal). LOCAL main/master is
+// preferred over origin/HEAD deliberately: ahead-of-local-main answers
+// "merged yet? safe to delete?" in a merge-locally workflow, whereas
+// origin/HEAD would inflate a feature's count with main's own unpushed
+// commits and keep reading ahead after a local merge. origin/HEAD is the
+// fallback for repos whose default branch has another name. '' = no base.
+async function defaultBase(cwd: string, branch: string): Promise<string> {
+  for (const candidate of ['main', 'master']) {
+    if (candidate === branch) continue
+    const exists = await git(cwd, ['rev-parse', '--verify', '--quiet', candidate]).catch(() => '')
+    if (exists) return candidate
+  }
+  const originHead = await git(cwd, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).catch(
+    () => ''
+  )
+  if (originHead && originHead !== branch) {
+    // origin/HEAD can dangle (pruned or re-named remote branch): the symref
+    // read succeeds while its target is gone, and rev-list against it would
+    // fail into silent no-counts — only trust a target that resolves.
+    const resolves = await git(cwd, ['rev-parse', '--verify', '--quiet', originHead]).catch(
+      () => ''
+    )
+    if (resolves) return originHead
+  }
+  return ''
 }
 
 // One worktree as `git worktree list --porcelain` reports it. branch is the
@@ -108,12 +180,49 @@ export async function getGitInfo(cwd: string): Promise<GitInfo> {
       // an empty branch just leaves the subfolder unlabeled, never throws.
       branch = await git(cwd, ['rev-parse', '--short', 'HEAD']).catch(() => '')
     }
+    // Branch state, each step best-effort on top of the identity above: a
+    // slow/failed status just leaves the row unadorned, never un-repos it.
+    let dirty = false
+    let ahead = 0
+    let behind = 0
+    let base = ''
+    const status = await git(cwd, ['status', '--porcelain=v2', '--branch']).catch(() => null)
+    if (status !== null) {
+      const parsed = parseStatusV2(status)
+      dirty = parsed.dirty
+      if (parsed.upstream) {
+        base = parsed.upstream
+        ahead = parsed.ahead
+        behind = parsed.behind
+      } else {
+        const fallback = await defaultBase(cwd, branch)
+        if (fallback) {
+          // "<only-in-base>\t<only-in-HEAD>" — i.e. behind, then ahead.
+          const counts = await git(cwd, [
+            'rev-list',
+            '--left-right',
+            '--count',
+            `${fallback}...HEAD`
+          ]).catch(() => '')
+          const [b, a] = counts.split(/\s+/).map(Number)
+          if (Number.isFinite(a) && Number.isFinite(b)) {
+            base = fallback
+            behind = b
+            ahead = a
+          }
+        }
+      }
+    }
     return {
       isRepo: true,
       repoRoot,
       repoName: basename(repoRoot),
       worktreeName: basename(worktreeRoot),
-      branch
+      branch,
+      dirty,
+      ahead,
+      behind,
+      base
     }
   } catch {
     return NON_REPO

@@ -48,6 +48,11 @@ type GitInfo = {
   repoName: string
   worktreeName: string
   branch: string
+  // Branch state markers: dirty tree + ahead/behind vs base ('' = none).
+  dirty: boolean
+  ahead: number
+  behind: number
+  base: string
 }
 
 // One worktree from `git worktree list` (reopen menu) — hand-copied from

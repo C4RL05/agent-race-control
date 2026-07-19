@@ -302,8 +302,24 @@
     branch: string
     worktreeName: string
     showWorktree: boolean
+    // Branch-state markers (muted ● ↑n ↓n after the name — never the
+    // traffic-light colors, those belong to the session dots).
+    dirty: boolean
+    ahead: number
+    behind: number
+    base: string
     sessions: Session[]
     visible: Session[]
+  }
+
+  // The row tooltip spells the markers out — the glyphs stay terse.
+  function branchTitle(b: BranchView): string {
+    const bits: string[] = []
+    if (b.dirty) bits.push('uncommitted changes')
+    if (b.ahead) bits.push(`${b.ahead} ahead`)
+    if (b.behind) bits.push(`${b.behind} behind`)
+    if ((b.ahead || b.behind) && b.base) bits.push(`vs ${b.base}`)
+    return bits.length ? `${b.cwd}\n${bits.join(' · ')}` : b.cwd
   }
   type GroupView =
     | {
@@ -339,6 +355,10 @@
           branch: info?.branch ?? '',
           worktreeName: info?.worktreeName ?? '',
           showWorktree: !!info && info.worktreeName !== info.repoName,
+          dirty: info?.dirty ?? false,
+          ahead: info?.ahead ?? 0,
+          behind: info?.behind ?? 0,
+          base: info?.base ?? '',
           sessions: inDir,
           visible: inDir.filter(sessionMatches)
         }
@@ -361,6 +381,11 @@
           branch: `worktree-${name}`,
           worktreeName: name,
           showWorktree: name !== group.repoName,
+          // Nothing to observe yet — a parked spawn's worktree is seconds old.
+          dirty: false,
+          ahead: 0,
+          behind: 0,
+          base: '',
           sessions: inWt,
           visible: inWt.filter(sessionMatches)
         })
@@ -674,9 +699,18 @@
               </div>
               {#if !collapsedGroups[group.key]}
                 {#each branches as branch (branch.cwd)}
-                  <div class="branch-row" title={branch.cwd}>
+                  <div class="branch-row" title={branchTitle(branch)}>
                     <span class="material-symbols-outlined branch-icon">account_tree</span>
-                    <span class="branch-name">{branch.branch}</span>
+                    <span class="branch-name">
+                      <span class="branch-text">{branch.branch}</span>
+                      {#if branch.dirty || branch.ahead || branch.behind}
+                        <span class="branch-state">
+                          {#if branch.dirty}<span class="state-dirty"></span>{/if}
+                          {#if branch.ahead}<span>↑{branch.ahead}</span>{/if}
+                          {#if branch.behind}<span>↓{branch.behind}</span>{/if}
+                        </span>
+                      {/if}
+                    </span>
                     <span class="dir-meta">
                       <span class="dir-path">{branch.showWorktree ? branch.worktreeName : ''}</span>
                       <span class="spawn-cluster">{@render spawnButtons(branch.cwd)}</span>
@@ -1459,10 +1493,41 @@
     grid-column: 2 / 5;
     justify-self: stretch;
     min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: 500;
+  }
+
+  /* The name carries the ellipsis so the state markers never get pushed out. */
+  .branch-text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 500;
+  }
+
+  /* Branch-state markers (● dirty, ↑ahead ↓behind) — muted ink on purpose:
+     the traffic-light colors stay reserved for the session dots. */
+  .branch-state {
+    flex-shrink: 0;
+    display: flex;
+    gap: 4px;
+    font-size: 10.5px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-muted);
+  }
+
+  /* A real CSS disc, not the ● glyph — glyph metrics vary and rendered small.
+     Sized to a lowercase o of the branch name (12px Segoe x-height ≈ 6px). */
+  .state-dirty {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    align-self: center;
+    flex-shrink: 0;
   }
 
   /* Session-row placement on the shared track template: dot col 2 (flush-left
