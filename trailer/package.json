@@ -1,0 +1,24 @@
+{
+  "name": "agent-race-control-trailer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "serve": "vite",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
+    "@motion-canvas/2d": "3.17.2",
+    "@motion-canvas/core": "3.17.2",
+    "@motion-canvas/ffmpeg": "3.17.2",
+    "@motion-canvas/ui": "3.17.2",
+    "@motion-canvas/vite-plugin": "3.17.2",
+    "material-symbols": "^0.45.8",
+    "vite": "^5.4.0"
+  },
+  "devDependencies": {
+    "playwright-core": "1.61.1"
+  }
+}
