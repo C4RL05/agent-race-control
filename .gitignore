@@ -3,3 +3,5 @@ out/
 dist/
 .screenshot-profile/
 .claude/worktrees/
+reports/
+.stryker-tmp/

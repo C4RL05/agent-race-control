@@ -13,12 +13,15 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./src/renderer/tsconfig.json",
     "test": "vitest run",
+    "test:mutation": "stryker run",
     "format": "prettier --write .",
     "screenshots": "electron-vite build && node scripts/screenshot.mjs",
     "dist": "electron-vite build && electron-builder",
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@types/node": "^24.9.0",
     "@xterm/addon-clipboard": "^0.2.0",

@@ -50,8 +50,11 @@ describe('cleanTitle', () => {
     expect(cleanTitle('✳ Fix the bug')).toBe('Fix the bug')
     expect(cleanTitle('✻✶ churning')).toBe('churning')
     expect(cleanTitle('⠂ deploy')).toBe('deploy') // braille spinner frame
+    expect(cleanTitle('✳Fix the bug')).toBe('Fix the bug') // spinner with no trailing space
     expect(cleanTitle('MINGW64: /d/Projects/x')).toBe('/d/Projects/x')
+    expect(cleanTitle('MINGW64:/d/Projects/x')).toBe('/d/Projects/x') // no space after the colon
     expect(cleanTitle('Fix the bug')).toBe('Fix the bug')
+    expect(cleanTitle('build MINGW64: later')).toBe('build MINGW64: later') // only a leading prefix
     expect(cleanTitle('')).toBe('')
   })
 })
@@ -237,6 +240,9 @@ describe('worktreeSpawnName', () => {
     expect(worktreeSpawnName('D:/repo', 'D:/repo-sibling')).toBe(null)
     expect(worktreeSpawnName('D:/repo', 'D:/other/.claude/worktrees/feat')).toBe(null)
     expect(worktreeSpawnName('D:/repo', 'D:/repo/.claude/worktrees/a/b')).toBe(null)
+    // same worktrees structure on a different drive must not match this repo —
+    // the prefix guard is the only thing standing between it and a false 'feat'
+    expect(worktreeSpawnName('D:/repo', 'X:/repo/.claude/worktrees/feat')).toBe(null)
   })
 })
 
@@ -250,6 +256,14 @@ describe('TODO flag', () => {
     expect(sessions[0].todo).toBe(true)
     toggleTodo(1)
     expect(sessions[0].todo).toBe(false)
+  })
+
+  it('toggles only the matching key; a missing key is a no-op, not a throw', () => {
+    sessions.push(fakeSession({ key: 1, todo: false }), fakeSession({ key: 2, todo: false }))
+    toggleTodo(2)
+    expect(sessions.map((s) => s.todo)).toEqual([false, true]) // key 1 untouched
+    expect(() => toggleTodo(999)).not.toThrow()
+    expect(sessions.map((s) => s.todo)).toEqual([false, true])
   })
 
   it('auto-clears when the underlying status changes color', () => {
@@ -429,5 +443,17 @@ describe('moveGroup', () => {
     gitInfo['D:\\plain'] = { isRepo: false } as GitInfo
     expect(groupKeyOf('D:\\plain')).toBe('D:\\plain')
     expect(groupKeyOf('D:\\unknown')).toBe('D:\\unknown') // absent → itself
+  })
+
+  it('a self-move (fromKey === beforeKey) is a no-op', () => {
+    dirOrder.push('D:\\a', 'D:\\b') // two plain groups (groupKeyOf → the cwd)
+    moveGroup('D:\\a', 'D:\\a')
+    expect([...dirOrder]).toEqual(['D:\\a', 'D:\\b'])
+  })
+
+  it('moving before an unknown group appends the block to the end', () => {
+    dirOrder.push('D:\\a', 'D:\\b')
+    moveGroup('D:\\a', 'D:\\nope')
+    expect([...dirOrder]).toEqual(['D:\\b', 'D:\\a'])
   })
 })

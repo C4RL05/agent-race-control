@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 // functions under test never touch it.
 vi.mock('electron', () => ({ ipcMain: { on: vi.fn() } }))
 
-import { parseLine, transcriptPath } from './transcript'
+import { parseLine, transcriptPath, type PreviewItem } from './transcript'
 
 describe('transcriptPath', () => {
   // The encoding rule was verified empirically (2026-07-13): Claude Code
@@ -166,5 +166,105 @@ describe('parseLine', () => {
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([])
     expect(parseLine(line({ type: 'user', message: { content: 42 } }))).toEqual([])
     expect(parseLine(line(null))).toEqual([])
+  })
+
+  it('drops whitespace-only user content — trimmed to nothing (string and blocks)', () => {
+    expect(parseLine(line({ type: 'user', message: { content: '   \n  ' } }))).toEqual([])
+    const blocks = [{ type: 'text', text: '   ' }]
+    expect(parseLine(line({ type: 'user', message: { content: blocks } }))).toEqual([])
+  })
+
+  it('unwraps a slash command with no args — trimmed, no trailing space', () => {
+    const command = '<command-name>/clear</command-name>'
+    expect(parseLine(line({ type: 'user', message: { content: command } }))).toEqual([
+      { kind: 'user', text: '/clear' }
+    ])
+  })
+
+  it('renders a pure-insertion Edit (empty old_string) as a +-only diff', () => {
+    const content = [
+      {
+        type: 'tool_use',
+        name: 'Edit',
+        input: { file_path: 'a.ts', old_string: '', new_string: 'z' }
+      }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`a.ts`\n\n```diff\n+ z\n```' }
+    ])
+  })
+
+  it('strips only the trailing newline of a diff side, keeping interior ones', () => {
+    const content = [
+      {
+        type: 'tool_use',
+        name: 'Edit',
+        input: { file_path: 'a.ts', old_string: 'a\nb\n', new_string: 'z' }
+      }
+    ]
+    expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
+      { kind: 'assistant', text: '`a.ts`\n\n```diff\n- a\n- b\n+ z\n```' }
+    ])
+  })
+})
+
+// langOf: every extension→language entry is exercised (a blanked or wrong
+// mapping is caught), and the `$` anchor is pinned so a multi-dot name resolves
+// by its LAST extension, not its first.
+describe('code fence language from the file extension', () => {
+  const line = (entry: unknown): string => JSON.stringify(entry)
+  const write = (filePath: string): PreviewItem[] =>
+    parseLine(
+      line({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', name: 'Write', input: { file_path: filePath, content: 'code' } }
+          ]
+        }
+      })
+    )
+
+  const cases: [string, string][] = [
+    ['ts', 'ts'],
+    ['tsx', 'tsx'],
+    ['mts', 'ts'],
+    ['cts', 'ts'],
+    ['js', 'js'],
+    ['jsx', 'jsx'],
+    ['mjs', 'js'],
+    ['cjs', 'js'],
+    ['svelte', 'svelte'],
+    ['json', 'json'],
+    ['css', 'css'],
+    ['scss', 'scss'],
+    ['html', 'html'],
+    ['md', 'markdown'],
+    ['yml', 'yaml'],
+    ['yaml', 'yaml'],
+    ['sh', 'bash'],
+    ['bash', 'bash'],
+    ['py', 'python'],
+    ['rs', 'rust'],
+    ['go', 'go'],
+    ['toml', 'toml'],
+    ['xml', 'xml']
+  ]
+  it.each(cases)('.%s fences as ```%s', (ext, lang) => {
+    expect(write(`f.${ext}`)).toEqual([
+      { kind: 'assistant', text: '`f.' + ext + '`\n\n```' + lang + '\ncode\n```' }
+    ])
+  })
+
+  it('resolves by the last extension of a multi-dot name', () => {
+    expect(write('comp.test.ts')).toEqual([
+      { kind: 'assistant', text: '`comp.test.ts`\n\n```ts\ncode\n```' }
+    ])
+  })
+
+  it('an unknown extension still gets a bare fence', () => {
+    expect(write('notes.xyz')).toEqual([
+      { kind: 'assistant', text: '`notes.xyz`\n\n```\ncode\n```' }
+    ])
   })
 })

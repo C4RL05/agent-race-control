@@ -48,4 +48,20 @@ describe('parseStatusV2', () => {
     })
     expect(parseStatusV2('')).toEqual({ dirty: false, ahead: 0, behind: 0, upstream: '' })
   })
+
+  it('reads multi-digit ahead/behind counts, not just the first digit', () => {
+    const out = '# branch.head main\n# branch.upstream origin/main\n# branch.ab +12 -34'
+    expect(parseStatusV2(out)).toMatchObject({ ahead: 12, behind: 34 })
+  })
+
+  it('trims the upstream name so no trailing space leaks into the base label', () => {
+    expect(parseStatusV2('# branch.upstream origin/feature ').upstream).toBe('origin/feature')
+  })
+
+  it('a malformed branch.ab line leaves counts at zero instead of throwing', () => {
+    // the file's contract is to parse defensively and never throw on drift
+    const out = '# branch.head main\n# branch.ab whoops'
+    expect(() => parseStatusV2(out)).not.toThrow()
+    expect(parseStatusV2(out)).toMatchObject({ ahead: 0, behind: 0 })
+  })
 })
