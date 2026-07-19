@@ -12,6 +12,7 @@
     resume,
     worktree,
     active = false,
+    focusEpoch = 0,
     theme,
     fontFamily,
     onSpawned,
@@ -25,6 +26,10 @@
     // Ask Claude Code for a fresh git worktree at spawn ('' = auto-name).
     worktree?: string
     active?: boolean
+    // Bumped on every tower row click: re-asserts keyboard focus even when
+    // `active` didn't change (a menu or chrome input stole the keyboard while
+    // this session stayed the focused one).
+    focusEpoch?: number
     theme: ITheme
     fontFamily: string
     // cwd is where the PTY actually started — may differ from the requested
@@ -53,6 +58,7 @@
   })
 
   $effect(() => {
+    void focusEpoch
     if (active && term) {
       safeFit()
       term.focus()

@@ -184,6 +184,17 @@
 
   let renaming = $state<number | null>(null)
 
+  // Bumped on every row click so the focused Terminal re-asserts keyboard
+  // focus even when the focused session didn't change — a dismissed menu or a
+  // chrome input otherwise kept the keyboard and "click to drive" silently
+  // didn't. Transient by nature.
+  let focusEpoch = $state(0)
+
+  function focusSession(key: number): void {
+    ui.focused = key
+    focusEpoch++
+  }
+
   // Repo-card "new feature" flow (worktree workflow): which repo card's title
   // is showing the inline worktree-name field, keyed like the card itself.
   let namingWorktree = $state<string | null>(null)
@@ -202,9 +213,13 @@
     void newSession('claude', repoRoot, name)
   }
 
-  // Focus the worktree-name field when it mounts: the `autofocus` attribute is
-  // not honored for this dynamically inserted input (verified empirically —
-  // the click left focus on the spawn button), so focus it explicitly.
+  // Focus an inline field when it mounts: the `autofocus` attribute is not
+  // honored for dynamically inserted inputs (verified empirically — the click
+  // left focus on the spawn button), so focus explicitly. Used by the
+  // worktree-name field AND the rename field — the latter matters doubly now
+  // that row clicks re-assert terminal focus (focusSession): a rename input
+  // that silently failed to take the keyboard would send the typed name
+  // straight into the live session.
   function focusOnMount(node: HTMLElement): void {
     node.focus()
   }
@@ -729,6 +744,7 @@
             resume={session.resumeId ?? undefined}
             worktree={session.spawnWorktree ?? undefined}
             active={ui.focused === session.key && session.view === 'terminal'}
+            {focusEpoch}
             theme={palette.xterm}
             fontFamily={monoFont}
             onSpawned={(ptyId, claudeSessionId, cwd) => {
@@ -901,12 +917,12 @@
         )}
       ondragleave={() => (dropHint = null)}
       ondrop={() => dropOnSession(session)}
-      onclick={() => (ui.focused = session.key)}
+      onclick={() => focusSession(session.key)}
       oncontextmenu={(e) => {
         e.preventDefault()
         openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
       }}
-      onkeydown={(e) => e.key === 'Enter' && (ui.focused = session.key)}
+      onkeydown={(e) => e.key === 'Enter' && focusSession(session.key)}
     >
       <button
         class="dot {session.status}"
@@ -928,11 +944,10 @@
       >
 
       {#if renaming === session.key}
-        <!-- svelte-ignore a11y_autofocus -->
         <input
           class="rename"
           value={session.name || cleanTitle(session.title)}
-          autofocus
+          use:focusOnMount
           onblur={(e) => commitRename(session.key, e.currentTarget.value)}
           onkeydown={(e) => {
             if (e.key === 'Enter') commitRename(session.key, e.currentTarget.value)
