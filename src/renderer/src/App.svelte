@@ -31,22 +31,26 @@
     groupCwds,
     refreshAllGitInfo,
     collapsedGroups,
-    toggleCollapsed
+    toggleCollapsed,
+    parkedWorktrees,
+    worktreeSpawnName
   } from './sessions.svelte'
-  import type { Session } from './sessions.svelte'
+  import type { Session, WorktreeEntry } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
-  // for all four. spawn: the filter bar's per-type dropdowns — recent
+  // for all five. spawn: the filter bar's per-type dropdowns — recent
   // directories plus Browse…; sessions in a live directory spawn from the
   // group header's hover cluster instead. type-filter: the filter box's
   // session-type dropdown. color: right-click a group header.
-  // session: right-click a session row.
+  // session: right-click a session row. worktrees: the repo card's reopen
+  // menu — parked worktrees fetched on click, items carried in the menu.
   type Menu =
     | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
     | { kind: 'color'; dir: string; x: number; y: number }
     | { kind: 'session'; key: number; x: number; y: number }
     | { kind: 'type-filter'; x: number; y: number }
+    | { kind: 'worktrees'; repoRoot: string; items: WorktreeEntry[]; x: number; y: number }
   let menu = $state<Menu | null>(null)
   let settingsOpen = $state(false)
 
@@ -178,6 +182,53 @@
   )
 
   let renaming = $state<number | null>(null)
+
+  // Repo-card "new feature" flow (worktree workflow): which repo card's title
+  // is showing the inline worktree-name field, keyed like the card itself.
+  let namingWorktree = $state<string | null>(null)
+
+  // Enter spawns a Claude with --worktree, Escape/blur cancels — creating a
+  // branch is a real side effect, so a stray click-away must not spawn. The
+  // name is slugified to a git-friendly token (spaces → dashes; quotes and
+  // backslashes dropped — they'd break refnames or the bash -c string); blank
+  // lets Claude Code auto-name the worktree.
+  function commitWorktree(repoRoot: string, value: string): void {
+    namingWorktree = null
+    const name = value
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/['"\\]/g, '')
+    void newSession('claude', repoRoot, name)
+  }
+
+  // Focus the worktree-name field when it mounts: the `autofocus` attribute is
+  // not honored for this dynamically inserted input (verified empirically —
+  // the click left focus on the spawn button), so focus it explicitly.
+  function focusOnMount(node: HTMLElement): void {
+    node.focus()
+  }
+
+  // The reopen menu: list the repo's parked worktrees (on disk, no rows) and
+  // carry them in the menu itself — fetched fresh on every click, no cache.
+  async function openWorktreeMenu(repoRoot: string, x: number, y: number): Promise<void> {
+    const entries = await window.arc.git.worktrees(repoRoot)
+    const items = parkedWorktrees(
+      entries,
+      repoRoot,
+      sessions.map((s) => s.cwd)
+    )
+    openMenu({ kind: 'worktrees', repoRoot, items, x, y }, 30 * Math.max(items.length, 1) + 10)
+  }
+
+  // Reopen a parked worktree: a .claude/worktrees one goes back through
+  // --worktree so Claude Code re-attaches its cleanup lifecycle
+  // (probe-verified safe for committed work); any other worktree gets a plain
+  // spawn in its directory.
+  function reopenWorktree(repoRoot: string, path: string): void {
+    const name = worktreeSpawnName(repoRoot, path)
+    if (name !== null) void newSession('claude', repoRoot, name)
+    else void newSession('claude', path)
+  }
 
   // Tower filter: text matches name/title/cwd; chips narrow by session type.
   // Transient UI state — deliberately not persisted.
@@ -523,9 +574,48 @@
                   openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
                 }}
               >
-                {@render cardLabel(group)}
+                {#if namingWorktree === group.key}
+                  <input
+                    class="rename"
+                    placeholder="new worktree — blank auto-names"
+                    use:focusOnMount
+                    onblur={() => (namingWorktree = null)}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') commitWorktree(group.key, e.currentTarget.value)
+                      if (e.key === 'Escape') {
+                        e.stopPropagation()
+                        namingWorktree = null
+                      }
+                    }}
+                  />
+                {:else}
+                  {@render cardLabel(group)}
+                {/if}
                 <span class="dir-meta">
                   <span class="spawn-cluster">
+                    <button
+                      class="spawn-btn"
+                      title="New Claude session in a fresh worktree"
+                      aria-label="New Claude session in a fresh worktree"
+                      onclick={(e) => {
+                        e.stopPropagation()
+                        namingWorktree = group.key
+                      }}
+                    >
+                      <span class="material-symbols-outlined">create_new_folder</span>
+                    </button>
+                    <button
+                      class="spawn-btn"
+                      title="Reopen a worktree"
+                      aria-label="Reopen a worktree"
+                      onclick={(e) => {
+                        e.stopPropagation()
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        void openWorktreeMenu(group.key, rect.left, rect.bottom + 4)
+                      }}
+                    >
+                      <span class="material-symbols-outlined">history</span>
+                    </button>
                     <button
                       class="spawn-btn"
                       title="Show repo in Explorer"
@@ -610,6 +700,7 @@
             type={session.type}
             cwd={session.cwd}
             resume={session.resumeId ?? undefined}
+            worktree={session.spawnWorktree ?? undefined}
             active={ui.focused === session.key && session.view === 'terminal'}
             theme={palette.xterm}
             fontFamily={monoFont}
@@ -881,6 +972,24 @@
         >
           <span class="material-symbols-outlined">folder_open</span>Browse…
         </button>
+      {:else if menu.kind === 'worktrees'}
+        {#if menu.items.length === 0}
+          <div class="menu-label">No parked worktrees</div>
+        {:else}
+          {#each menu.items as wt (wt.path)}
+            <button
+              class="menu-item"
+              title={wt.path}
+              onclick={() => {
+                if (menu?.kind === 'worktrees') reopenWorktree(menu.repoRoot, wt.path)
+                menu = null
+              }}
+            >
+              <span class="material-symbols-outlined">account_tree</span>{dirLabel(wt.path).base}
+              <span class="dir-parent">{wt.branch}</span>
+            </button>
+          {/each}
+        {/if}
       {:else if menu.kind === 'type-filter'}
         <button
           class="menu-item"
@@ -1434,6 +1543,14 @@
     border-radius: 4px;
     padding: 1px 4px;
     outline: none;
+  }
+
+  /* The repo title's inline worktree-name field spans the title's label tracks
+     (the session rename sits in the row's label track instead). */
+  .card-title .rename {
+    grid-column: 1 / 5;
+    justify-self: stretch;
+    font-weight: 400;
   }
 
   /* Traffic lights from the user's point of view — every color answers

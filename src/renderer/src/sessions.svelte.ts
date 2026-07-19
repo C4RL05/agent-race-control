@@ -38,6 +38,11 @@ export interface Session {
   hookToken: string | null
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
+  // Set on sessions the repo card spawns into a fresh worktree: pass
+  // --worktree <name> ('' = let Claude auto-name) at spawn. Transient — not
+  // persisted; a restored session's cwd already IS its worktree, and Claude
+  // Code owns the worktree's whole lifecycle (see the worktree-workflow doc).
+  spawnWorktree: string | null
   // Which pane tab is showing: the live terminal or the read-only
   // conversation preview (Claude sessions only). Transient — not persisted.
   view: 'terminal' | 'preview'
@@ -191,6 +196,7 @@ function createSession(init: {
   cwd: string
   name?: string
   resumeId?: string | null
+  worktree?: string
 }): Session {
   return {
     key: nextKey++,
@@ -203,6 +209,7 @@ function createSession(init: {
     claudeSessionId: null,
     hookToken: null,
     resumeId: init.resumeId ?? null,
+    spawnWorktree: init.worktree ?? null,
     view: 'terminal',
     todo: false
   }
@@ -228,13 +235,31 @@ export function toggleTodo(key: number): void {
   if (session) session.todo = !session.todo
 }
 
+// Windows paths compare case-insensitively and arrive with either separator
+// (the folder picker uses backslashes; git and hook payloads may not) — one
+// dir, several spellings. Used wherever a path from a new source meets the
+// cwds we already hold, so the tower never grows a duplicate group.
+export function sameDir(a: string, b: string): boolean {
+  return a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase()
+}
+
 // dir given: spawn there (group header + buttons). No dir: OS folder picker.
-export async function newSession(type: 'shell' | 'claude', dir?: string): Promise<void> {
-  const cwd = dir ?? (await window.arc.pickFolder())
-  if (!cwd) return
+// worktree set (repo cards only): spawn claude with --worktree <name> ('' =
+// auto-name) — Claude Code creates and enters the worktree; the hook stream
+// then re-points the session's cwd to it (applyStatus).
+export async function newSession(
+  type: 'shell' | 'claude',
+  dir?: string,
+  worktree?: string
+): Promise<void> {
+  const picked = dir ?? (await window.arc.pickFolder())
+  if (!picked) return
+  // Prefer the spelling dirOrder already holds (git reports forward slashes,
+  // the picker backslashes) — a second spelling would be a second group.
+  const cwd = dirOrder.find((d) => sameDir(d, picked)) ?? picked
   touchDir(cwd)
   touchRecent(cwd)
-  const session = createSession({ type, cwd })
+  const session = createSession({ type, cwd, worktree })
   sessions.push(session)
   ui.focused = session.key
 }
@@ -255,9 +280,9 @@ export function duplicateSession(key: number): void {
   ui.focused = session.key
 }
 
-// The PTY reports the directory it actually started in — a dead requested
-// cwd falls back to the home dir (pty.ts). Follow the truth, and keep the
-// invariant that every session's cwd has a directory group.
+// The PTY reports the directory it actually started in (a dead requested cwd
+// is a spawn error now, not a fallback — but the echo keeps the invariant
+// that every session's cwd has a directory group, whatever main decides).
 export function applySpawnCwd(key: number, cwd: string): void {
   const session = sessions.find((s) => s.key === key)
   if (!session || session.cwd === cwd) return
@@ -296,11 +321,26 @@ function switchClaudeSession(session: Session, nextId: string): void {
 // it. A tool finishing only means "still in a turn", so it may keep
 // running/waiting red but must never resurrect `idle`; only UserPromptSubmit (a
 // new turn) leaves idle. exited is terminal — nothing revives a dead session.
-export function applyStatus(hookToken: string, claudeSessionId: string, event: HookEvent): void {
+export function applyStatus(
+  hookToken: string,
+  claudeSessionId: string,
+  event: HookEvent,
+  cwd?: string
+): void {
   const session = sessions.find((s) => s.hookToken === hookToken)
   if (!session || session.status === 'exited') return
   if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
     switchClaudeSession(session, claudeSessionId)
+  }
+  // A --worktree spawn's PTY starts at the repo root, but the session lives in
+  // the worktree Claude creates — the payload's cwd is the truth, so follow it
+  // (the spawn-echo sibling is applySpawnCwd, the conversation-id sibling is
+  // the /clear follow above). The reactive cwd re-groups the tower row; an
+  // open Preview re-arms on the change and main's transcript watch re-points
+  // a tail whose path changed, so nothing else needs telling.
+  if (cwd && !sameDir(session.cwd, cwd)) {
+    session.cwd = cwd
+    touchDir(cwd)
   }
   // Compute the next status, then commit via setStatus (one choke point, so the
   // TODO overlay auto-clears on a color change). PostToolUse holds idle idle.
@@ -396,6 +436,41 @@ export function noteTitleForStatus(key: number, title: string): void {
       if (s && s.status === 'running') setStatus(s, 'idle')
     }, SPINNER_IDLE_MS)
   )
+}
+
+// Mirrors WorktreeEntry in src/main/git.ts (the renderer can't import from
+// main): one worktree as `git worktree list` reports it.
+export interface WorktreeEntry {
+  path: string
+  branch: string
+  locked: boolean
+}
+
+// The reopen menu's model: the repo's worktrees that currently show no rows —
+// a worktree with sessions is already in the tower, and the main checkout has
+// the ordinary spawn buttons. Pure — unit-tested; App fetches the list on
+// menu open and filters it through here.
+export function parkedWorktrees(
+  entries: WorktreeEntry[],
+  repoRoot: string,
+  activeCwds: string[]
+): WorktreeEntry[] {
+  return entries.filter(
+    (e) => !sameDir(e.path, repoRoot) && !activeCwds.some((cwd) => sameDir(cwd, e.path))
+  )
+}
+
+// How to reopen a parked worktree: a path under the repo's .claude/worktrees/
+// returns its name — spawn via `--worktree <name>` so Claude Code re-attaches
+// its cleanup lifecycle (probe-verified: reopening preserves committed work
+// and ignores stale locks). Anything else (a hand-made or sibling worktree)
+// returns null — plain spawn in that directory.
+export function worktreeSpawnName(repoRoot: string, path: string): string | null {
+  const prefix = `${repoRoot.replace(/\//g, '\\')}\\.claude\\worktrees\\`
+  const normalized = path.replace(/\//g, '\\')
+  if (!normalized.toLowerCase().startsWith(prefix.toLowerCase())) return null
+  const rest = normalized.slice(prefix.length)
+  return rest && !rest.includes('\\') ? rest : null
 }
 
 // Cluster the cwd order into the tower's top-level groups: repos gather all

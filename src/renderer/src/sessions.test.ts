@@ -14,7 +14,10 @@ import {
   gitInfo,
   groupCwds,
   groupKeyOf,
-  moveGroup
+  moveGroup,
+  sameDir,
+  parkedWorktrees,
+  worktreeSpawnName
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -29,6 +32,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     claudeSessionId: 'sid',
     hookToken: 'tok',
     resumeId: null,
+    spawnWorktree: null,
     view: 'terminal',
     todo: false,
     ...overrides
@@ -154,6 +158,71 @@ describe('applyStatus', () => {
     expect(sessions[0].status).toBe('exited')
     applyStatus('nope', 'sid', 'Stop') // no matching session — no throw, no-op
     expect(sessions[0].status).toBe('exited')
+  })
+
+  it('follows the payload cwd into the worktree (a --worktree spawn starts at the repo root)', () => {
+    dirOrder.length = 0
+    sessions.push(fakeSession({ key: 1, cwd: 'D:\\repo', status: 'idle' }))
+    applyStatus('tok', 'sid', 'UserPromptSubmit', 'D:\\repo\\.claude\\worktrees\\feat')
+    expect(sessions[0].cwd).toBe('D:\\repo\\.claude\\worktrees\\feat')
+    expect(dirOrder).toContain('D:\\repo\\.claude\\worktrees\\feat')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('treats a respelled payload cwd as the same dir — no churn, no duplicate group', () => {
+    dirOrder.length = 0
+    sessions.push(fakeSession({ key: 1, cwd: 'D:\\Repo', status: 'idle' }))
+    applyStatus('tok', 'sid', 'UserPromptSubmit', 'D:/repo')
+    expect(sessions[0].cwd).toBe('D:\\Repo')
+    expect(dirOrder).toEqual([])
+  })
+})
+
+// One dir, several spellings: the picker writes backslashes, git and hook
+// payloads may not, and Windows paths fold case — sameDir is what keeps a
+// second spelling from becoming a second tower group.
+describe('sameDir', () => {
+  it('folds separators and case, but different paths stay different', () => {
+    expect(sameDir('D:\\Projects\\x', 'D:/projects/X')).toBe(true)
+    expect(sameDir('D:\\a', 'D:\\a\\b')).toBe(false)
+  })
+})
+
+// The reopen menu's model: worktrees on disk minus the main checkout and
+// minus any cwd already showing rows. git prints forward slashes, the tower
+// holds backslashes — the filter must see through that.
+describe('parkedWorktrees', () => {
+  const entries = [
+    { path: 'D:/repo', branch: 'main', locked: false },
+    { path: 'D:/repo/.claude/worktrees/feat', branch: 'worktree-feat', locked: true },
+    { path: 'D:/repo-sibling', branch: 'carlos/x', locked: false }
+  ]
+
+  it('drops the main checkout and cwds with live rows, keeps the rest', () => {
+    expect(parkedWorktrees(entries, 'D:/repo', ['D:\\repo'])).toEqual([entries[1], entries[2]])
+    expect(parkedWorktrees(entries, 'D:/repo', ['D:\\repo\\.claude\\worktrees\\feat'])).toEqual([
+      entries[2]
+    ])
+  })
+
+  it('empty list stays empty', () => {
+    expect(parkedWorktrees([], 'D:/repo', [])).toEqual([])
+  })
+})
+
+// How a parked worktree reopens: .claude/worktrees/<name> → the name (spawn
+// via --worktree, lifecycle re-attached); anything else → null (plain spawn).
+describe('worktreeSpawnName', () => {
+  it('extracts the name from a .claude/worktrees path, either separator', () => {
+    expect(worktreeSpawnName('D:/repo', 'D:/repo/.claude/worktrees/feat')).toBe('feat')
+    expect(worktreeSpawnName('D:\\repo', 'D:\\repo\\.claude\\worktrees\\Feat')).toBe('Feat')
+  })
+
+  it('returns null for the repo root, siblings, and nested non-name paths', () => {
+    expect(worktreeSpawnName('D:/repo', 'D:/repo')).toBe(null)
+    expect(worktreeSpawnName('D:/repo', 'D:/repo-sibling')).toBe(null)
+    expect(worktreeSpawnName('D:/repo', 'D:/other/.claude/worktrees/feat')).toBe(null)
+    expect(worktreeSpawnName('D:/repo', 'D:/repo/.claude/worktrees/a/b')).toBe(null)
   })
 })
 

@@ -10,6 +10,7 @@
     type = 'shell',
     cwd,
     resume,
+    worktree,
     active = false,
     theme,
     fontFamily,
@@ -21,6 +22,8 @@
     type?: 'shell' | 'claude'
     cwd?: string
     resume?: string
+    // Ask Claude Code for a fresh git worktree at spawn ('' = auto-name).
+    worktree?: string
     active?: boolean
     theme: ITheme
     fontFamily: string
@@ -162,22 +165,24 @@
       }
     })
 
-    void window.arc.pty.spawn({ cols: t.cols, rows: t.rows, type, cwd, resume }).then((result) => {
-      if (disposed) return
-      if ('error' in result) {
-        t.write(`\x1b[31m${result.error}\x1b[0m\r\n`)
-        onExited?.(-1)
-        return
-      }
-      ptyId = result.id
-      onSpawned?.(result.id, result.claudeSessionId, result.cwd)
-      t.onData((data) => {
-        onInput?.(data)
-        window.arc.pty.write(result.id, data)
+    void window.arc.pty
+      .spawn({ cols: t.cols, rows: t.rows, type, cwd, resume, worktree })
+      .then((result) => {
+        if (disposed) return
+        if ('error' in result) {
+          t.write(`\x1b[31m${result.error}\x1b[0m\r\n`)
+          onExited?.(-1)
+          return
+        }
+        ptyId = result.id
+        onSpawned?.(result.id, result.claudeSessionId, result.cwd)
+        t.onData((data) => {
+          onInput?.(data)
+          window.arc.pty.write(result.id, data)
+        })
+        t.onResize(({ cols, rows }) => window.arc.pty.resize(result.id, cols, rows))
+        if (active) t.focus()
       })
-      t.onResize(({ cols, rows }) => window.arc.pty.resize(result.id, cols, rows))
-      if (active) t.focus()
-    })
 
     const resizeObserver = new ResizeObserver(() => safeFit())
     resizeObserver.observe(container)
