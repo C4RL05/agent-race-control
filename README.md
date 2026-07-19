@@ -15,6 +15,7 @@ Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** 
 - **Two session types** — Claude sessions (`bash --login -i -c 'exec claude'`) and first-class Git Bash shells for dev servers, builds, git
 - **Resume across restarts** — sessions reopen with their conversations (`--resume`, deterministic session ids)
 - **Directory groups** — sessions group by their working directory (the group *is* the dir), each with an F1-style team-stripe color; drag & drop reorders groups, and sessions within their group
+- **Repo cards & worktrees** — a git repo's worktrees gather under one card, one branch row each; the card spawns a Claude straight into a **fresh worktree** (`claude --worktree`) for parallel features — Claude Code creates it, installs nothing, and cleans it up on exit; the app never touches git
 - **Filter bar** — text search over name/title/path, plus Claude/shell type chips
 - **Directory colors** pushed *into* Claude Code on demand: "Apply folder color" types `/color <name>` for you, so agent view matches the tower
 - **GitHub Light/Dark/System** theming (exact Primer palettes) — the app's chrome only; Claude Code renders untouched
@@ -47,6 +48,15 @@ npm run dist       # Windows installer (NSIS, per-user) into dist/
 ```
 
 The installer is unsigned — expect a SmartScreen warning on machines that aren't yours.
+
+## Worktree workflow
+
+One card per repo, one worktree per feature, as many sessions per feature as the job needs. The repo card's ➕ button names a feature and spawns `claude --worktree <name>` — Claude Code creates `.claude/worktrees/<name>/` on a branch `worktree-<name>` and, when you `/exit` with nothing pending, removes the worktree again (the branch survives; delete it after merging). Worth setting up per repo:
+
+- add `.claude/worktrees/` to `.gitignore`
+- list env files (`.env`…) in a [`.worktreeinclude`](https://code.claude.com/docs/en/worktrees) so new worktrees get copies
+- a worktree is a bare checkout — make `npm install` your first prompt, or automate it with a personal `WorktreeCreate` hook
+- run plain `claude` once in a new repo first (worktrees need the trust dialog accepted)
 
 ## State
 
