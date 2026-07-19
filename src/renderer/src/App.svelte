@@ -476,7 +476,7 @@
           openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 540)
         }}
       >
-        <span class="material-symbols-outlined">tune</span>
+        <span class="material-symbols-outlined">menu</span>
       </button>
     </div>
 
