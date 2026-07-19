@@ -38,6 +38,7 @@
   } from './sessions.svelte'
   import type { Session, WorktreeEntry } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
+  import arcIconSvg from './assets/arc.svg?raw'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
   // for all five. spawn: the filter bar's per-type dropdowns — recent
@@ -115,12 +116,17 @@
     return () => window.removeEventListener('focus', onFocus)
   })
 
-  // Window/taskbar icon: the sports_motorsports glyph (racing helmet, weight
-  // 300), white on black, rendered from the bundled icon font once it's
-  // loaded. Rasterized fresh at every DPI size Windows may ask for — one big
-  // bitmap downscaled looks pixelated.
+  // Window/taskbar icon: the hand-drawn helmet SVG (assets/arc.svg, inlined
+  // by Vite), rasterized fresh at every DPI size Windows may ask for — one
+  // big bitmap downscaled looks pixelated. scripts/make-icon.mjs bakes the
+  // SAME file into build/icon.ico — one source, zero drift. The SVG has a
+  // transparent background; the PNG representations carry the alpha. Loaded
+  // as a data URL (never taints the canvas, unlike a file:// asset in the
+  // packaged build) — which is why the CSP carries `img-src data:`.
   $effect(() => {
-    void document.fonts.ready.then(() => {
+    const img = new Image()
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arcIconSvg)
+    const render = (): void => {
       // base DIP size 32; scaleFactor n => 32n pixels
       const representations = [0.5, 1, 1.25, 1.5, 2, 4, 8].map((scaleFactor) => {
         const size = Math.round(32 * scaleFactor)
@@ -129,17 +135,15 @@
         canvas.height = size
         const ctx = canvas.getContext('2d')
         if (!ctx) return { scaleFactor, dataURL: '' }
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, size, size)
-        ctx.fillStyle = '#ffffff'
-        ctx.font = `300 ${Math.round(size * 0.875)}px "Material Symbols Outlined"`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText('sports_motorsports', size / 2, size * 0.54)
+        ctx.drawImage(img, 0, 0, size, size)
         return { scaleFactor, dataURL: canvas.toDataURL('image/png') }
       })
       window.arc.setAppIcon(representations.filter((r) => r.dataURL))
-    })
+    }
+    img
+      .decode()
+      .then(render)
+      .catch((err: unknown) => console.error('app icon rasterization failed:', err))
   })
 
   // Restore persisted sessions/mode once at boot; persist on any change after.

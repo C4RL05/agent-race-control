@@ -1,45 +1,35 @@
 // Generates build/icon.ico — run with:  npx electron scripts/make-icon.mjs
 //
-// A hidden Electron window draws the EXACT canvas the running app draws for
-// its window/taskbar icon (App.svelte: sports_motorsports glyph, weight 300,
-// white on black) at every ICO size, and this script composes the PNGs into
-// a PNG-compressed ICO by hand (valid since Windows Vista). No image
-// dependencies; the .ico is checked in — regenerate when the drawing changes.
+// A hidden Electron window rasterizes the app icon SVG
+// (src/renderer/src/assets/arc.svg — the same file App.svelte rasterizes at
+// runtime for the window/taskbar icon; one source, zero drift) at every ICO
+// size, and this script composes the PNGs into a PNG-compressed ICO by hand
+// (valid since Windows Vista). No image dependencies; the .ico is checked
+// in — regenerate when the SVG changes.
 import { app, BrowserWindow } from 'electron'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const fontUrl = pathToFileURL(
-  join(root, 'node_modules', 'material-symbols', 'material-symbols-outlined.woff2')
-).href
+const svg = readFileSync(join(root, 'src', 'renderer', 'src', 'assets', 'arc.svg'), 'utf8')
+const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
 const SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 app.whenReady().then(async () => {
-  // webSecurity off only so the about:blank page may load the file:// font —
-  // a throwaway build-script window, nothing app-like.
-  const win = new BrowserWindow({ show: false, webPreferences: { webSecurity: false } })
+  const win = new BrowserWindow({ show: false })
   await win.loadURL('about:blank')
   const pngs = await win.webContents.executeJavaScript(`
     (async () => {
-      const face = new FontFace('Material Symbols Outlined', 'url(${fontUrl})', {
-        weight: '100 700'
-      })
-      await face.load()
-      document.fonts.add(face)
+      const img = new Image()
+      img.src = ${JSON.stringify(svgUrl)}
+      await img.decode()
       return ${JSON.stringify(SIZES)}.map((size) => {
         const canvas = document.createElement('canvas')
         canvas.width = size
         canvas.height = size
         const ctx = canvas.getContext('2d')
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, size, size)
-        ctx.fillStyle = '#ffffff'
-        ctx.font = '300 ' + Math.round(size * 0.875) + 'px "Material Symbols Outlined"'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText('sports_motorsports', size / 2, size * 0.54)
+        ctx.drawImage(img, 0, 0, size, size)
         return canvas.toDataURL('image/png').split(',')[1]
       })
     })()
