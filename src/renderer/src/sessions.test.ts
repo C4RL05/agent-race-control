@@ -17,7 +17,8 @@ import {
   moveGroup,
   sameDir,
   parkedWorktrees,
-  worktreeSpawnName
+  worktreeSpawnName,
+  sessionTargetCwd
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -162,11 +163,13 @@ describe('applyStatus', () => {
 
   it('follows the payload cwd into the worktree (a --worktree spawn starts at the repo root)', () => {
     dirOrder.length = 0
-    sessions.push(fakeSession({ key: 1, cwd: 'D:\\repo', status: 'idle' }))
+    sessions.push(fakeSession({ key: 1, cwd: 'D:\\repo', status: 'idle', spawnWorktree: 'feat' }))
     applyStatus('tok', 'sid', 'UserPromptSubmit', 'D:\\repo\\.claude\\worktrees\\feat')
     expect(sessions[0].cwd).toBe('D:\\repo\\.claude\\worktrees\\feat')
     expect(dirOrder).toContain('D:\\repo\\.claude\\worktrees\\feat')
     expect(sessions[0].status).toBe('running')
+    // adoption retires the pending flag — the synthetic parked row hands over
+    expect(sessions[0].spawnWorktree).toBe(null)
   })
 
   it('treats a respelled payload cwd as the same dir — no churn, no duplicate group', () => {
@@ -207,6 +210,17 @@ describe('parkedWorktrees', () => {
 
   it('empty list stays empty', () => {
     expect(parkedWorktrees([], 'D:/repo', [])).toEqual([])
+  })
+})
+
+// A pending worktree spawn's row belongs to its destination — the reopen menu
+// filters on this so a worktree mid-reopen isn't offered twice.
+describe('sessionTargetCwd', () => {
+  it('pending spawns resolve to the destination, others to their cwd', () => {
+    expect(sessionTargetCwd(fakeSession({ cwd: 'D:\\repo', spawnWorktree: 'feat' }))).toBe(
+      'D:\\repo/.claude/worktrees/feat'
+    )
+    expect(sessionTargetCwd(fakeSession({ cwd: 'D:\\repo' }))).toBe('D:\\repo')
   })
 })
 

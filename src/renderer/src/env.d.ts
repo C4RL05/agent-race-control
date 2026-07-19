@@ -28,6 +28,9 @@ interface PersistedState {
     claudeSessionId: string | null
     // Cosmetic TODO flag (issue #3) — additive/optional, absent → false.
     todo?: boolean
+    // Pending --worktree spawn still awaiting its hook cwd-follow (named
+    // only) — additive/optional; restore re-arms the flag.
+    spawnWorktree?: string | null
   }>
 }
 

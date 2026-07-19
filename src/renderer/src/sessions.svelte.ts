@@ -39,9 +39,11 @@ export interface Session {
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
   // Set on sessions the repo card spawns into a fresh worktree: pass
-  // --worktree <name> ('' = let Claude auto-name) at spawn. Transient — not
-  // persisted; a restored session's cwd already IS its worktree, and Claude
-  // Code owns the worktree's whole lifecycle (see the worktree-workflow doc).
+  // --worktree <name> ('' = let Claude auto-name) at spawn. PENDING state —
+  // while set, the tower parks the row on a synthetic branch row for the
+  // destination; the first hook payload's cwd adopts and clears it (the real
+  // row takes over). Persisted only while pending and named, so a parked
+  // never-prompted session survives restart and re-arms --worktree.
   spawnWorktree: string | null
   // Which pane tab is showing: the live terminal or the read-only
   // conversation preview (Claude sessions only). Transient — not persisted.
@@ -337,9 +339,12 @@ export function applyStatus(
   // (the spawn-echo sibling is applySpawnCwd, the conversation-id sibling is
   // the /clear follow above). The reactive cwd re-groups the tower row; an
   // open Preview re-arms on the change and main's transcript watch re-points
-  // a tail whose path changed, so nothing else needs telling.
+  // a tail whose path changed, so nothing else needs telling. Adoption also
+  // retires the pending spawnWorktree flag: the synthetic parked row hands
+  // over to the real one, and the flag is never re-passed on a later respawn.
   if (cwd && !sameDir(session.cwd, cwd)) {
     session.cwd = cwd
+    session.spawnWorktree = null
     touchDir(cwd)
   }
   // Compute the next status, then commit via setStatus (one choke point, so the
@@ -460,6 +465,15 @@ export function parkedWorktrees(
   )
 }
 
+// Where a session's row is headed: a pending worktree spawn counts as its
+// destination — so the reopen menu doesn't offer a worktree that's already
+// being reopened, even though the hooks haven't confirmed the move yet.
+export function sessionTargetCwd(session: Session): string {
+  return session.spawnWorktree
+    ? `${session.cwd}/.claude/worktrees/${session.spawnWorktree}`
+    : session.cwd
+}
+
 // How to reopen a parked worktree: a path under the repo's .claude/worktrees/
 // returns its name — spawn via `--worktree <name>` so Claude Code re-attaches
 // its cleanup lifecycle (probe-verified: reopening preserves committed work
@@ -569,7 +583,10 @@ export async function restoreState(): Promise<void> {
       // state files — the title is a Claude session's source of truth).
       name: s.type === 'shell' ? s.name : '',
       // Claude sessions resume their conversation; shells reopen fresh.
-      resumeId: s.type === 'claude' ? s.claudeSessionId : null
+      resumeId: s.type === 'claude' ? s.claudeSessionId : null,
+      // A parked never-prompted worktree spawn re-arms --worktree; adoption
+      // cleared the flag for established sessions, so it never double-passes.
+      worktree: (s.type === 'claude' && s.spawnWorktree) || undefined
     })
     // Restore the TODO flag directly (not via setStatus) — the spawn's status
     // defaults must not count as the color change that would clear it.
@@ -612,7 +629,11 @@ export function snapshotState(): PersistedState {
       name: s.name,
       cwd: s.cwd,
       claudeSessionId: s.claudeSessionId,
-      todo: s.todo
+      todo: s.todo,
+      // Only a NAMED pending flag persists: restoring '' (auto-name) would
+      // mint a second random worktree — the orphan stays visible in the
+      // reopen menu instead.
+      spawnWorktree: s.spawnWorktree || null
     }))
   }
 }

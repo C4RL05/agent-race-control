@@ -33,7 +33,8 @@
     collapsedGroups,
     toggleCollapsed,
     parkedWorktrees,
-    worktreeSpawnName
+    worktreeSpawnName,
+    sessionTargetCwd
   } from './sessions.svelte'
   import type { Session, WorktreeEntry } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
@@ -215,7 +216,9 @@
     const items = parkedWorktrees(
       entries,
       repoRoot,
-      sessions.map((s) => s.cwd)
+      // Target cwds, not raw ones — a worktree mid-reopen (still parked on
+      // its synthetic row) must not be offered a second time.
+      sessions.map(sessionTargetCwd)
     )
     openMenu({ kind: 'worktrees', repoRoot, items, x, y }, 30 * Math.max(items.length, 1) + 10)
   }
@@ -313,7 +316,9 @@
       }
       const branches: BranchView[] = group.cwds.map((cwd) => {
         const info = gitInfo[cwd]
-        const inDir = sessions.filter((s) => s.cwd === cwd)
+        // Pending worktree spawns are pulled out of their spawn cwd's row —
+        // they render on a synthetic destination row below instead.
+        const inDir = sessions.filter((s) => s.cwd === cwd && !s.spawnWorktree)
         return {
           cwd,
           branch: info?.branch ?? '',
@@ -323,6 +328,28 @@
           visible: inDir.filter(sessionMatches)
         }
       })
+      // A named --worktree spawn parks on its destination's branch row from
+      // the start — the app's own intent (it typed the flag), not a guess:
+      // the first hook payload adopts the real cwd, clears the flag, and the
+      // real row takes over under the same label, appended last just like
+      // this one (touchDir pushes to dirOrder's end). Auto-named spawns
+      // ('' — name unknown until Claude picks it) stay on their spawn row.
+      const parked = new Map<string, Session[]>()
+      for (const s of sessions) {
+        if (s.spawnWorktree && group.cwds.includes(s.cwd)) {
+          parked.set(s.spawnWorktree, [...(parked.get(s.spawnWorktree) ?? []), s])
+        }
+      }
+      for (const [name, inWt] of parked) {
+        branches.push({
+          cwd: `${group.key}/.claude/worktrees/${name}`,
+          branch: `worktree-${name}`,
+          worktreeName: name,
+          showWorktree: name !== group.repoName,
+          sessions: inWt,
+          visible: inWt.filter(sessionMatches)
+        })
+      }
       return {
         kind: 'repo',
         key: group.key,
