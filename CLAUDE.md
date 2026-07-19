@@ -5,7 +5,7 @@ Minimal Electron + Svelte terminal cockpit for Claude Code on native Windows: on
 ## Two non-negotiable ethos rules
 
 1. **Minimal.** Check every feature idea against the doc's out-of-scope list (no git/PR/kanban/graphs/themes/DB). When tempted, flag it instead of building it.
-2. **Full-fidelity Claude Code.** The unmodified `claude` CLI runs in a real ConPTY. Never intercept, rewrite, or steer the byte stream. If it works in Windows Terminal but not here, it's our bug. Blessed deviations (all documented): `--session-id`/`--settings` spawn flags, user-initiated `/color` and `/rename` typing (injected only at the idle prompt — never while a dialog is open), the Ctrl+=/−/0 zoom keys, dev-only F12, and the dev-only `ARC_USERDATA` userData override (screenshot harness scratch profile — ignored when packaged).
+2. **Full-fidelity Claude Code.** The unmodified `claude` CLI runs in a real ConPTY. Never intercept, rewrite, or steer the byte stream. If it works in Windows Terminal but not here, it's our bug. Blessed deviations (all documented): `--session-id`/`--settings` spawn flags, `--worktree` when the user asks a repo card for a fresh worktree (Claude Code runs the git, the app never does), user-initiated `/color` and `/rename` typing (injected only at the idle prompt — never while a dialog is open), the Ctrl+=/−/0 zoom keys, dev-only F12, and the dev-only `ARC_USERDATA` userData override (screenshot harness scratch profile — ignored when packaged).
 
 ## Commands
 
