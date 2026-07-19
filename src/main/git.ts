@@ -44,6 +44,43 @@ function git(cwd: string, args: string[]): Promise<string> {
   })
 }
 
+// One worktree as `git worktree list --porcelain` reports it. branch is the
+// short name ('' when detached); locked covers both live sessions and stale
+// locks left by killed ones.
+export interface WorktreeEntry {
+  path: string
+  branch: string
+  locked: boolean
+}
+
+// Read-only list of a repo's worktrees for the repo card's reopen menu —
+// fetched on menu open, never polled. Same fail-open contract as getGitInfo:
+// any error, timeout, or non-repo resolves to [], never a throw.
+export async function listWorktrees(repoRoot: string): Promise<WorktreeEntry[]> {
+  try {
+    const out = await git(repoRoot, ['worktree', 'list', '--porcelain'])
+    const entries: WorktreeEntry[] = []
+    for (const block of out.split(/\n{2,}/)) {
+      let path = ''
+      let branch = ''
+      let locked = false
+      for (const line of block.split('\n')) {
+        if (line.startsWith('worktree ')) path = line.slice('worktree '.length).trim()
+        else if (line.startsWith('branch '))
+          branch = line
+            .slice('branch '.length)
+            .trim()
+            .replace(/^refs\/heads\//, '')
+        else if (line === 'locked' || line.startsWith('locked ')) locked = true
+      }
+      if (path) entries.push({ path, branch, locked })
+    }
+    return entries
+  } catch {
+    return []
+  }
+}
+
 export async function getGitInfo(cwd: string): Promise<GitInfo> {
   try {
     // One call for the common case: the absolute shared git dir, this cwd's

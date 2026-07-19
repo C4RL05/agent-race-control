@@ -5,7 +5,7 @@ import { startStatusServer } from './status'
 import { registerTranscriptHandlers, disposeAllTails } from './transcript'
 import { loadState, saveState, flushState } from './state'
 import type { AppState } from './state'
-import { getGitInfo } from './git'
+import { getGitInfo, listWorktrees } from './git'
 
 // Blessed dev-only deviation (screenshot harness, see the kickoff doc): a
 // scratch profile so staged runs never touch the real tower. Must be set
@@ -156,6 +156,9 @@ if (!gotLock) {
   // getGitInfo is fail-open, so this handler never rejects.
   ipcMain.handle('git:info', (_event, cwd: string) => getGitInfo(cwd))
 
+  // Read-only worktree list for the repo card's reopen menu (fail-open too).
+  ipcMain.handle('git:worktrees', (_event, repoRoot: string) => listWorktrees(repoRoot))
+
   // Window/taskbar icon, rendered by the renderer from the bundled Material
   // Symbols font (sports_motorsports — the racing helmet, white on black).
   // Multi-resolution so Windows gets a crisp raster at every DPI size. No
@@ -188,8 +191,8 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
-    await startStatusServer((hookToken, claudeSessionId, event) => {
-      win?.webContents.send('session:status', hookToken, claudeSessionId, event)
+    await startStatusServer((hookToken, claudeSessionId, event, cwd) => {
+      win?.webContents.send('session:status', hookToken, claudeSessionId, event, cwd)
     })
     registerPtyHandlers(() => win?.webContents ?? null)
     registerTranscriptHandlers(() => win?.webContents ?? null)

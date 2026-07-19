@@ -3,7 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 // Type-only: erased at build, so no runtime coupling to main.
 import type { PreviewItem } from '../main/transcript'
 import type { HookEvent } from '../main/status'
-import type { GitInfo } from '../main/git'
+import type { GitInfo, WorktreeEntry } from '../main/git'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
@@ -26,7 +26,9 @@ contextBridge.exposeInMainWorld('arc', {
   // Read-only branch/worktree info for the tower tree (issue #5) — always
   // resolves (main's getGitInfo is fail-open).
   git: {
-    info: (cwd: string): Promise<GitInfo> => ipcRenderer.invoke('git:info', cwd)
+    info: (cwd: string): Promise<GitInfo> => ipcRenderer.invoke('git:info', cwd),
+    worktrees: (repoRoot: string): Promise<WorktreeEntry[]> =>
+      ipcRenderer.invoke('git:worktrees', repoRoot)
   },
   pty: {
     spawn: (opts: {
@@ -35,6 +37,7 @@ contextBridge.exposeInMainWorld('arc', {
       type?: 'shell' | 'claude'
       cwd?: string
       resume?: string
+      worktree?: string
     }): Promise<{ id: string; claudeSessionId?: string; cwd: string } | { error: string }> =>
       ipcRenderer.invoke('pty:spawn', opts),
     write: (id: string, data: string): void => {
@@ -88,15 +91,16 @@ contextBridge.exposeInMainWorld('arc', {
   },
   status: {
     onChange: (
-      callback: (hookToken: string, claudeSessionId: string, event: HookEvent) => void
+      callback: (hookToken: string, claudeSessionId: string, event: HookEvent, cwd: string) => void
     ): (() => void) => {
       const listener = (
         _event: IpcRendererEvent,
         hookToken: string,
         claudeSessionId: string,
-        event: HookEvent
+        event: HookEvent,
+        cwd: string
       ): void => {
-        callback(hookToken, claudeSessionId, event)
+        callback(hookToken, claudeSessionId, event, cwd)
       }
       ipcRenderer.on('session:status', listener)
       return () => ipcRenderer.removeListener('session:status', listener)

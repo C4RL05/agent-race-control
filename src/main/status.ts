@@ -64,7 +64,7 @@ export function writeSessionHooks(hookToken: string): string | null {
 }
 
 export function startStatusServer(
-  onEvent: (hookToken: string, claudeSessionId: string, event: HookEvent) => void
+  onEvent: (hookToken: string, claudeSessionId: string, event: HookEvent, cwd: string) => void
 ): Promise<void> {
   // Secret path token (anti-spoof) shared by every session's URL; the trailing
   // path segment is the per-session hookToken the server routes on.
@@ -86,6 +86,10 @@ export function startStatusServer(
             session_id?: string
             hook_event_name?: string
             notification_type?: string
+            // The session's real working directory. A --worktree spawn starts
+            // at the repo root and enters the worktree Claude creates — this
+            // field is how the renderer follows it (applyStatus).
+            cwd?: string
           }
           // The 60s idle nag (type idle_prompt, "Claude is waiting for your
           // input" — verified empirically) is not a needs-input signal: Stop
@@ -99,7 +103,7 @@ export function startStatusServer(
           }
           const event = payload.hook_event_name
           if (payload.session_id && event && (HOOK_EVENTS as string[]).includes(event)) {
-            onEvent(hookToken, payload.session_id, event as HookEvent)
+            onEvent(hookToken, payload.session_id, event as HookEvent, payload.cwd ?? '')
           }
         } catch {
           // malformed payload — ignore

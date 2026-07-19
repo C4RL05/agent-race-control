@@ -47,6 +47,14 @@ type GitInfo = {
   branch: string
 }
 
+// One worktree from `git worktree list` (reopen menu) — hand-copied from
+// src/main/git.ts (WorktreeEntry), same reason.
+type WorktreeEntry = {
+  path: string
+  branch: string
+  locked: boolean
+}
+
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {
   arc: {
@@ -61,6 +69,7 @@ interface Window {
     }
     git: {
       info: (cwd: string) => Promise<GitInfo>
+      worktrees: (repoRoot: string) => Promise<WorktreeEntry[]>
     }
     pty: {
       spawn: (opts: {
@@ -69,6 +78,9 @@ interface Window {
         type?: 'shell' | 'claude'
         cwd?: string
         resume?: string
+        // Spawn claude with --worktree: Claude Code creates-and-enters a fresh
+        // git worktree ('' = auto-name). The app never runs the git itself.
+        worktree?: string
       }) => Promise<{ id: string; claudeSessionId?: string; cwd: string } | { error: string }>
       write: (id: string, data: string) => void
       resize: (id: string, cols: number, rows: number) => void
@@ -90,14 +102,16 @@ interface Window {
     // claudeSessionId is the payload's CURRENT conversation id, which changes
     // on `/clear`. event is Claude Code's hook name (HookEvent in
     // src/main/status.ts, hand-copied — the renderer can't import from main);
-    // applyStatus in sessions.svelte.ts maps each to a dot state and follows a
-    // changed conversation id to the new transcript.
+    // cwd is the payload's working directory — how a --worktree session's real
+    // cwd reaches the tower. applyStatus in sessions.svelte.ts maps each event
+    // to a dot state and follows a changed conversation id / cwd.
     status: {
       onChange: (
         callback: (
           hookToken: string,
           claudeSessionId: string,
-          event: 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
+          event: 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop',
+          cwd: string
         ) => void
       ) => () => void
     }

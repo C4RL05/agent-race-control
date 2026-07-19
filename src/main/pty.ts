@@ -30,7 +30,16 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
     'pty:spawn',
     (
       _event,
-      opts: { cols: number; rows: number; type?: SessionType; cwd?: string; resume?: string }
+      opts: {
+        cols: number
+        rows: number
+        type?: SessionType
+        cwd?: string
+        resume?: string
+        // Ask Claude Code to create-and-enter a fresh git worktree ('' = let
+        // Claude auto-name). Claude runs the git; the app never does.
+        worktree?: string
+      }
     ): SpawnResult => {
       const bash = findGitBash()
       if (!bash) {
@@ -71,12 +80,20 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         delete env[key]
       }
 
+      // A requested cwd that no longer exists is a fact to surface, not paper
+      // over: a cleaned-up worktree (or any deleted folder) must not silently
+      // respawn in the home dir — the error renders in the terminal pane and
+      // the row exits (see the worktree-workflow doc section).
+      if (opts.cwd && !existsSync(opts.cwd)) {
+        return { error: `Working directory no longer exists: ${opts.cwd}` }
+      }
+
       // Claude sessions: the login shell sources the user's profile (so claude
       // resolves from their real PATH), then exec makes bash *become* claude —
       // the PTY's lifetime IS the claude process's lifetime.
       // --session-id gives a deterministic session id (status + resume mapping);
       // --settings adds the observability-only status hooks (see status.ts).
-      const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : homedir()
+      const cwd = opts.cwd ?? homedir()
 
       let claudeSessionId: string | undefined
       let args: string[]
@@ -88,6 +105,14 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         let cmd = canResume
           ? `exec claude --resume ${claudeSessionId}`
           : `exec claude --session-id ${claudeSessionId}`
+        // Fresh spawns only — a resumed session's cwd already IS its worktree
+        // (transcripts live under the worktree cwd; --resume there continues
+        // mid-feature). The renderer slugifies the name; stripping quotes here
+        // is belt-and-suspenders for the bash -c string.
+        if (!canResume && opts.worktree !== undefined) {
+          const name = opts.worktree.replace(/'/g, '')
+          cmd += name ? ` --worktree '${name}'` : ' --worktree'
+        }
         // Per-session hooks: the spawn id is the URL's routing token, so this
         // session's hooks keep arriving here even after `/clear` mints a new
         // conversation id (see status.ts + issue #2).
