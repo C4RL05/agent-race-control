@@ -17,6 +17,9 @@ interface PersistedState {
   focusedIndex: number
   dirOrder?: string[]
   dirColors?: Record<string, string>
+  // Group keys whose card is collapsed to its title (issue #5). Additive/
+  // optional; a stale key (group gone) is harmless — it just never matches.
+  collapsed?: string[]
   recentDirs?: string[]
   sessions: Array<{
     type: 'shell' | 'claude'

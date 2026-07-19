@@ -62,6 +62,17 @@ export const dirOrder = $state<string[]>([])
 // from Claude's /color vocabulary, right-click the header to change it.
 export const dirColors = $state<Record<string, string>>({})
 
+// Which group cards are collapsed to their title (issue #5), keyed by group
+// key (repoRoot or cwd — the same key moveGroup/setGroupColor use). Only
+// collapsed keys are present; absent = expanded. Persisted so it survives
+// restart. Click a card's name to toggle.
+export const collapsedGroups = $state<Record<string, boolean>>({})
+
+export function toggleCollapsed(groupKey: string): void {
+  if (collapsedGroups[groupKey]) delete collapsedGroups[groupKey]
+  else collapsedGroups[groupKey] = true
+}
+
 // Per-cwd branch/worktree info (issue #5), populated async from main. Absent =
 // not yet fetched (the cwd renders as a flat folder until it lands); a stored
 // `{ isRepo: false }` / null = not a git repo (a permanently flat folder).
@@ -468,6 +479,7 @@ export async function restoreState(): Promise<void> {
   ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
+  if (saved.collapsed) for (const key of saved.collapsed) collapsedGroups[key] = true
   // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
   // external data and the one path that skips them otherwise.
   if (saved.recentDirs?.length) {
@@ -513,6 +525,11 @@ export function snapshotState(): PersistedState {
     dirOrder: dirOrder.filter((dir) => alive.some((s) => s.cwd === dir)),
     dirColors: Object.fromEntries(
       Object.entries(dirColors).filter(([dir]) => alive.some((s) => s.cwd === dir))
+    ),
+    // Keep only collapsed keys whose group is still alive (mirrors dirColors) —
+    // group key is the repo/cwd key, so compare against each alive cwd's key.
+    collapsed: Object.keys(collapsedGroups).filter(
+      (key) => collapsedGroups[key] && alive.some((s) => groupKeyOf(s.cwd) === key)
     ),
     recentDirs: [...recentDirs],
     sessions: alive.map((s) => ({

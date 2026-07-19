@@ -29,7 +29,9 @@
     noteTitleForStatus,
     gitInfo,
     groupCwds,
-    refreshAllGitInfo
+    refreshAllGitInfo,
+    collapsedGroups,
+    toggleCollapsed
   } from './sessions.svelte'
   import type { Session } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
@@ -284,6 +286,22 @@
     })
   )
 
+  // The aggregate status dot a collapsed card shows on its title, most-urgent
+  // first: waiting (a session wants you) › a running Claude (agent driving) ›
+  // any other running (a live shell) › idle (your turn) › exited. Carries the
+  // winning session's type so a lone running shell reads neutral (`plain`),
+  // never red — the same per-type colours the rows use. null = no sessions.
+  function rollupDot(group: GroupView): { status: Session['status']; plain: boolean } | null {
+    const all = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
+    const pick =
+      all.find((s) => s.status === 'waiting') ??
+      all.find((s) => s.status === 'running' && s.type === 'claude') ??
+      all.find((s) => s.status === 'running') ??
+      all.find((s) => s.status === 'idle') ??
+      all.find((s) => s.status === 'exited')
+    return pick ? { status: pick.status, plain: pick.type === 'shell' } : null
+  }
+
   // --- drag & drop (same-window; component state, not dataTransfer) ---
   // Whole group cards (repo or plain folder) reorder against each other, moving
   // the whole group's cwd block — the card is the drag handle, so grabbing
@@ -480,24 +498,25 @@
               ondragleave={() => (dropHint = null)}
               ondrop={(e) => dropOnGroup(e, group.key)}
             >
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="card-title"
-                role="button"
-                tabindex="0"
                 title={group.cwd}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
                 }}
               >
-                <span class="folder-name">{dirLabel(group.cwd).base}</span>
+                {@render cardLabel(group)}
                 <span class="dir-meta">
                   <span class="spawn-cluster">{@render spawnButtons(group.cwd)}</span>
                 </span>
               </div>
-              {#each group.visible as session (session.key)}
-                {@render sessionRow(session)}
-              {/each}
+              {#if !collapsedGroups[group.key]}
+                {#each group.visible as session (session.key)}
+                  {@render sessionRow(session)}
+                {/each}
+              {/if}
             </div>
           {/if}
         {:else}
@@ -519,17 +538,16 @@
               ondragleave={() => (dropHint = null)}
               ondrop={(e) => dropOnGroup(e, group.key)}
             >
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="card-title"
-                role="button"
-                tabindex="0"
                 title={group.key}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   openMenu({ kind: 'color', dir: group.key, x: e.clientX, y: e.clientY }, 260)
                 }}
               >
-                <span class="folder-name">{group.repoName}</span>
+                {@render cardLabel(group)}
                 <span class="dir-meta">
                   <span class="spawn-cluster">
                     <button
@@ -546,19 +564,21 @@
                   </span>
                 </span>
               </div>
-              {#each branches as branch (branch.cwd)}
-                <div class="branch-row" title={branch.cwd}>
-                  <span class="material-symbols-outlined branch-icon">account_tree</span>
-                  <span class="branch-name">{branch.branch}</span>
-                  <span class="dir-meta">
-                    <span class="dir-path">{branch.showWorktree ? branch.worktreeName : ''}</span>
-                    <span class="spawn-cluster">{@render spawnButtons(branch.cwd)}</span>
-                  </span>
-                </div>
-                {#each branch.visible as session (session.key)}
-                  {@render sessionRow(session)}
+              {#if !collapsedGroups[group.key]}
+                {#each branches as branch (branch.cwd)}
+                  <div class="branch-row" title={branch.cwd}>
+                    <span class="material-symbols-outlined branch-icon">account_tree</span>
+                    <span class="branch-name">{branch.branch}</span>
+                    <span class="dir-meta">
+                      <span class="dir-path">{branch.showWorktree ? branch.worktreeName : ''}</span>
+                      <span class="spawn-cluster">{@render spawnButtons(branch.cwd)}</span>
+                    </span>
+                  </div>
+                  {#each branch.visible as session (session.key)}
+                    {@render sessionRow(session)}
+                  {/each}
                 {/each}
-              {/each}
+              {/if}
             </div>
           {/if}
         {/if}
@@ -688,6 +708,37 @@
         >{font.label}
       </button>
     {/each}
+  {/snippet}
+
+  <!-- The card's name, which doubles as the collapse toggle (issue #5): click
+       it to fold the card to just this title / unfold it. Collapsed, it leads
+       with a roll-up status dot so a folded card still reads at a glance;
+       expanded, it's just the name. Drag still works (a click isn't a drag) and
+       right-clicking the title still opens the colour menu. -->
+  {#snippet cardLabel(group: GroupView)}
+    {@const collapsed = collapsedGroups[group.key]}
+    <span
+      class="folder-name"
+      role="button"
+      tabindex="0"
+      aria-expanded={!collapsed}
+      title={collapsed ? 'Expand' : 'Collapse'}
+      onclick={() => toggleCollapsed(group.key)}
+      onkeydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          toggleCollapsed(group.key)
+        }
+      }}
+    >
+      {#if collapsed}
+        {@const r = rollupDot(group)}
+        {#if r}<span class="rollup dot {r.status}" class:plain={r.plain}></span>{/if}
+      {/if}
+      <span class="name-text">
+        {group.kind === 'plain' ? dirLabel(group.cwd).base : group.repoName}
+      </span>
+    </span>
   {/snippet}
 
   <!-- The header hover cluster: new Claude / new shell / Show in Explorer, all
@@ -1113,10 +1164,28 @@
        before the edge instead of overrunning to the card's clipped edge */
     justify-self: stretch;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    /* the name is the collapse toggle — pointer (over the card's grab) says so */
+    cursor: pointer;
+  }
+
+  /* The name text lives in its own element so the flex row can lead with the
+     roll-up dot when collapsed; it, not the flex box, carries the ellipsis. */
+  .name-text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+  }
+
+  /* Collapsed roll-up dot: reuses the .dot status palette (incl. the plain
+     shell tint and the waiting pulse). Decorative — clicks and hover fall
+     through to the folder-name toggle. */
+  .rollup {
+    pointer-events: none;
   }
 
   /* Right (auto) track: the worktree annotation, swapping to the spawn cluster
