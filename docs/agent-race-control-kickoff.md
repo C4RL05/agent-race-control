@@ -196,6 +196,14 @@ Documentation grows one file: **`docs/user-guide.md`** — the complete feature 
 - **New staging: a scratch demo repo (`pitwall`) inside `.screenshot-profile/`** with hand-made worktrees under `.claude/worktrees/` on `worktree-<name>` branches (Claude Code's own naming), commits arranged so the markers show real states (dirty ↑1 ↓1, clean ↑2), a committed `.gitignore` ignoring `.claude/` (the guide's own recommended setup), and two session-less worktrees to fill the reopen menu. The staging script runs git; the app still never does — the arm's-length rule constrains the app, not dev tooling (same as the E2E probes).
 - **Accepted:** the agent-race-control card in the hero shows whatever the live repo's working tree looks like at capture time (the harness runs in the real checkout) — honest, at the cost of shot-to-shot variation.
 
+## Trailer (2026-07-19)
+
+A **30s feature trailer** rendered with Motion Canvas: light text over a dark (`#0d1117`) canvas, the light-theme doc screenshots as the footage, staggered masked-rise text transitions, the app's own Primer palette and fonts (Inter / JetBrains Mono). Six beats: title → timing tower + animated status dots → fidelity ethos → worktree workflow → preview → resume outro.
+
+- **`trailer/` is a standalone subproject** — own `package.json` (Motion Canvas 3.17.2 pins Vite 5; the app is on Vite 7), never part of the app's dependency tree or build. Same arm's-length rule as the screenshot harness: dev tooling, zero app code touched.
+- Scenes import the shipped `images/arc-*-light.png` directly (single source of truth — a `server.fs.allow` reach-up, no copies). Rerunning `npm run screenshots` then re-rendering refreshes the footage.
+- **Rendering is automated** (`trailer/render.mjs`): playwright drives the Motion Canvas editor in a real browser — same pattern as the screenshot harness — clicks Render, waits for the ffmpeg exporter to write `trailer/output/`. The output dir and `node_modules/` are gitignored; where the finished mp4 lives (committed or released) is Carlos's call.
+
 ## Definition of done (v1)
 One window. A timing tower of sessions — Claude Code sessions with name, color, and live status, plus plain shell sessions for everything else — so no other terminal window needs to exist. Click a session to drive it. Spawn (either type), close, and resume. Nothing on the out-of-scope list. That's it — ship it and stop.
 
