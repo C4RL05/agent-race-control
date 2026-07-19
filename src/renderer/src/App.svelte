@@ -35,14 +35,16 @@
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
-  // for all three. spawn: the filter bar's per-type dropdowns — recent
+  // for all four. spawn: the filter bar's per-type dropdowns — recent
   // directories plus Browse…; sessions in a live directory spawn from the
-  // group header's hover cluster instead. color: right-click a group header.
+  // group header's hover cluster instead. type-filter: the filter box's
+  // session-type dropdown. color: right-click a group header.
   // session: right-click a session row.
   type Menu =
     | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
     | { kind: 'color'; dir: string; x: number; y: number }
     | { kind: 'session'; key: number; x: number; y: number }
+    | { kind: 'type-filter'; x: number; y: number }
   let menu = $state<Menu | null>(null)
   let settingsOpen = $state(false)
 
@@ -411,28 +413,19 @@
           >
         {/if}
         <button
-          class="chip"
-          class:active={filterClaude}
-          title="Show Claude sessions"
-          aria-label="Filter Claude sessions"
-          onclick={() => {
-            filterClaude = !filterClaude
-            if (filterClaude) filterShell = false
+          class="chip type-filter"
+          class:active={filterClaude || filterShell}
+          title="Filter by session type"
+          aria-label="Filter by session type"
+          onclick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            openMenu({ kind: 'type-filter', x: rect.left, y: rect.bottom + 4 }, 110)
           }}
         >
-          <span class="material-symbols-outlined">asterisk</span>
-        </button>
-        <button
-          class="chip"
-          class:active={filterShell}
-          title="Show shell sessions"
-          aria-label="Filter shell sessions"
-          onclick={() => {
-            filterShell = !filterShell
-            if (filterShell) filterClaude = false
-          }}
-        >
-          <span class="material-symbols-outlined">terminal_2</span>
+          <span class="material-symbols-outlined">
+            {filterClaude ? 'asterisk' : filterShell ? 'terminal_2' : 'filter_list'}
+          </span>
+          <span class="material-symbols-outlined caret">expand_more</span>
         </button>
       </div>
       <button
@@ -836,6 +829,40 @@
           }}
         >
           <span class="material-symbols-outlined">folder_open</span>Browse…
+        </button>
+      {:else if menu.kind === 'type-filter'}
+        <button
+          class="menu-item"
+          class:active={!filterClaude && !filterShell}
+          onclick={() => {
+            filterClaude = false
+            filterShell = false
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">filter_list</span>All types
+        </button>
+        <button
+          class="menu-item"
+          class:active={filterClaude}
+          onclick={() => {
+            filterClaude = true
+            filterShell = false
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">asterisk</span>Claude sessions
+        </button>
+        <button
+          class="menu-item"
+          class:active={filterShell}
+          onclick={() => {
+            filterClaude = false
+            filterShell = true
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">terminal_2</span>Shell sessions
         </button>
       {:else if menu.kind === 'color'}
         {#each DOT_COLORS as entry (entry.name)}
@@ -1497,6 +1524,18 @@
     outline: 1px solid var(--accent);
   }
 
+  .chip.type-filter {
+    display: flex;
+    align-items: center;
+    width: auto;
+    padding: 0 3px;
+    gap: 1px;
+  }
+
+  .chip.type-filter .caret {
+    font-size: 12px;
+  }
+
   .icon-btn {
     flex: 0 0 auto;
     display: grid;
@@ -1661,6 +1700,14 @@
 
   .menu-item.color {
     text-transform: capitalize;
+  }
+
+  .menu-item.active {
+    color: var(--accent);
+  }
+
+  .menu-item.active .material-symbols-outlined {
+    color: var(--accent);
   }
 
   .menu-divider {
