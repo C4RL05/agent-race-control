@@ -37,23 +37,23 @@
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
-  // for all three. spawn: the filter bar's per-type dropdowns — recent
+  // for all four. spawn: the filter bar's per-type dropdowns — recent
   // directories plus Browse…; sessions in a live directory spawn from the
-  // group header's hover cluster instead. color: right-click a group header.
+  // group header's hover cluster instead. type-filter: the filter box's
+  // session-type dropdown. color: right-click a group header.
   // session: right-click a session row.
   type Menu =
     | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
     | { kind: 'color'; dir: string; x: number; y: number }
     | { kind: 'session'; key: number; x: number; y: number }
-    | { kind: 'settings'; x: number; y: number }
+    | { kind: 'type-filter'; x: number; y: number }
   let menu = $state<Menu | null>(null)
+  let settingsOpen = $state(false)
 
   // Clamp y so no menu opens off the bottom edge — the per-menu copies of
   // this had drifted (spawn menus never clamped). height ≈ panel pixels.
   function openMenu(next: Menu, height: number): void {
-    // Clamp within the viewport (8px margins). A tall menu (Settings, with
-    // three font groups) scrolls via the .menu max-height instead of running
-    // off-screen — the floor keeps its top on-screen when height ≈ viewport.
+    // Clamp within the viewport (8px margins).
     menu = { ...next, y: Math.max(8, Math.min(next.y, window.innerHeight - height)) }
   }
 
@@ -70,14 +70,10 @@
   }
 
   const MODES: Mode[] = ['system', 'light', 'dark']
-  const MODE_ICONS: Record<Mode, string> = {
-    system: 'computer',
-    light: 'light_mode',
-    dark: 'dark_mode'
-  }
-
-  function cycleMode(): void {
-    ui.mode = MODES[(MODES.indexOf(ui.mode) + 1) % MODES.length]
+  const MODE_LABELS: Record<Mode, string> = {
+    system: 'System',
+    light: 'Light',
+    dark: 'Dark'
   }
 
   let systemDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -435,46 +431,26 @@
           >
         {/if}
         <button
-          class="chip"
-          class:active={filterClaude}
-          title="Show Claude sessions"
-          aria-label="Filter Claude sessions"
-          onclick={() => {
-            filterClaude = !filterClaude
-            if (filterClaude) filterShell = false
+          class="chip type-filter"
+          class:active={filterClaude || filterShell}
+          title="Filter by session type"
+          aria-label="Filter by session type"
+          onclick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            openMenu({ kind: 'type-filter', x: rect.left, y: rect.bottom + 4 }, 110)
           }}
         >
-          <span class="material-symbols-outlined">asterisk</span>
-        </button>
-        <button
-          class="chip"
-          class:active={filterShell}
-          title="Show shell sessions"
-          aria-label="Filter shell sessions"
-          onclick={() => {
-            filterShell = !filterShell
-            if (filterShell) filterClaude = false
-          }}
-        >
-          <span class="material-symbols-outlined">terminal_2</span>
+          <span class="material-symbols-outlined">
+            {filterClaude ? 'asterisk' : filterShell ? 'terminal_2' : 'filter_list'}
+          </span>
+          <span class="material-symbols-outlined caret">expand_more</span>
         </button>
       </div>
       <button
         class="icon-btn"
-        title={`Theme: ${ui.mode} — click to switch`}
-        aria-label={`Theme: ${ui.mode}`}
-        onclick={cycleMode}
-      >
-        <span class="material-symbols-outlined">{MODE_ICONS[ui.mode]}</span>
-      </button>
-      <button
-        class="icon-btn"
         title="Settings"
         aria-label="Settings"
-        onclick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          openMenu({ kind: 'settings', x: rect.left, y: rect.bottom + 4 }, 540)
-        }}
+        onclick={() => (settingsOpen = true)}
       >
         <span class="material-symbols-outlined">menu</span>
       </button>
@@ -905,6 +881,40 @@
         >
           <span class="material-symbols-outlined">folder_open</span>Browse…
         </button>
+      {:else if menu.kind === 'type-filter'}
+        <button
+          class="menu-item"
+          class:active={!filterClaude && !filterShell}
+          onclick={() => {
+            filterClaude = false
+            filterShell = false
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">filter_list</span>All types
+        </button>
+        <button
+          class="menu-item"
+          class:active={filterClaude}
+          onclick={() => {
+            filterClaude = true
+            filterShell = false
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">asterisk</span>Claude sessions
+        </button>
+        <button
+          class="menu-item"
+          class:active={filterShell}
+          onclick={() => {
+            filterClaude = false
+            filterShell = true
+            menu = null
+          }}
+        >
+          <span class="material-symbols-outlined">terminal_2</span>Shell sessions
+        </button>
       {:else if menu.kind === 'color'}
         {#each DOT_COLORS as entry (entry.name)}
           <button
@@ -917,21 +927,6 @@
             <span class="swatch" style:background={entry.hex}></span>{entry.name}
           </button>
         {/each}
-      {:else if menu.kind === 'settings'}
-        <!-- Toggles in place and stays open; the backdrop/Escape dismisses. -->
-        <button
-          class="menu-item"
-          role="menuitemcheckbox"
-          aria-checked={ui.statusRgb}
-          onclick={() => (ui.statusRgb = !ui.statusRgb)}
-        >
-          <span class="material-symbols-outlined"
-            >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
-          >Status RGB
-        </button>
-        {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
-        {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
-        {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}
       {:else}
         {@const menuSession = sessions.find((s) => menu?.kind === 'session' && s.key === menu.key)}
         {#if menuSession}
@@ -995,11 +990,58 @@
       {/if}
     </div>
   {/if}
+
+  {#if settingsOpen}
+    <div
+      class="menu-backdrop modal-backdrop"
+      role="presentation"
+      onclick={() => (settingsOpen = false)}
+    ></div>
+    <div class="settings-modal" role="dialog" aria-label="Settings" aria-modal="true">
+      <div class="settings-header">
+        <span class="material-symbols-outlined">settings</span>
+        <span class="settings-title">Settings</span>
+      </div>
+      <div class="settings-body">
+        <div class="menu-label">Theme</div>
+        {#each MODES as mode (mode)}
+          <button
+            class="menu-item"
+            role="menuitemradio"
+            aria-checked={ui.mode === mode}
+            onclick={() => (ui.mode = mode)}
+          >
+            <span class="material-symbols-outlined"
+              >{ui.mode === mode ? 'radio_button_checked' : 'radio_button_unchecked'}</span
+            >{MODE_LABELS[mode]}
+          </button>
+        {/each}
+
+        <div class="menu-divider"></div>
+        <button
+          class="menu-item"
+          role="menuitemcheckbox"
+          aria-checked={ui.statusRgb}
+          onclick={() => (ui.statusRgb = !ui.statusRgb)}
+        >
+          <span class="material-symbols-outlined"
+            >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
+          >Status RGB
+        </button>
+        {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
+        {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
+        {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === 'Escape' && menu) menu = null
+    if (e.key === 'Escape') {
+      if (settingsOpen) settingsOpen = false
+      else if (menu) menu = null
+    }
   }}
 />
 
@@ -1551,6 +1593,18 @@
     outline: 1px solid var(--accent);
   }
 
+  .chip.type-filter {
+    display: flex;
+    align-items: center;
+    width: auto;
+    padding: 0 3px;
+    gap: 1px;
+  }
+
+  .chip.type-filter .caret {
+    font-size: 12px;
+  }
+
   .icon-btn {
     flex: 0 0 auto;
     display: grid;
@@ -1668,6 +1722,12 @@
     z-index: 10;
   }
 
+  /* Only the settings dialog dims behind it — the transient context menus
+     stay a plain click-catcher so they don't read as blocking the tower. */
+  .modal-backdrop {
+    background: rgba(0, 0, 0, 0.75);
+  }
+
   .menu {
     position: fixed;
     z-index: 11;
@@ -1711,6 +1771,14 @@
     text-transform: capitalize;
   }
 
+  .menu-item.active {
+    color: var(--accent);
+  }
+
+  .menu-item.active .material-symbols-outlined {
+    color: var(--accent);
+  }
+
   .menu-divider {
     height: 1px;
     margin: 4px 0;
@@ -1724,6 +1792,49 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--fg-muted);
+  }
+
+  /* Centered dialog (not positioned like the context menus) — same surface
+     language (.menu-item/.menu-label/.menu-divider) as the popup menus. */
+  .settings-modal {
+    position: fixed;
+    z-index: 11;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    width: 260px;
+    max-height: calc(100vh - 64px);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 8px 8px 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-header .material-symbols-outlined:first-child {
+    font-size: 15px;
+    color: var(--fg-muted);
+  }
+
+  .settings-title {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .settings-body {
+    overflow-y: auto;
+    padding: 4px;
   }
 
   .dir-parent {
