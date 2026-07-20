@@ -1,4 +1,5 @@
-import { Rect, Txt, type TxtProps } from '@motion-canvas/2d'
+import { Img, Rect, Txt, type TxtProps } from '@motion-canvas/2d'
+import arcIcon from '../../src/renderer/src/assets/arc.svg'
 import {
   createRef,
   easeInCubic,
@@ -20,29 +21,17 @@ export const IDLE = '#3fb950'
 
 export const SANS = 'Inter'
 export const MONO = 'JetBrains Mono'
+export const DISPLAY = 'Orbitron' // the wordmark face, weight 700, lowercase
 export const ICON_FONT = 'Material Symbols Outlined'
 
-// The app icon as a node: the sports_motorsports glyph, white on a black
-// rounded tile — the same drawing scripts/make-icon.mjs bakes into icon.ico.
-export function appIcon(size = 128): Rect {
-  return (
-    <Rect
-      width={size}
-      height={size}
-      fill={'#010409'}
-      stroke={CHIP_BORDER}
-      lineWidth={1.5}
-      radius={size * 0.22}
-    >
-      <Txt
-        text={'sports_motorsports'}
-        fontFamily={ICON_FONT}
-        fontWeight={300}
-        fontSize={size * 0.68}
-        fill={FG}
-      />
-    </Rect>
-  ) as Rect
+// The app icon as a node: the hand-drawn helmet SVG the app itself
+// rasterizes (src/renderer/src/assets/arc.svg, reached through the same
+// fs.allow reach-up as the doc screenshots) — single source of truth. Its
+// background is transparent, so it floats on the canvas exactly as it
+// floats on the taskbar.
+export function appIcon(size = 128): Img {
+  // width only — Img keeps the source aspect (the SVG viewBox isn't square)
+  return (<Img src={arcIcon} width={size} />) as Img
 }
 
 // Masked-rise text — the trailer's one text transition, reused everywhere so

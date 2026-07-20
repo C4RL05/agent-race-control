@@ -1,4 +1,7 @@
-# Agent Race Control
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/arc-logo-dark.svg">
+  <img alt="agent race control" src="images/arc-logo-light.svg" width="540">
+</picture>
 
 A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every Claude Code session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
 

@@ -7,8 +7,10 @@ import '@fontsource/inter/600.css'
 import '@fontsource/inter/700.css'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/700.css'
-// The icon font the app itself uses — the trailer draws the same
-// sports_motorsports glyph the app's window icon is generated from.
+// The wordmark face: the repo logo is "agent race control" in Orbitron 700
+// (the README carries it as outlined-path SVGs; the trailer sets it live).
+import '@fontsource/orbitron/700.css'
+// The icon font the app itself uses (tower glyphs in the mock frames).
 import 'material-symbols/outlined.css'
 
 import intro from './scenes/intro?scene'

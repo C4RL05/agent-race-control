@@ -29,7 +29,14 @@ app.whenReady().then(async () => {
         canvas.width = size
         canvas.height = size
         const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, size, size)
+        // letterboxed: the SVG viewBox isn't square — stretching would
+        // distort the helmet (only the ratio of naturalWidth/Height matters)
+        const iw = img.naturalWidth || 1
+        const ih = img.naturalHeight || 1
+        const fit = Math.min(size / iw, size / ih)
+        const w = iw * fit
+        const h = ih * fit
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
         return canvas.toDataURL('image/png').split(',')[1]
       })
     })()

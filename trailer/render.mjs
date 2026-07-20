@@ -76,7 +76,8 @@ try {
       document.fonts.load('400 100px Inter'),
       document.fonts.load('700 100px Inter'),
       document.fonts.load('400 100px "JetBrains Mono"'),
-      document.fonts.load('700 100px "JetBrains Mono"')
+      document.fonts.load('700 100px "JetBrains Mono"'),
+      document.fonts.load('700 100px Orbitron')
     ])
     await document.fonts.ready
   })

@@ -8,20 +8,26 @@ import {
   easeOutExpo,
   waitFor
 } from '@motion-canvas/core'
-import { ACCENT, BG, MUTED, MONO, appIcon, rise } from '../lib'
+import { ACCENT, BG, DISPLAY, MUTED, MONO, appIcon, rise } from '../lib'
 
 // Beat 1 (0:00–0:04) — the name, a speed line, the one-line pitch.
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
   const title = rise(
-    { text: 'Agent Race Control', fontSize: 104, fontWeight: 700, letterSpacing: 14 },
-    { width: 1400, height: 140, y: -20 }
+    {
+      text: 'agent race control',
+      fontFamily: DISPLAY,
+      fontSize: 104,
+      fontWeight: 700,
+      letterSpacing: 14
+    },
+    { width: 1520, height: 150, y: -20 }
   )
   const line = createRef<Rect>()
   const sub = createRef<Txt>()
-  const icon = appIcon(132)
-  icon.position([0, -230])
+  const icon = appIcon(211)
+  icon.position([0, -240])
   icon.scale(0.6)
   icon.opacity(0)
 

@@ -8,7 +8,7 @@ import {
   fadeTransition,
   waitFor
 } from '@motion-canvas/core'
-import { ACCENT, BG, MUTED, MONO, appIcon, rise } from '../lib'
+import { ACCENT, BG, DISPLAY, MUTED, MONO, appIcon, rise } from '../lib'
 
 // Beat 6 (0:24–0:30) — three kinetic words, then the card: name, line, repo.
 export default makeScene2D(function* (view) {
@@ -18,13 +18,13 @@ export default makeScene2D(function* (view) {
     rise({ text: w, fontSize: 120, fontWeight: 700 }, { width: 900, height: 160 })
   )
   const title = rise(
-    { text: 'Agent Race Control', fontSize: 88, fontWeight: 700 },
-    { width: 1300, height: 120, y: -10 }
+    { text: 'agent race control', fontFamily: DISPLAY, fontSize: 88, fontWeight: 700 },
+    { width: 1300, height: 130, y: -10 }
   )
   const line = createRef<Rect>()
   const url = createRef<Txt>()
-  const icon = appIcon(120)
-  icon.position([0, -190])
+  const icon = appIcon(192)
+  icon.position([0, -210])
   icon.scale(0.6)
   icon.opacity(0)
 
