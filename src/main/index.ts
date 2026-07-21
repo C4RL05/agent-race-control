@@ -159,8 +159,8 @@ if (!gotLock) {
   // Read-only worktree list for the repo card's reopen menu (fail-open too).
   ipcMain.handle('git:worktrees', (_event, repoRoot: string) => listWorktrees(repoRoot))
 
-  // Window/taskbar icon, rasterized by the renderer from the bundled helmet
-  // SVG (src/renderer/src/assets/arc.svg — the same file make-icon.mjs bakes
+  // Window/taskbar icon, scaled by the renderer from the bundled pixel-art
+  // PNG (src/renderer/src/assets/arc.png — the same file make-icon.mjs bakes
   // into build/icon.ico for the packaged .exe). Multi-resolution so Windows
   // gets a crisp raster at every DPI size.
   ipcMain.on(

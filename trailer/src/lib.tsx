@@ -1,5 +1,5 @@
 import { Img, Rect, Txt, type TxtProps } from '@motion-canvas/2d'
-import arcIcon from '../../src/renderer/src/assets/arc.svg'
+import arcIcon from '../../src/renderer/src/assets/arc.png'
 import {
   createRef,
   easeInCubic,
@@ -24,14 +24,15 @@ export const MONO = 'JetBrains Mono'
 export const DISPLAY = 'Orbitron' // the wordmark face, weight 700, lowercase
 export const ICON_FONT = 'Material Symbols Outlined'
 
-// The app icon as a node: the hand-drawn helmet SVG the app itself
-// rasterizes (src/renderer/src/assets/arc.svg, reached through the same
-// fs.allow reach-up as the doc screenshots) — single source of truth. Its
-// background is transparent, so it floats on the canvas exactly as it
-// floats on the taskbar.
+// The app icon as a node: the 16×16 pixel-art PNG the app itself scales
+// (src/renderer/src/assets/arc.png, reached through the same fs.allow
+// reach-up as the doc screenshots) — single source of truth. smoothing off:
+// nearest neighbour keeps the pixels crisp squares at any size. Its ground
+// is solid #999999, so it reads as the same tile the taskbar shows.
 export function appIcon(size = 128): Img {
-  // width only — Img keeps the source aspect (the SVG viewBox isn't square)
-  return (<Img src={arcIcon} width={size} />) as Img
+  // width only — Img keeps the source aspect; callers pick multiples of 16
+  // so every source pixel lands on whole device pixels
+  return (<Img src={arcIcon} width={size} smoothing={false} />) as Img
 }
 
 // Masked-rise text — the trailer's one text transition, reused everywhere so

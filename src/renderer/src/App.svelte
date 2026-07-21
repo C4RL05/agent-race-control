@@ -38,7 +38,7 @@
   } from './sessions.svelte'
   import type { Session, WorktreeEntry } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
-  import arcIconSvg from './assets/arc.svg?raw'
+  import arcIconPng from './assets/arc.png?inline'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
   // for all five. spawn: the filter bar's per-type dropdowns — recent
@@ -116,16 +116,17 @@
     return () => window.removeEventListener('focus', onFocus)
   })
 
-  // Window/taskbar icon: the hand-drawn helmet SVG (assets/arc.svg, inlined
-  // by Vite), rasterized fresh at every DPI size Windows may ask for — one
-  // big bitmap downscaled looks pixelated. scripts/make-icon.mjs bakes the
-  // SAME file into build/icon.ico — one source, zero drift. The SVG has a
-  // transparent background; the PNG representations carry the alpha. Loaded
-  // as a data URL (never taints the canvas, unlike a file:// asset in the
-  // packaged build) — which is why the CSP carries `img-src data:`.
+  // Window/taskbar icon: the 16×16 pixel-art PNG (assets/arc.png, `?inline`
+  // forces Vite to hand us a data URL), scaled fresh at every DPI size
+  // Windows may ask for — with smoothing OFF, so nearest neighbour keeps the
+  // pixels crisp squares. scripts/make-icon.mjs bakes the SAME file into
+  // build/icon.ico — one source, zero drift. The sprite is deliberately
+  // opaque (solid #999999 ground). A data URL never taints the canvas
+  // (a file:// asset in the packaged build would) — which is why the CSP
+  // carries `img-src data:`.
   $effect(() => {
     const img = new Image()
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arcIconSvg)
+    img.src = arcIconPng
     const render = (): void => {
       // base DIP size 32; scaleFactor n => 32n pixels
       const representations = [0.5, 1, 1.25, 1.5, 2, 4, 8].map((scaleFactor) => {
@@ -135,8 +136,9 @@
         canvas.height = size
         const ctx = canvas.getContext('2d')
         if (!ctx) return { scaleFactor, dataURL: '' }
-        // letterboxed: the SVG viewBox isn't square — stretching would
-        // distort the helmet (only the ratio of naturalWidth/Height matters)
+        // nearest neighbour — pixel art must not blur. The letterbox guard
+        // stays from the SVG era (a no-op on this square source).
+        ctx.imageSmoothingEnabled = false
         const iw = img.naturalWidth || 1
         const ih = img.naturalHeight || 1
         const fit = Math.min(size / iw, size / ih)

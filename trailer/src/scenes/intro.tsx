@@ -26,7 +26,7 @@ export default makeScene2D(function* (view) {
   )
   const line = createRef<Rect>()
   const sub = createRef<Txt>()
-  const icon = appIcon(211)
+  const icon = appIcon(208)
   icon.position([0, -240])
   icon.scale(0.6)
   icon.opacity(0)

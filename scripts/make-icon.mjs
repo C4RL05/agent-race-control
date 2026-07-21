@@ -1,19 +1,20 @@
 // Generates build/icon.ico — run with:  npx electron scripts/make-icon.mjs
 //
-// A hidden Electron window rasterizes the app icon SVG
-// (src/renderer/src/assets/arc.svg — the same file App.svelte rasterizes at
-// runtime for the window/taskbar icon; one source, zero drift) at every ICO
-// size, and this script composes the PNGs into a PNG-compressed ICO by hand
+// A hidden Electron window scales the 16×16 pixel-art app icon
+// (src/renderer/src/assets/arc.png — the same file App.svelte scales at
+// runtime for the window/taskbar icon; one source, zero drift) to every ICO
+// size with nearest neighbour (pixel art must not blur; the 16px slot is
+// 1:1), and this script composes the PNGs into a PNG-compressed ICO by hand
 // (valid since Windows Vista). No image dependencies; the .ico is checked
-// in — regenerate when the SVG changes.
+// in — regenerate when the PNG changes.
 import { app, BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const svg = readFileSync(join(root, 'src', 'renderer', 'src', 'assets', 'arc.svg'), 'utf8')
-const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+const png = readFileSync(join(root, 'src', 'renderer', 'src', 'assets', 'arc.png'))
+const pngUrl = 'data:image/png;base64,' + png.toString('base64')
 const SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 app.whenReady().then(async () => {
@@ -22,15 +23,16 @@ app.whenReady().then(async () => {
   const pngs = await win.webContents.executeJavaScript(`
     (async () => {
       const img = new Image()
-      img.src = ${JSON.stringify(svgUrl)}
+      img.src = ${JSON.stringify(pngUrl)}
       await img.decode()
       return ${JSON.stringify(SIZES)}.map((size) => {
         const canvas = document.createElement('canvas')
         canvas.width = size
         canvas.height = size
         const ctx = canvas.getContext('2d')
-        // letterboxed: the SVG viewBox isn't square — stretching would
-        // distort the helmet (only the ratio of naturalWidth/Height matters)
+        // nearest neighbour — pixel art must not blur. The letterbox guard
+        // stays from the SVG era (a no-op on this square source).
+        ctx.imageSmoothingEnabled = false
         const iw = img.naturalWidth || 1
         const ih = img.naturalHeight || 1
         const fit = Math.min(size / iw, size / ih)
