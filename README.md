@@ -1,3 +1,5 @@
+<img alt="" src="images/arc-icon-128.png" width="128" height="128">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/arc-logo-dark.svg">
   <img alt="agent race control" src="images/arc-logo-light.svg" width="540">
@@ -26,7 +28,7 @@ Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** 
 - **Repo cards & worktrees** — a git repo's worktrees gather under one card, one branch row each; the card spawns a Claude straight into a **fresh worktree** (`claude --worktree`) for parallel features — Claude Code creates it, installs nothing, and cleans it up on exit; the app never touches git
 - **Filter bar** — text search over name/title/path, plus Claude/shell type chips
 - **Directory colors** pushed *into* Claude Code on demand: "Apply folder color" types `/color <name>` for you, so agent view matches the tower
-- **GitHub Light/Dark/System** theming (exact Primer palettes) — the app's chrome only; Claude Code renders untouched
+- **GitHub Light/Dark/System** theming (exact Primer palettes) plus interface, terminal, and preview font pickers, together in one Settings modal — the app's chrome only; Claude Code renders untouched
 - **Windows Terminal conventions** — Ctrl+Shift+C/V copy/paste, right-click copy/paste, file drop pastes the quoted path, Ctrl+=/−/0 window zoom. Zero new muscle memory, nothing shadowed.
 - **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, apply folder color, close
 
@@ -39,14 +41,33 @@ Every Claude session carries a second tab: a **read-only conversation preview**,
   <img alt="Conversation preview" src="images/arc-preview-light.png">
 </picture>
 
+## Appearance
+
+Theme and fonts live in one Settings modal: GitHub Light/Dark/System, and independent font pickers for the interface, the terminal, and the preview.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/arc-settings-dark.png">
+  <img alt="Settings" src="images/arc-settings-light.png" width="371">
+</picture>
+
+## Install
+
+Grab the [latest release](https://github.com/C4RL05/agent-race-control/releases/latest):
+
+- **Setup** (`Agent Race Control Setup <version>.exe`) — NSIS one-click, per-user installer: no admin prompt, Start Menu entry, real uninstaller. Recommended.
+- **Portable** (`Agent Race Control Portable <version>.exe`) — a no-install download: self-extracts and runs, leaving no installed footprint.
+
+Both are unsigned — expect a SmartScreen warning on first run (More info → Run anyway).
+
 ## Requirements
 
 - Windows 10 1809+ (ConPTY)
 - [Git for Windows](https://gitforwindows.org/) (Git Bash — auto-discovered)
 - [Claude Code](https://code.claude.com/docs/en/quickstart) on your PATH
-- Node.js 22+
 
-## Run
+## Build from source
+
+Node.js 22+ required.
 
 ```bash
 npm install
@@ -55,14 +76,26 @@ npm run dev        # development (HMR)
 npm run build
 npm run preview    # production build
 
-npm run dist       # Windows installer (NSIS, per-user) into dist/
+npm run dist       # Windows installer + portable exe (NSIS, per-user) into dist/
 ```
-
-The installer is unsigned — expect a SmartScreen warning on machines that aren't yours.
 
 ## Worktree workflow
 
-One card per repo, one worktree per feature, as many sessions per feature as the job needs. The repo card's ➕ button names a feature and spawns `claude --worktree <name>` — Claude Code creates `.claude/worktrees/<name>/` on a branch `worktree-<name>` and, when you `/exit` with nothing pending, removes the worktree again (the branch survives; delete it after merging). Worth setting up per repo:
+One card per repo, one worktree per feature, as many sessions per feature as the job needs. The repo card's ➕ button names a feature and spawns `claude --worktree <name>` — Claude Code creates `.claude/worktrees/<name>/` on a branch `worktree-<name>` and, when you `/exit` with nothing pending, removes the worktree again (the branch survives; delete it after merging).
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/arc-worktrees-dark.png">
+    <img alt="Repo card with worktree branch rows and dirty/ahead-behind markers" src="images/arc-worktrees-light.png" width="310">
+  </picture>
+  &nbsp;&nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/arc-worktree-new-dark.png">
+    <img alt="Naming a new worktree from the repo card" src="images/arc-worktree-new-light.png" width="310">
+  </picture>
+</p>
+
+Worth setting up per repo:
 
 - add `.claude/worktrees/` to `.gitignore`
 - list env files (`.env`…) in a [`.worktreeinclude`](https://code.claude.com/docs/en/worktrees) so new worktrees get copies
