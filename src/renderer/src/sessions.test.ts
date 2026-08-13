@@ -306,18 +306,30 @@ describe('noteTitleForStatus', () => {
   it('a running turn whose spinner stops for the grace window → idle', () => {
     sessions.push(fakeSession({ key: 1, status: 'running' }))
     noteTitleForStatus(1, '✳ working')
-    vi.advanceTimersByTime(1199)
+    vi.advanceTimersByTime(3999)
     expect(sessions[0].status).toBe('running') // still within the grace window
     vi.advanceTimersByTime(2)
     expect(sessions[0].status).toBe('idle') // frames stopped → turn ended
   })
 
+  // The measured spinner period is ~1000ms (957-1055ms over four probed turns).
+  // The old 1200ms grace sat barely above it and a real 1208ms tick false-greened
+  // a working session, so the margin must comfortably clear an ordinary tick.
+  it('survives spinner ticks at the measured ~1s period, with margin', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    for (let i = 0; i < 10; i++) {
+      noteTitleForStatus(1, i % 2 ? '✳ working' : '⠂ working')
+      vi.advanceTimersByTime(1208) // the exact tick that broke the old threshold
+      expect(sessions[0].status).toBe('running')
+    }
+  })
+
   it('continuing spinner frames keep it running (decay re-armed each frame)', () => {
     sessions.push(fakeSession({ key: 1, status: 'running' }))
     noteTitleForStatus(1, '✳ a')
-    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(3000)
     noteTitleForStatus(1, '⠂ b') // another frame before the grace elapses
-    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(3000) // past the original arm, not past the re-arm
     expect(sessions[0].status).toBe('running')
   })
 
@@ -325,7 +337,7 @@ describe('noteTitleForStatus', () => {
     sessions.push(fakeSession({ key: 1, status: 'running' }))
     noteTitleForStatus(1, '✳ working') // arm the decay while running
     sessions[0].status = 'waiting' // a permission dialog appeared (hook)
-    vi.advanceTimersByTime(1300) // decay fires, but status is no longer running
+    vi.advanceTimersByTime(4300) // decay fires, but status is no longer running
     expect(sessions[0].status).toBe('waiting')
   })
 
@@ -334,9 +346,42 @@ describe('noteTitleForStatus', () => {
     noteTitleForStatus(1, 'claude') // OS title, no spinner
     sessions.push(fakeSession({ key: 2, status: 'idle' }))
     noteTitleForStatus(2, '✳ working') // spinner, but session isn't running
-    vi.advanceTimersByTime(2000)
+    vi.advanceTimersByTime(5000)
     expect(sessions[0].status).toBe('running')
     expect(sessions[1].status).toBe('idle')
+  })
+
+  // The recovery half of the fix: a decay that fires while Claude is in fact
+  // still working must not own the rest of the turn. A completed tool call is
+  // proof the guess was wrong, so it overturns that green — but an idle from a
+  // real Stop stays green, because there the out-of-order PostToolUse race is
+  // the thing being defended against.
+  it('a PostToolUse overturns a decay-guessed idle but not a Stop-observed one', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, '✳ working')
+    vi.advanceTimersByTime(4001) // decay misfires while the turn is really alive
+    expect(sessions[0].status).toBe('idle')
+
+    applyStatus('tok', 'sid', 'PostToolUse') // a tool finished — it IS still working
+    expect(sessions[0].status).toBe('running') // green overturned
+
+    applyStatus('tok', 'sid', 'Stop') // now the turn genuinely ends
+    expect(sessions[0].status).toBe('idle')
+    applyStatus('tok', 'sid', 'PostToolUse') // stray out-of-order straggler
+    expect(sessions[0].status).toBe('idle') // must NOT resurrect it
+  })
+
+  // Recovering re-arms the watchdog: otherwise a session recovered by a trailing
+  // PostToolUse from a turn that really had ended would sit red forever, since
+  // only a spinner title arms a decay and none would ever come.
+  it('a recovered session re-arms the decay rather than sticking red', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    noteTitleForStatus(1, '✳ working')
+    vi.advanceTimersByTime(4001)
+    applyStatus('tok', 'sid', 'PostToolUse')
+    expect(sessions[0].status).toBe('running')
+    vi.advanceTimersByTime(4001) // no further spinner frames arrive
+    expect(sessions[0].status).toBe('idle')
   })
 })
 

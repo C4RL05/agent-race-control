@@ -229,7 +229,35 @@ function createSession(init: {
 // (issue #3). Each status maps to a distinct dot color, so a value change IS a
 // color change; restore sets status/todo directly (not via here) so a relaunch
 // never counts as the clearing change.
-export function setStatus(session: Session, next: Session['status']): void {
+// What moved a session's status. Not cosmetic: `spinner-decay` is a GUESS (the
+// watchdog inferring a turn ended because the title stopped animating), while
+// every other cause is an observed fact. PostToolUse uses that distinction to
+// decide whether an `idle` is safe to overturn — see applyStatus.
+export type StatusCause =
+  | 'hook:Stop'
+  | 'hook:UserPromptSubmit'
+  | 'hook:PostToolUse'
+  | 'hook:PermissionRequest'
+  | 'hook:Notification'
+  | 'spinner-decay'
+  | 'key:ctrl-c'
+  | 'key:esc-dismiss-dialog'
+  | 'key:enter-answers-dialog'
+  | 'exited'
+  | 'unspecified'
+
+// Why each session last became idle. Keyed by session key, module-level (not on
+// Session) because it is inferred runtime state, never persisted.
+const idleCause = new Map<number, StatusCause>()
+
+export function setStatus(
+  session: Session,
+  next: Session['status'],
+  cause: StatusCause = 'unspecified'
+): void {
+  // Remember what made this session idle, so a later PostToolUse can tell a
+  // guessed idle (the decay) from an observed one (Stop / Ctrl+C).
+  if (next === 'idle') idleCause.set(session.key, cause)
   if (session.todo && next !== session.status) session.todo = false
   // A turn just ended — the files likely changed with it, and idle is exactly
   // when "safe to merge/close?" gets asked, so refresh this cwd's branch
@@ -374,10 +402,29 @@ export function applyStatus(
       next = 'running'
       break
     case 'PostToolUse':
-      if (session.status !== 'idle') next = 'running'
+      // A tool finished, so Claude is mid-turn. If the dot is already red or
+      // amber this just keeps it red. If it is GREEN, the question is whether
+      // that green can be trusted:
+      //   - idle from `Stop` / Ctrl+C — an OBSERVED end of turn. A PostToolUse
+      //     after it is the out-of-order race (non-blocking POSTs can overtake
+      //     each other), and must NOT resurrect a genuinely finished turn.
+      //   - idle from `spinner-decay` — a GUESS: the watchdog inferred the turn
+      //     ended because the title stopped animating. A completed tool call is
+      //     direct proof that guess was wrong, so overturn it.
+      // This is what stops one misfire owning the rest of the turn: before, the
+      // ban was absolute and `idle` was absorbing, so a single bad guess stayed
+      // green until the next prompt.
+      if (session.status !== 'idle' || idleCause.get(session.key) === 'spinner-decay') {
+        next = 'running'
+      }
       break
   }
-  setStatus(session, next)
+  const recovered = next === 'running' && session.status === 'idle' && event === 'PostToolUse'
+  setStatus(session, next, `hook:${event}` as StatusCause)
+  // Re-arm the watchdog after a recovery. Without this the session could sit
+  // red forever if the turn really had ended and no further spinner title ever
+  // arrives to arm a fresh decay (noteTitleForStatus only arms while running).
+  if (recovered) armSpinnerDecay(session.key)
 }
 
 // Read-only preview items, cached per Claude session id. The cache outlives
@@ -405,16 +452,18 @@ export function nudgeStatusFromKey(key: number, data: string): void {
   // active state. A lone ESC byte is the Esc key (arrows etc. arrive as longer
   // 0x1b-prefixed chunks).
   if (data === '\x03') {
-    if (session.status === 'running' || session.status === 'waiting') setStatus(session, 'idle')
+    if (session.status === 'running' || session.status === 'waiting') {
+      setStatus(session, 'idle', 'key:ctrl-c')
+    }
   } else if (data === '\x1b') {
     // Esc dismisses an open dialog (waiting → idle). While RUNNING it is
     // ambiguous — it ALSO just closes the slash-command menu / /btw overlay
     // without stopping the turn (issue #6), and sends the same lone 0x1b, so it
     // must NOT green a busy Claude. Ctrl+C remains the way to interrupt-to-idle.
-    if (session.status === 'waiting') setStatus(session, 'idle')
+    if (session.status === 'waiting') setStatus(session, 'idle', 'key:esc-dismiss-dialog')
   } else if (data === '\r' && session.status === 'waiting') {
     // Enter answers the dialog — approve and deny-with-feedback both resume the turn.
-    setStatus(session, 'running')
+    setStatus(session, 'running', 'key:enter-answers-dialog')
   }
 }
 
@@ -427,10 +476,34 @@ export function nudgeStatusFromKey(key: number, data: string): void {
 // interrupted) → idle. Scoped to `running` — the decay's own `running` guard
 // leaves a `waiting` dialog (hook-owned, spinner already stopped) alone, and
 // normal completion (Stop) / Ctrl+C (keystroke) still idle instantly; this is
-// the ~1.2s-latency safety net for the hook-blind interrupt. The OS/ConPTY
+// the latency safety net for the hook-blind interrupt. The OS/ConPTY
 // "claude" title has no spinner (hasSpinner), so the title's flap is ignored.
-const SPINNER_IDLE_MS = 1200
+// MEASURED, not guessed: the title spinner ticks about once a second — across
+// four turns in two node-pty probes the gaps between spinner-bearing titles ran
+// 957-1055ms. The original 1200ms sat only ~1.2x that period, which is not a
+// watchdog margin but a coin flip taken once per second: a real session was
+// caught false-greening on a 1208ms tick (8ms past the deadline, with the timer
+// itself firing on schedule — so jitter in the SIGNAL, not a stalled renderer).
+// 4000ms is ~4x the period, so ordinary jitter cannot reach it. The cost is
+// bounded and lands on the safe side: after an Esc-interrupt the dot stays red
+// up to 4s instead of 1.2s, and false-red ("still busy") beats false-green
+// ("your turn") — the same asymmetry that removed the Esc nudge in issue #6.
+const SPINNER_IDLE_MS = 4000
 const spinnerTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+// Arm (or re-arm) the decay for a session. Shared by the title watcher and the
+// PostToolUse recovery path so the two can never drift apart.
+function armSpinnerDecay(key: number): void {
+  clearSpinnerTimer(key)
+  spinnerTimers.set(
+    key,
+    setTimeout(() => {
+      spinnerTimers.delete(key)
+      const s = sessions.find((x) => x.key === key)
+      if (s && s.status === 'running') setStatus(s, 'idle', 'spinner-decay')
+    }, SPINNER_IDLE_MS)
+  )
+}
 
 function clearSpinnerTimer(key: number): void {
   const timer = spinnerTimers.get(key)
@@ -443,16 +516,10 @@ function clearSpinnerTimer(key: number): void {
 export function noteTitleForStatus(key: number, title: string): void {
   const session = sessions.find((s) => s.key === key)
   if (!session || session.type !== 'claude' || session.status !== 'running') return
+  // A non-spinner title neither re-arms nor cancels the decay: a plain `claude`
+  // title flapping in mid-turn must not be read as the turn ending.
   if (!hasSpinner(title)) return
-  clearSpinnerTimer(key)
-  spinnerTimers.set(
-    key,
-    setTimeout(() => {
-      spinnerTimers.delete(key)
-      const s = sessions.find((x) => x.key === key)
-      if (s && s.status === 'running') setStatus(s, 'idle')
-    }, SPINNER_IDLE_MS)
-  )
+  armSpinnerDecay(key)
 }
 
 // Mirrors WorktreeEntry in src/main/git.ts (the renderer can't import from

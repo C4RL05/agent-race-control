@@ -802,7 +802,7 @@
               session.hookToken = claudeSessionId ?? null
               applySpawnCwd(session.key, cwd)
             }}
-            onExited={() => setStatus(session, 'exited')}
+            onExited={() => setStatus(session, 'exited', 'exited')}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => {
               session.title = title
