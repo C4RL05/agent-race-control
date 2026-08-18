@@ -9,13 +9,14 @@
     ui,
     newSession,
     closeSession,
-    applyStatus,
+    applyAgents,
+    applyHook,
+    nudgeStatusFromKey,
     restoreState,
     snapshotState,
     cleanTitle,
     duplicateSession,
     renameSession,
-    nudgeStatusFromKey,
     applySpawnCwd,
     applyPreviewItems,
     dirColors,
@@ -26,7 +27,6 @@
     moveSession,
     setStatus,
     toggleTodo,
-    noteTitleForStatus,
     gitInfo,
     groupCwds,
     refreshAllGitInfo,
@@ -93,9 +93,17 @@
     return () => query.removeEventListener('change', onChange)
   })
 
-  // Hook-driven status stream (main's localhost status server → renderer).
+  // Turn boundaries (hooks) — these are what colour the dot red/amber.
   $effect(() => {
-    const off = window.arc.status.onChange(applyStatus)
+    const off = window.arc.status.onChange(applyHook)
+    return off
+  })
+
+  // Polled session state, used ONLY as the green floor: a tick reporting idle
+  // means nothing at all is running, which is the one thing hooks can miss
+  // (interrupts fire no hook). busy/waiting are ignored — see applyAgents.
+  $effect(() => {
+    const off = window.arc.agents.onUpdate(applyAgents)
     return off
   })
 
@@ -415,6 +423,7 @@
 
   // The aggregate status dot a collapsed card shows on its title, most-urgent
   // first: waiting (a session wants you) › a running Claude (agent driving) ›
+  // delegating (its subagents are still working) ›
   // any other running (a live shell) › idle (your turn) › exited. Carries the
   // winning session's type so a lone running shell reads neutral (`plain`),
   // never red — the same per-type colours the rows use. null = no sessions.
@@ -423,6 +432,7 @@
     const pick =
       all.find((s) => s.status === 'waiting') ??
       all.find((s) => s.status === 'running' && s.type === 'claude') ??
+      all.find((s) => s.status === 'delegating') ??
       all.find((s) => s.status === 'running') ??
       all.find((s) => s.status === 'idle') ??
       all.find((s) => s.status === 'exited')
@@ -796,18 +806,23 @@
             fontFamily={monoFont}
             onSpawned={(ptyId, claudeSessionId, cwd) => {
               session.ptyId = ptyId
+              // The pinned spawn id is the first join key against the agent
+              // poll; from the first match on it we follow the claude pid,
+              // which survives a /clear (see applyAgents).
               session.claudeSessionId = claudeSessionId ?? null
-              // Immutable hook routing token; claudeSessionId may change on
-              // /clear, hookToken never does (see applyStatus, issue #2).
+              // Immutable hook routing token: claudeSessionId may change on
+              // /clear, hookToken never does (see applyHook, issue #2). The
+              // pinned id is also the first join key for the agent poll, which
+              // then follows the claude pid instead.
               session.hookToken = claudeSessionId ?? null
+              session.claudePid = null
+              session.claudeStartedAt = null
               applySpawnCwd(session.key, cwd)
             }}
-            onExited={() => setStatus(session, 'exited', 'exited')}
+            onExited={() => setStatus(session, 'exited')}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => {
               session.title = title
-              // The spinner in the title is our interrupt watchdog (issue #6).
-              noteTitleForStatus(session.key, title)
             }}
           />
         </div>
@@ -1692,6 +1707,13 @@
   .dot.waiting {
     background: var(--dot-waiting);
     animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  /* delegating: the main turn ended but subagents are still working. Same amber
+     as waiting — work is happening, you're not blocked — but STATIC. The pulse
+     is reserved for "it wants you", the one state that should catch your eye. */
+  .dot.delegating {
+    background: var(--dot-waiting);
   }
 
   .dot.idle {

@@ -17,7 +17,15 @@ function claudeTranscriptExists(cwd: string, sessionId: string): boolean {
 }
 
 const ptys = new Map<string, IPty>()
+// Which of those are Claude sessions — the agent poller only spawns a
+// `claude agents --json` subprocess while at least one is alive, so a tower of
+// plain shells costs nothing.
+const claudePtys = new Set<string>()
 let nextId = 1
+
+export function hasClaudeSessions(): boolean {
+  return claudePtys.size > 0
+}
 
 // cwd is the directory the PTY actually started in — it can differ from the
 // requested one (dead-path fallback below), and the renderer must follow the
@@ -91,8 +99,8 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
       // Claude sessions: the login shell sources the user's profile (so claude
       // resolves from their real PATH), then exec makes bash *become* claude —
       // the PTY's lifetime IS the claude process's lifetime.
-      // --session-id gives a deterministic session id (status + resume mapping);
-      // --settings adds the observability-only status hooks (see status.ts).
+      // --session-id gives a deterministic session id, which is both the resume
+      // handle and the join key against `claude agents --json` (see agents.ts).
       const cwd = opts.cwd ?? homedir()
 
       let claudeSessionId: string | undefined
@@ -113,9 +121,9 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
           const name = opts.worktree.replace(/'/g, '')
           cmd += name ? ` --worktree '${name}'` : ' --worktree'
         }
-        // Per-session hooks: the spawn id is the URL's routing token, so this
-        // session's hooks keep arriving here even after `/clear` mints a new
-        // conversation id (see status.ts + issue #2).
+        // Per-session turn-boundary hooks: the spawn id is the URL's routing
+        // token, so this session's hooks keep arriving even after `/clear` mints
+        // a new conversation id (see status.ts + issue #2).
         const hookSettings = writeSessionHooks(claudeSessionId)
         if (hookSettings) cmd += ` --settings '${hookSettings.replace(/\\/g, '/')}'`
         args = ['--login', '-i', '-c', cmd]
@@ -133,10 +141,12 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
 
       const id = String(nextId++)
       ptys.set(id, pty)
+      if (opts.type === 'claude') claudePtys.add(id)
 
       pty.onData((data) => getWebContents()?.send('pty:data', id, data))
       pty.onExit(({ exitCode }) => {
         ptys.delete(id)
+        claudePtys.delete(id)
         getWebContents()?.send('pty:exit', id, exitCode)
       })
 
@@ -155,10 +165,12 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
   ipcMain.on('pty:kill', (_event, id: string) => {
     ptys.get(id)?.kill()
     ptys.delete(id)
+    claudePtys.delete(id)
   })
 }
 
 export function killAllPtys(): void {
   for (const pty of ptys.values()) pty.kill()
   ptys.clear()
+  claudePtys.clear()
 }

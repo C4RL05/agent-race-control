@@ -106,20 +106,48 @@ interface Window {
         callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
       ) => () => void
     }
-    // hookToken is the session's stable URL routing token (its spawn id);
-    // claudeSessionId is the payload's CURRENT conversation id, which changes
-    // on `/clear`. event is Claude Code's hook name (HookEvent in
-    // src/main/status.ts, hand-copied — the renderer can't import from main);
-    // cwd is the payload's working directory — how a --worktree session's real
-    // cwd reaches the tower. applyStatus in sessions.svelte.ts maps each event
-    // to a dot state and follows a changed conversation id / cwd.
+    // Turn-boundary hooks (HookEvent in src/main/status.ts, hand-copied — the
+    // renderer can't import from main). hookToken is the session's stable spawn
+    // id; claudeSessionId is the payload's CURRENT conversation id, which
+    // changes on `/clear`; cwd is how a --worktree session's real directory
+    // reaches the tower. These are what colour the dot red/amber — the poll
+    // below cannot (see applyAgents).
     status: {
       onChange: (
         callback: (
           hookToken: string,
           claudeSessionId: string,
-          event: 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop',
+          event:
+            | 'UserPromptSubmit'
+            | 'PermissionRequest'
+            | 'Notification'
+            | 'Stop'
+            | 'StopFailure'
+            | 'SubagentStart'
+            | 'SubagentStop',
           cwd: string
+        ) => void
+      ) => () => void
+    }
+    // One tick of `claude agents --json` (src/main/agents.ts, hand-copied —
+    // the renderer can't import from main): EVERY active session on the
+    // machine, not just ours. Each entry carries the session's live `status`,
+    // its CURRENT conversation id (`sessionId` changes on `/clear`) and its
+    // real `cwd` (how a --worktree session's directory reaches the tower).
+    // applyAgents matches the sessions we own and ignores the rest — and uses
+    // only `idle` for the dot, because `busy` here includes a finished turn that
+    // still owns a background shell.
+    agents: {
+      onUpdate: (
+        callback: (
+          entries: Array<{
+            sessionId?: string
+            pid?: number
+            status?: string
+            cwd?: string
+            kind?: string
+            startedAt?: number
+          }>
         ) => void
       ) => () => void
     }

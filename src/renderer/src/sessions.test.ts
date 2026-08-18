@@ -1,14 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { Session, GitInfo } from './sessions.svelte'
 import {
   sessions,
   cleanTitle,
-  hasSpinner,
-  nudgeStatusFromKey,
-  noteTitleForStatus,
   previewItems,
   applyPreviewItems,
-  applyStatus,
+  applyAgents,
+  applyHook,
+  nudgeStatusFromKey,
   toggleTodo,
   dirOrder,
   gitInfo,
@@ -32,6 +31,9 @@ function fakeSession(overrides: Partial<Session>): Session {
     ptyId: '1',
     claudeSessionId: 'sid',
     hookToken: 'tok',
+    claudePid: null,
+    claudeStartedAt: null,
+    subagentCount: 0,
     resumeId: null,
     spawnWorktree: null,
     view: 'terminal',
@@ -59,128 +61,237 @@ describe('cleanTitle', () => {
   })
 })
 
-// Hooks are blind to user interrupts (Stop fires only on completed turns),
-// so these keystroke nudges are the only cancel/answer signal — see the
-// kickoff doc's interrupts entry.
-describe('nudgeStatusFromKey', () => {
-  it('Ctrl+C interrupts from running or waiting → idle', () => {
+// Turn state comes from hooks, because they are the only source that separates
+// "the agent is driving" from "this session has something running". The poll
+// cannot: it reports busy for a finished turn that still owns a background shell
+// (measured: 90/90 samples over 205s), which is why it never paints red.
+describe('applyHook', () => {
+  it('maps the turn boundaries to the dot', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('running')
+    applyHook('tok', 'sid', 'PermissionRequest')
+    expect(sessions[0].status).toBe('waiting')
+    applyHook('tok', 'sid', 'Notification')
+    expect(sessions[0].status).toBe('waiting')
+    applyHook('tok', 'sid', 'Stop')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  // A turn killed by an API error fires NO Stop — without StopFailure the dot
+  // would stay red for the rest of the session's life.
+  it('StopFailure ends a turn just like Stop', () => {
     sessions.push(fakeSession({ key: 1, status: 'running' }))
-    nudgeStatusFromKey(1, '\x03')
+    applyHook('tok', 'sid', 'StopFailure')
     expect(sessions[0].status).toBe('idle')
-
-    sessions[0].status = 'waiting'
-    nudgeStatusFromKey(1, '\x03')
-    expect(sessions[0].status).toBe('idle')
-  })
-
-  it('Esc dismisses a waiting dialog → idle, but leaves a running turn alone (issue #6)', () => {
-    sessions.push(fakeSession({ key: 1, status: 'waiting' }))
-    nudgeStatusFromKey(1, '\x1b')
-    expect(sessions[0].status).toBe('idle')
-
-    // Esc while running may just be closing the /btw menu — it must not green a
-    // busy Claude (same lone 0x1b as a real interrupt, indistinguishable).
-    sessions[0].status = 'running'
-    nudgeStatusFromKey(1, '\x1b')
-    expect(sessions[0].status).toBe('running')
-  })
-
-  it('Enter while waiting means the dialog was answered — running', () => {
-    sessions.push(fakeSession({ key: 1, status: 'waiting' }))
-    nudgeStatusFromKey(1, '\r')
-    expect(sessions[0].status).toBe('running')
-  })
-
-  it('ignores escape sequences (arrow keys arrive as multi-byte chunks)', () => {
-    sessions.push(fakeSession({ key: 1, status: 'waiting' }))
-    nudgeStatusFromKey(1, '\x1b[A')
-    expect(sessions[0].status).toBe('waiting')
-  })
-
-  it('never touches shells, exited sessions, or non-signal keys', () => {
-    sessions.push(fakeSession({ key: 1, type: 'shell', status: 'running' }))
-    sessions.push(fakeSession({ key: 2, status: 'exited' }))
-    sessions.push(fakeSession({ key: 3, status: 'running' }))
-    nudgeStatusFromKey(1, '\x1b')
-    nudgeStatusFromKey(2, '\x1b')
-    nudgeStatusFromKey(3, '\r') // Enter only answers dialogs (waiting)
-    expect(sessions.map((s) => s.status)).toEqual(['running', 'exited', 'running'])
-  })
-})
-
-// The hook → dot state machine. The load-bearing case is PostToolUse: a
-// non-blocking hook POST that arrives out of order (just after Stop) must not
-// resurrect a finished turn to red — see the applyStatus comment.
-describe('applyStatus', () => {
-  it('maps each hook event to its dot state', () => {
-    sessions.push(fakeSession({ key: 1, status: 'idle' }))
-    applyStatus('tok', 'sid', 'UserPromptSubmit')
-    expect(sessions[0].status).toBe('running')
-    applyStatus('tok', 'sid', 'PermissionRequest')
-    expect(sessions[0].status).toBe('waiting')
-    applyStatus('tok', 'sid', 'Notification')
-    expect(sessions[0].status).toBe('waiting')
-    applyStatus('tok', 'sid', 'Stop')
-    expect(sessions[0].status).toBe('idle')
-  })
-
-  it('PostToolUse continues an active turn but never resurrects a finished one', () => {
-    sessions.push(fakeSession({ key: 1, status: 'idle' }))
-    // stray/out-of-order PostToolUse after Stop must leave the finished turn idle
-    applyStatus('tok', 'sid', 'PostToolUse')
-    expect(sessions[0].status).toBe('idle')
-    // mid-turn (e.g. a permission was just granted) it resumes red
-    sessions[0].status = 'waiting'
-    applyStatus('tok', 'sid', 'PostToolUse')
-    expect(sessions[0].status).toBe('running')
-    // and keeps a running turn running
-    applyStatus('tok', 'sid', 'PostToolUse')
-    expect(sessions[0].status).toBe('running')
   })
 
   it('routes by the stable hookToken, not the conversation id', () => {
     sessions.push(fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle' }))
-    // an unknown token is a no-op even if the conversation id matches
-    applyStatus('other', 'sid', 'UserPromptSubmit')
+    applyHook('other', 'sid', 'UserPromptSubmit') // unknown token: no-op
     expect(sessions[0].status).toBe('idle')
-    applyStatus('tok', 'sid', 'UserPromptSubmit')
+    applyHook('tok', 'sid', 'UserPromptSubmit')
     expect(sessions[0].status).toBe('running')
   })
 
-  it('follows a changed conversation id (/clear): adopts the new id, drops the old cache', () => {
+  it('follows a changed conversation id (/clear): adopts it, drops the old cache', () => {
     sessions.push(fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle' }))
     previewItems['sid'] = [{ kind: 'user', text: 'pre-clear' }]
-    applyStatus('tok', 'newsid', 'UserPromptSubmit')
+    applyHook('tok', 'newsid', 'UserPromptSubmit')
     expect(sessions[0].claudeSessionId).toBe('newsid')
     expect(previewItems['sid']).toBeUndefined()
-    expect(sessions[0].status).toBe('running')
   })
 
   it('never revives an exited session, and ignores an unknown token', () => {
     sessions.push(fakeSession({ key: 1, status: 'exited' }))
-    applyStatus('tok', 'sid', 'UserPromptSubmit')
+    applyHook('tok', 'sid', 'UserPromptSubmit')
     expect(sessions[0].status).toBe('exited')
-    applyStatus('nope', 'sid', 'Stop') // no matching session — no throw, no-op
-    expect(sessions[0].status).toBe('exited')
+    expect(() => applyHook('nope', 'sid', 'Stop')).not.toThrow()
   })
 
   it('follows the payload cwd into the worktree (a --worktree spawn starts at the repo root)', () => {
     dirOrder.length = 0
     sessions.push(fakeSession({ key: 1, cwd: 'D:\\repo', status: 'idle', spawnWorktree: 'feat' }))
-    applyStatus('tok', 'sid', 'UserPromptSubmit', 'D:\\repo\\.claude\\worktrees\\feat')
+    applyHook('tok', 'sid', 'UserPromptSubmit', 'D:\\repo\\.claude\\worktrees\\feat')
     expect(sessions[0].cwd).toBe('D:\\repo\\.claude\\worktrees\\feat')
     expect(dirOrder).toContain('D:\\repo\\.claude\\worktrees\\feat')
-    expect(sessions[0].status).toBe('running')
-    // adoption retires the pending flag — the synthetic parked row hands over
-    expect(sessions[0].spawnWorktree).toBe(null)
+    expect(sessions[0].spawnWorktree).toBe(null) // parked row hands over
   })
 
   it('treats a respelled payload cwd as the same dir — no churn, no duplicate group', () => {
     dirOrder.length = 0
     sessions.push(fakeSession({ key: 1, cwd: 'D:\\Repo', status: 'idle' }))
-    applyStatus('tok', 'sid', 'UserPromptSubmit', 'D:/repo')
+    applyHook('tok', 'sid', 'UserPromptSubmit', 'D:/repo')
     expect(sessions[0].cwd).toBe('D:\\Repo')
     expect(dirOrder).toEqual([])
+  })
+})
+
+// delegating: the main turn is over but subagents are still working. Amber
+// without the pulse. A busy MAIN agent always outranks it.
+describe('delegating (subagent tracking)', () => {
+  it('a turn ending with subagents in flight lands on delegating, not idle', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    applyHook('tok', 'sid', 'SubagentStart')
+    applyHook('tok', 'sid', 'Stop')
+    expect(sessions[0].status).toBe('delegating')
+  })
+
+  it('the last subagent finishing turns delegating green', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    applyHook('tok', 'sid', 'SubagentStart')
+    applyHook('tok', 'sid', 'SubagentStart')
+    applyHook('tok', 'sid', 'Stop')
+    expect(sessions[0].status).toBe('delegating')
+    applyHook('tok', 'sid', 'SubagentStop')
+    expect(sessions[0].status).toBe('delegating') // one still running
+    applyHook('tok', 'sid', 'SubagentStop')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('a busy main agent stays red however many subagents are running', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyHook('tok', 'sid', 'SubagentStart')
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('running')
+    // and a subagent finishing must not green a session that is still driving
+    applyHook('tok', 'sid', 'SubagentStop')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('a subagent finishing never overrides an amber waiting dot', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyHook('tok', 'sid', 'SubagentStart')
+    applyHook('tok', 'sid', 'PermissionRequest')
+    applyHook('tok', 'sid', 'SubagentStop')
+    expect(sessions[0].status).toBe('waiting')
+  })
+
+  it('SubagentStop never drives the count below zero', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    applyHook('tok', 'sid', 'SubagentStop')
+    applyHook('tok', 'sid', 'SubagentStop')
+    applyHook('tok', 'sid', 'Stop')
+    expect(sessions[0].status).toBe('idle') // not stuck in delegating
+  })
+})
+
+// The poll is a FLOOR, not a source of truth: idle is trusted absolutely
+// (nothing is running at all), busy/waiting are ignored because they cannot
+// distinguish a turn from a background shell.
+describe('applyAgents', () => {
+  it('forces green when the tick says idle — the self-heal hooks never had', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'idle' }])
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('an idle tick clears stale subagent bookkeeping too', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
+    applyHook('tok', 'sid', 'SubagentStart') // a SubagentStop that never arrives
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'idle' }])
+    expect(sessions[0].status).toBe('idle')
+    applyHook('tok', 'sid', 'Stop') // must not resurrect delegating
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('IGNORES busy — that is the background-shell trap, not the agent driving', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'busy' }])
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('IGNORES waiting, and leaves delegating alone', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'delegating' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'waiting' }])
+    expect(sessions[0].status).toBe('delegating')
+  })
+
+  it('learns the pid, then follows it through a /clear that changes the id', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, startedAt: 5, status: 'busy' }])
+    expect(sessions[0].claudePid).toBe(10)
+    applyAgents([{ sessionId: 'fresh', pid: 10, startedAt: 5, status: 'idle' }])
+    expect(sessions[0].claudeSessionId).toBe('fresh')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('rejects a recycled pid whose start time does not match', () => {
+    sessions.push(
+      fakeSession({
+        key: 1,
+        claudeSessionId: 'sid',
+        claudePid: 10,
+        claudeStartedAt: 5,
+        status: 'running'
+      })
+    )
+    applyAgents([{ sessionId: 'stranger', pid: 10, startedAt: 999, status: 'idle' }])
+    expect(sessions[0].claudeSessionId).toBe('sid')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('leaves a session absent from the tick untouched, and skips shells', () => {
+    sessions.push(
+      fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }),
+      fakeSession({ key: 2, type: 'shell', claudeSessionId: 'sid2', status: 'running' })
+    )
+    applyAgents([{ sessionId: 'sid2', pid: 2, status: 'idle' }])
+    expect(sessions[0].status).toBe('running') // absent from the tick
+    expect(sessions[1].status).toBe('running') // a shell is not a Claude session
+  })
+
+  it('follows the entry cwd into the worktree', () => {
+    dirOrder.length = 0
+    sessions.push(fakeSession({ key: 1, cwd: 'D:\\repo', status: 'idle', spawnWorktree: 'feat' }))
+    applyAgents([
+      { sessionId: 'sid', pid: 10, status: 'busy', cwd: 'D:\\repo\\.claude\\worktrees\\feat' }
+    ])
+    expect(sessions[0].cwd).toBe('D:\\repo\\.claude\\worktrees\\feat')
+    expect(sessions[0].spawnWorktree).toBe(null)
+  })
+
+  it('ignores a session with no handles yet rather than matching by accident', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: null, status: 'running' }))
+    applyAgents([{ sessionId: 'whatever', pid: 10, status: 'idle' }])
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[0].claudePid).toBe(null)
+  })
+})
+
+// The only keystroke inference left. No hook fires on an interrupt, and the
+// poll's floor can't help while a background shell keeps the session "busy".
+describe('nudgeStatusFromKey', () => {
+  it('Ctrl+C greens from running, waiting or delegating', () => {
+    for (const from of ['running', 'waiting', 'delegating'] as const) {
+      sessions.length = 0
+      sessions.push(fakeSession({ key: 1, status: from }))
+      nudgeStatusFromKey(1, '\x03')
+      expect(sessions[0].status).toBe('idle')
+    }
+  })
+
+  it('an interrupt also cancels the subagents', () => {
+    sessions.push(fakeSession({ key: 1, status: 'running' }))
+    applyHook('tok', 'sid', 'SubagentStart')
+    nudgeStatusFromKey(1, '\x03')
+    applyHook('tok', 'sid', 'Stop')
+    expect(sessions[0].status).toBe('idle') // not delegating
+  })
+
+  // Esc is ambiguous with closing the /btw menu — issue #6 stays fixed by not
+  // guessing. Arrow keys arrive as longer 0x1b-prefixed chunks.
+  it('ignores Esc, escape sequences, shells and exited sessions', () => {
+    sessions.push(
+      fakeSession({ key: 1, status: 'running' }),
+      fakeSession({ key: 2, type: 'shell', status: 'running' }),
+      fakeSession({ key: 3, status: 'exited' })
+    )
+    nudgeStatusFromKey(1, '\x1b')
+    nudgeStatusFromKey(1, '\x1b[A')
+    nudgeStatusFromKey(2, '\x03')
+    nudgeStatusFromKey(3, '\x03')
+    expect(sessions.map((s) => s.status)).toEqual(['running', 'running', 'exited'])
   })
 })
 
@@ -267,121 +378,22 @@ describe('TODO flag', () => {
   })
 
   it('auto-clears when the underlying status changes color', () => {
-    sessions.push(
-      fakeSession({ key: 1, hookToken: 'tok', claudeSessionId: 'sid', status: 'idle', todo: true })
-    )
-    applyStatus('tok', 'sid', 'UserPromptSubmit') // idle -> running
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle', todo: true }))
+    applyHook('tok', 'sid', 'UserPromptSubmit') // idle -> running
     expect(sessions[0].status).toBe('running')
     expect(sessions[0].todo).toBe(false)
   })
 
   it('survives a status update that keeps the same color, clears on a real change', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running', todo: true }))
-    // Enter while running isn't a dialog answer — no status change, flag holds
-    nudgeStatusFromKey(1, '\r')
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running', todo: true }))
+    // A hook that re-asserts the SAME state is not a colour change — flag holds
+    applyHook('tok', 'sid', 'UserPromptSubmit')
     expect(sessions[0].status).toBe('running')
     expect(sessions[0].todo).toBe(true)
-    // Ctrl+C (running -> idle) is a color change — flag clears
-    nudgeStatusFromKey(1, '\x03')
+    // running -> idle is a real colour change — flag clears
+    applyHook('tok', 'sid', 'Stop')
     expect(sessions[0].status).toBe('idle')
     expect(sessions[0].todo).toBe(false)
-  })
-})
-
-// The title-spinner interrupt watchdog: while a running turn's spinner keeps
-// animating we stay running; when frames stop for the grace window the turn
-// ended (completed OR interrupted, the hook-blind case) → idle. Scoped to
-// running so a waiting dialog is left alone. See the spinner-status probe.
-describe('noteTitleForStatus', () => {
-  beforeEach(() => vi.useFakeTimers())
-  afterEach(() => vi.useRealTimers())
-
-  it('hasSpinner picks out asterisk + braille frames, not plain names', () => {
-    expect(hasSpinner('✳ Fixing the bug')).toBe(true)
-    expect(hasSpinner('⠂ Claude Code')).toBe(true) // braille frame
-    expect(hasSpinner('claude')).toBe(false) // OS/ConPTY process title
-    expect(hasSpinner('my session')).toBe(false)
-  })
-
-  it('a running turn whose spinner stops for the grace window → idle', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, '✳ working')
-    vi.advanceTimersByTime(3999)
-    expect(sessions[0].status).toBe('running') // still within the grace window
-    vi.advanceTimersByTime(2)
-    expect(sessions[0].status).toBe('idle') // frames stopped → turn ended
-  })
-
-  // The measured spinner period is ~1000ms (957-1055ms over four probed turns).
-  // The old 1200ms grace sat barely above it and a real 1208ms tick false-greened
-  // a working session, so the margin must comfortably clear an ordinary tick.
-  it('survives spinner ticks at the measured ~1s period, with margin', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    for (let i = 0; i < 10; i++) {
-      noteTitleForStatus(1, i % 2 ? '✳ working' : '⠂ working')
-      vi.advanceTimersByTime(1208) // the exact tick that broke the old threshold
-      expect(sessions[0].status).toBe('running')
-    }
-  })
-
-  it('continuing spinner frames keep it running (decay re-armed each frame)', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, '✳ a')
-    vi.advanceTimersByTime(3000)
-    noteTitleForStatus(1, '⠂ b') // another frame before the grace elapses
-    vi.advanceTimersByTime(3000) // past the original arm, not past the re-arm
-    expect(sessions[0].status).toBe('running')
-  })
-
-  it('leaves a waiting dialog alone — the decay only idles from running', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, '✳ working') // arm the decay while running
-    sessions[0].status = 'waiting' // a permission dialog appeared (hook)
-    vi.advanceTimersByTime(4300) // decay fires, but status is no longer running
-    expect(sessions[0].status).toBe('waiting')
-  })
-
-  it('a non-spinner title (or a non-running session) arms nothing', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, 'claude') // OS title, no spinner
-    sessions.push(fakeSession({ key: 2, status: 'idle' }))
-    noteTitleForStatus(2, '✳ working') // spinner, but session isn't running
-    vi.advanceTimersByTime(5000)
-    expect(sessions[0].status).toBe('running')
-    expect(sessions[1].status).toBe('idle')
-  })
-
-  // The recovery half of the fix: a decay that fires while Claude is in fact
-  // still working must not own the rest of the turn. A completed tool call is
-  // proof the guess was wrong, so it overturns that green — but an idle from a
-  // real Stop stays green, because there the out-of-order PostToolUse race is
-  // the thing being defended against.
-  it('a PostToolUse overturns a decay-guessed idle but not a Stop-observed one', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, '✳ working')
-    vi.advanceTimersByTime(4001) // decay misfires while the turn is really alive
-    expect(sessions[0].status).toBe('idle')
-
-    applyStatus('tok', 'sid', 'PostToolUse') // a tool finished — it IS still working
-    expect(sessions[0].status).toBe('running') // green overturned
-
-    applyStatus('tok', 'sid', 'Stop') // now the turn genuinely ends
-    expect(sessions[0].status).toBe('idle')
-    applyStatus('tok', 'sid', 'PostToolUse') // stray out-of-order straggler
-    expect(sessions[0].status).toBe('idle') // must NOT resurrect it
-  })
-
-  // Recovering re-arms the watchdog: otherwise a session recovered by a trailing
-  // PostToolUse from a turn that really had ended would sit red forever, since
-  // only a spinner title arms a decay and none would ever come.
-  it('a recovered session re-arms the decay rather than sticking red', () => {
-    sessions.push(fakeSession({ key: 1, status: 'running' }))
-    noteTitleForStatus(1, '✳ working')
-    vi.advanceTimersByTime(4001)
-    applyStatus('tok', 'sid', 'PostToolUse')
-    expect(sessions[0].status).toBe('running')
-    vi.advanceTimersByTime(4001) // no further spinner frames arrive
-    expect(sessions[0].status).toBe('idle')
   })
 })
 

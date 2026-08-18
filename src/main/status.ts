@@ -17,23 +17,41 @@ import { join } from 'node:path'
 // baked-in per-session URL keeps receiving that session's hooks no matter how
 // the conversation id changes. The server routes by the stable URL token and
 // forwards the payload's CURRENT session_id, so the renderer can follow a
-// `/clear` to the new transcript (see applyStatus + issue #2).
+// `/clear` to the new transcript (see applyHook + issue #2).
 
-// The hook events each Agent Race Control Claude session POSTs here. Main only
-// forwards them (minus the idle_prompt nag, filtered below); the renderer's
-// status state machine owns what each one MEANS for the dot (applyStatus in
-// sessions.svelte.ts) — one owner, co-located with the keystroke nudge. It
-// needs the raw event, not a pre-mapped status, to reject an out-of-order
-// PostToolUse that would otherwise resurrect a just-finished turn.
+// The hook events each Agent Race Control Claude session POSTs here — TURN
+// BOUNDARIES ONLY. Main just forwards them (minus the idle_prompt nag, filtered
+// below); the renderer decides what each one means (applyHook in
+// sessions.svelte.ts).
+//
+// Deliberately NOT subscribed: `PostToolUse`. Turn start and end are the only
+// edges the dot needs, and these are non-blocking POSTs that race each other —
+// a PostToolUse arriving just after a turn's Stop is precisely the out-of-order
+// bug the old state machine had to defend against. Not subscribing deletes the
+// problem instead of handling it.
+//
+// `StopFailure` matters: a turn killed by an API error fires no `Stop`, so
+// without it such a session would stay red forever.
+// `SubagentStart`/`SubagentStop` are counted, not mapped — they decide whether
+// the end of a main turn lands on `delegating` (subagents still working) or
+// `idle`.
 export type HookEvent =
-  'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
+  | 'UserPromptSubmit'
+  | 'PermissionRequest'
+  | 'Notification'
+  | 'Stop'
+  | 'StopFailure'
+  | 'SubagentStart'
+  | 'SubagentStop'
 
 const HOOK_EVENTS: HookEvent[] = [
   'UserPromptSubmit',
-  'PostToolUse',
   'PermissionRequest',
   'Notification',
-  'Stop'
+  'Stop',
+  'StopFailure',
+  'SubagentStart',
+  'SubagentStop'
 ]
 
 // Set once the server is listening: the secret path token (anti-spoof) and the

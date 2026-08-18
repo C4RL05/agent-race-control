@@ -28,26 +28,44 @@ export interface Session {
   // display name.
   name: string
   // Claude sessions use the full set; shell sessions only running/exited.
-  status: 'running' | 'waiting' | 'idle' | 'exited'
+  // delegating = the MAIN turn has ended but subagents are still working: the
+  // same amber as waiting, without the pulse (the pulse stays reserved for
+  // "it wants you", the only state that should catch your eye).
+  status: 'running' | 'waiting' | 'delegating' | 'idle' | 'exited'
   // Live terminal title (OSC 0/2) — Claude Code keeps it set to the
   // conversation's name; Git Bash sets it to the cwd. Observation only.
   title: string
   ptyId: string | null
   // The session's CURRENT Claude conversation id — the pinned spawn id, but
-  // Claude Code mints a fresh one on `/clear`, so the hook stream re-points it
-  // (see applyStatus). Owns the transcript file the preview tails and the id
+  // Claude Code mints a fresh one on `/clear`, so each agent poll re-points it
+  // (see applyAgents). Owns the transcript file the preview tails and the id
   // resumed on restart.
   claudeSessionId: string | null
-  // Immutable per-session hook routing token (== the spawn id), set alongside
-  // claudeSessionId at spawn. Hooks route on this even after `/clear` changes
-  // claudeSessionId, so status stays attributed to the right session.
+  // Immutable per-session hook routing token (== the spawn id). Hooks route on
+  // this even after `/clear` changes claudeSessionId, so a turn boundary is
+  // always attributed to the right session.
   hookToken: string | null
+  // The claude.exe pid, learned from the first agent poll that matches this
+  // session by conversation id. It is the STABLE handle: `/clear` mints a new
+  // conversation id but never restarts the process, so once known we follow the
+  // pid and read the new id off the same entry. Not persisted — a live fact.
+  // (The PTY's own pid is useless here: claude is its grandchild.)
+  claudePid: number | null
+  // The polled `startedAt` for that pid, kept only to defeat Windows pid reuse —
+  // a recycled pid belonging to some other claude has a different start time.
+  claudeStartedAt: number | null
+  // How many subagents this session has in flight, counted from
+  // SubagentStart/SubagentStop. Decides whether the end of a MAIN turn lands on
+  // `delegating` or `idle`. Live runtime state like claudePid — never persisted,
+  // and self-healing: the poll zeroes it whenever the CLI confirms the session
+  // has nothing running at all.
+  subagentCount: number
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
   // Set on sessions the repo card spawns into a fresh worktree: pass
   // --worktree <name> ('' = let Claude auto-name) at spawn. PENDING state —
   // while set, the tower parks the row on a synthetic branch row for the
-  // destination; the first hook payload's cwd adopts and clears it (the real
+  // destination; the first agent poll's cwd adopts and clears it (the real
   // row takes over). Persisted only while pending and named, so a parked
   // never-prompted session survives restart and re-arms --worktree.
   spawnWorktree: string | null
@@ -176,16 +194,9 @@ export const ui = $state<{
 
 // Claude Code's animated title spinner: the asterisk churn (✳ ✶ ✻ …) it
 // originally used PLUS the braille frames (⠀-⣿) newer builds also cycle
-// through — both observed in the spinner-status probe. Shared so cleanTitle
-// (strip it from the name) and hasSpinner (detect it for status) never drift.
+// through. Cosmetic only now — status no longer reads the title at all (it is
+// polled, see applyAgents); this just keeps the tower's names clean.
 const SPINNER_LEAD = /^[✳✶✻✽·∴※+*●○◐◑⠀-⣿]+\s*/u
-
-// Whether a raw terminal title carries the working spinner — i.e. Claude is
-// processing. The OS/ConPTY process title ("claude") and a settled name have no
-// leading spinner glyph, so this cleanly picks out the "busy" title frames.
-export function hasSpinner(title: string): boolean {
-  return SPINNER_LEAD.test(title)
-}
 
 // Claude Code prefixes titles with the spinner above while it works; Git Bash
 // prefixes the cwd with the MSYS system name (MINGW64:). Strip both — the tower
@@ -216,6 +227,9 @@ function createSession(init: {
     ptyId: null,
     claudeSessionId: null,
     hookToken: null,
+    claudePid: null,
+    claudeStartedAt: null,
+    subagentCount: 0,
     resumeId: init.resumeId ?? null,
     spawnWorktree: init.worktree ?? null,
     view: 'terminal',
@@ -224,40 +238,12 @@ function createSession(init: {
 }
 
 // The single choke point for status changes — every path that moves a session's
-// status (hooks, the keystroke nudge, exit) goes through here so the cosmetic
+// status (the agent poll, exit) goes through here so the cosmetic
 // TODO flag can auto-clear "the next time the underlying status changes color"
 // (issue #3). Each status maps to a distinct dot color, so a value change IS a
 // color change; restore sets status/todo directly (not via here) so a relaunch
 // never counts as the clearing change.
-// What moved a session's status. Not cosmetic: `spinner-decay` is a GUESS (the
-// watchdog inferring a turn ended because the title stopped animating), while
-// every other cause is an observed fact. PostToolUse uses that distinction to
-// decide whether an `idle` is safe to overturn — see applyStatus.
-export type StatusCause =
-  | 'hook:Stop'
-  | 'hook:UserPromptSubmit'
-  | 'hook:PostToolUse'
-  | 'hook:PermissionRequest'
-  | 'hook:Notification'
-  | 'spinner-decay'
-  | 'key:ctrl-c'
-  | 'key:esc-dismiss-dialog'
-  | 'key:enter-answers-dialog'
-  | 'exited'
-  | 'unspecified'
-
-// Why each session last became idle. Keyed by session key, module-level (not on
-// Session) because it is inferred runtime state, never persisted.
-const idleCause = new Map<number, StatusCause>()
-
-export function setStatus(
-  session: Session,
-  next: Session['status'],
-  cause: StatusCause = 'unspecified'
-): void {
-  // Remember what made this session idle, so a later PostToolUse can tell a
-  // guessed idle (the decay) from an observed one (Stop / Ctrl+C).
-  if (next === 'idle') idleCause.set(session.key, cause)
+export function setStatus(session: Session, next: Session['status']): void {
   if (session.todo && next !== session.status) session.todo = false
   // A turn just ended — the files likely changed with it, and idle is exactly
   // when "safe to merge/close?" gets asked, so refresh this cwd's branch
@@ -278,7 +264,7 @@ export function toggleTodo(key: number): void {
 }
 
 // Windows paths compare case-insensitively and arrive with either separator
-// (the folder picker uses backslashes; git and hook payloads may not) — one
+// (the folder picker uses backslashes; git and agent entries may not) — one
 // dir, several spellings. Used wherever a path from a new source meets the
 // cwds we already hold, so the tower never grows a duplicate group.
 export function sameDir(a: string, b: string): boolean {
@@ -287,8 +273,8 @@ export function sameDir(a: string, b: string): boolean {
 
 // dir given: spawn there (group header + buttons). No dir: OS folder picker.
 // worktree set (repo cards only): spawn claude with --worktree <name> ('' =
-// auto-name) — Claude Code creates and enters the worktree; the hook stream
-// then re-points the session's cwd to it (applyStatus).
+// auto-name) — Claude Code creates and enters the worktree; the agent poll
+// then re-points the session's cwd to it (applyAgents).
 export async function newSession(
   type: 'shell' | 'claude',
   dir?: string,
@@ -332,15 +318,23 @@ export function applySpawnCwd(key: number, cwd: string): void {
   touchDir(cwd)
 }
 
-// Mirrors HookEvent in src/main/status.ts (the renderer can't import from main).
-type HookEvent = 'UserPromptSubmit' | 'PostToolUse' | 'PermissionRequest' | 'Notification' | 'Stop'
+// Mirrors AgentEntry in src/main/agents.ts (the renderer can't import from main).
+export interface AgentEntry {
+  sessionId?: string
+  pid?: number
+  status?: string
+  cwd?: string
+  kind?: string
+  startedAt?: number
+}
 
 // `/clear` (and an in-TUI `/resume`) makes Claude Code mint a new conversation
-// id + transcript file mid-session. Hooks route on the stable hookToken, so we
-// still find the session; when the payload's id diverges from the one we hold,
-// follow it — adopt the new id, forget the old transcript tail and preview
-// cache, and let the Preview's watch re-point (its sessionId prop is this id).
-// Without this the preview froze on the pre-clear conversation (issue #2).
+// id + transcript file mid-session. The poll follows the claude PID, which does
+// NOT change, so we still find the session; when the entry's id diverges from
+// the one we hold, follow it — adopt the new id, forget the old transcript tail
+// and preview cache, and let the Preview's watch re-point (its sessionId prop
+// is this id). Without this the preview froze on the pre-clear conversation
+// (issue #2).
 function switchClaudeSession(session: Session, nextId: string): void {
   const prev = session.claudeSessionId
   if (prev) {
@@ -351,19 +345,32 @@ function switchClaudeSession(session: Session, nextId: string): void {
   session.claudeSessionId = nextId
 }
 
-// The hook half of the status state machine (the other half is
-// nudgeStatusFromKey). Main forwards the raw hook event keyed by the session's
-// stable hookToken, plus the payload's current conversation id; we own the
-// meaning. PermissionRequest fires the instant a dialog appears (incl.
-// AskUserQuestion); Notification is the safety net for other needs-input types
-// (the idle_prompt nag is dropped in main). PostToolUse is the subtle one:
-// these are non-blocking POSTs that can arrive out of order, so a PostToolUse
-// landing just after a turn's Stop would otherwise flip a just-finished session
-// back to red — and a backgrounded session has no keystroke nudge to correct
-// it. A tool finishing only means "still in a turn", so it may keep
-// running/waiting red but must never resurrect `idle`; only UserPromptSubmit (a
-// new turn) leaves idle. exited is terminal — nothing revives a dead session.
-export function applyStatus(
+// Mirrors HookEvent in src/main/status.ts (the renderer can't import from main).
+export type HookEvent =
+  | 'UserPromptSubmit'
+  | 'PermissionRequest'
+  | 'Notification'
+  | 'Stop'
+  | 'StopFailure'
+  | 'SubagentStart'
+  | 'SubagentStop'
+
+// Where a session lands when its MAIN turn ends: still delegating if subagents
+// are working, otherwise your turn.
+function statusAfterTurn(session: Session): Session['status'] {
+  return session.subagentCount > 0 ? 'delegating' : 'idle'
+}
+
+// The turn-boundary half. Hooks are the ONLY source that distinguishes "the
+// agent is driving" from "this session merely has something running" — the poll
+// cannot (it reports busy for a finished turn holding a background shell), which
+// is why red and amber are decided here and nowhere else.
+//
+// A busy main agent always wins: UserPromptSubmit paints red regardless of how
+// many subagents are in flight, so `delegating` can only ever appear after the
+// main turn ends. `PostToolUse` is deliberately not subscribed (see status.ts) —
+// turn start and end are the only edges the dot needs.
+export function applyHook(
   hookToken: string,
   claudeSessionId: string,
   event: HookEvent,
@@ -374,57 +381,135 @@ export function applyStatus(
   if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
     switchClaudeSession(session, claudeSessionId)
   }
-  // A --worktree spawn's PTY starts at the repo root, but the session lives in
-  // the worktree Claude creates — the payload's cwd is the truth, so follow it
-  // (the spawn-echo sibling is applySpawnCwd, the conversation-id sibling is
-  // the /clear follow above). The reactive cwd re-groups the tower row; an
-  // open Preview re-arms on the change and main's transcript watch re-points
-  // a tail whose path changed, so nothing else needs telling. Adoption also
-  // retires the pending spawnWorktree flag: the synthetic parked row hands
-  // over to the real one, and the flag is never re-passed on a later respawn.
+  // A --worktree spawn's PTY starts at the repo root but the session lives in
+  // the worktree Claude creates; the payload's cwd is the truth (the poll's
+  // sibling path is applyAgents, the spawn-echo one applySpawnCwd).
   if (cwd && !sameDir(session.cwd, cwd)) {
     session.cwd = cwd
     session.spawnWorktree = null
     touchDir(cwd)
   }
-  // Compute the next status, then commit via setStatus (one choke point, so the
-  // TODO overlay auto-clears on a color change). PostToolUse holds idle idle.
-  let next = session.status
   switch (event) {
-    case 'Stop':
-      next = 'idle'
+    case 'UserPromptSubmit':
+      setStatus(session, 'running')
       break
     case 'PermissionRequest':
     case 'Notification':
-      next = 'waiting'
+      setStatus(session, 'waiting')
       break
-    case 'UserPromptSubmit':
-      next = 'running'
+    // Both ends of a turn: Stop is the normal one, StopFailure is an API error —
+    // which fires NO Stop, so without it the dot would stay red forever.
+    case 'Stop':
+    case 'StopFailure':
+      setStatus(session, statusAfterTurn(session))
       break
-    case 'PostToolUse':
-      // A tool finished, so Claude is mid-turn. If the dot is already red or
-      // amber this just keeps it red. If it is GREEN, the question is whether
-      // that green can be trusted:
-      //   - idle from `Stop` / Ctrl+C — an OBSERVED end of turn. A PostToolUse
-      //     after it is the out-of-order race (non-blocking POSTs can overtake
-      //     each other), and must NOT resurrect a genuinely finished turn.
-      //   - idle from `spinner-decay` — a GUESS: the watchdog inferred the turn
-      //     ended because the title stopped animating. A completed tool call is
-      //     direct proof that guess was wrong, so overturn it.
-      // This is what stops one misfire owning the rest of the turn: before, the
-      // ban was absolute and `idle` was absorbing, so a single bad guess stayed
-      // green until the next prompt.
-      if (session.status !== 'idle' || idleCause.get(session.key) === 'spinner-decay') {
-        next = 'running'
+    case 'SubagentStart':
+      session.subagentCount += 1
+      break
+    case 'SubagentStop': {
+      session.subagentCount = Math.max(0, session.subagentCount - 1)
+      // The last subagent finishing ends the delegation — but never touch a red
+      // or amber dot: the main agent is driving or asking, and that outranks it.
+      if (session.status === 'delegating' && session.subagentCount === 0) {
+        setStatus(session, 'idle')
       }
       break
+    }
   }
-  const recovered = next === 'running' && session.status === 'idle' && event === 'PostToolUse'
-  setStatus(session, next, `hook:${event}` as StatusCause)
-  // Re-arm the watchdog after a recovery. Without this the session could sit
-  // red forever if the turn really had ended and no further spinner title ever
-  // arrives to arm a fresh decay (noteTitleForStatus only arms while running).
-  if (recovered) armSpinnerDecay(session.key)
+}
+
+// Whether a polled entry is the session we think it is. The pid is the stable
+// handle across `/clear`, but Windows recycles pids — so a known pid must also
+// match the start time we recorded with it. Before we know the pid, the pinned
+// spawn id (`--session-id`) is the join.
+function matchesSession(session: Session, entry: AgentEntry): boolean {
+  if (session.claudePid !== null && entry.pid !== undefined) {
+    if (entry.pid !== session.claudePid) return false
+    return (
+      session.claudeStartedAt === null ||
+      entry.startedAt === undefined ||
+      entry.startedAt === session.claudeStartedAt
+    )
+  }
+  return !!entry.sessionId && entry.sessionId === session.claudeSessionId
+}
+
+// One tick of `claude agents --json`: every session on the machine, as a LEVEL
+// rather than an event. Its job here is narrow and deliberately lopsided.
+//
+// `idle` is trusted absolutely: it means the CLI sees nothing running in that
+// session at all — no turn, no tool, no subagent, no shell — so it forces green
+// and zeroes the subagent count. That is the self-healing floor, and it is what
+// hooks alone never had: a missed `Stop`, or an interrupt (which fires no hook
+// whatsoever), can no longer leave a dot red until the next prompt.
+//
+// `busy` and `waiting` are IGNORED for the dot. Measured, not assumed: a session
+// whose turn has ended but which still owns a background shell reports `busy`
+// indefinitely (90/90 samples over 205s), and shells are not "the agent is
+// driving". The poll cannot tell the two apart — the entry carries no shell or
+// agent count — so it must never paint red or amber. Hooks own those.
+//
+// The entry's identity fields are used unconditionally though: `sessionId`
+// follows a `/clear` to the new transcript, and `cwd` is how a `--worktree`
+// session's real directory reaches the tower.
+export function applyAgents(entries: AgentEntry[]): void {
+  for (const session of sessions) {
+    if (session.type !== 'claude' || session.status === 'exited') continue
+    // A session with neither handle yet (spawned, first poll not matched) can't
+    // be identified — skip rather than match something else by accident.
+    if (session.claudePid === null && !session.claudeSessionId) continue
+
+    const entry = entries.find((e) => matchesSession(session, e))
+    if (!entry) continue
+
+    // Learn the stable handle on the first match, so a later `/clear` (which
+    // changes sessionId but not the process) still finds this session.
+    if (entry.pid !== undefined) {
+      session.claudePid = entry.pid
+      session.claudeStartedAt = entry.startedAt ?? null
+    }
+    if (entry.sessionId && session.claudeSessionId !== entry.sessionId) {
+      switchClaudeSession(session, entry.sessionId)
+    }
+    // A --worktree spawn's PTY starts at the repo root, but the session lives
+    // in the worktree Claude creates — the entry's cwd is the truth, so follow
+    // it (the spawn-echo sibling is applySpawnCwd). The reactive cwd re-groups
+    // the tower row; an open Preview re-arms on the change and main's
+    // transcript watch re-points a tail whose path changed. Adoption also
+    // retires the pending spawnWorktree flag: the synthetic parked row hands
+    // over to the real one.
+    if (entry.cwd && !sameDir(session.cwd, entry.cwd)) {
+      session.cwd = entry.cwd
+      session.spawnWorktree = null
+      touchDir(entry.cwd)
+    }
+    // The floor, and the ONLY status this channel is allowed to apply.
+    if (entry.status === 'idle') {
+      session.subagentCount = 0
+      setStatus(session, 'idle')
+    }
+  }
+}
+
+// The one piece of keystroke inference that survives, and only because no other
+// channel covers it: NO hook fires on a user interrupt, and the poll's idle floor
+// can't help when the session still owns a background shell (it reports busy
+// forever, so the dot would sit red until the next prompt). Ctrl+C is the
+// unambiguous cancel, so it greens immediately.
+//
+// Esc is deliberately NOT handled: the same lone 0x1b also closes the
+// slash-command menu / `/btw` overlay without stopping the turn, so it would
+// green a busy Claude — that is issue #6, and it stays fixed by not guessing.
+// Observation only; the bytes pass through to the PTY untouched, and the next
+// hook or poll tick overrules this.
+export function nudgeStatusFromKey(key: number, data: string): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.type !== 'claude' || session.status === 'exited') return
+  if (data === '\x03' && session.status !== 'idle') {
+    // An interrupt kills the main turn AND its subagents, so the count goes too.
+    session.subagentCount = 0
+    setStatus(session, 'idle')
+  }
 }
 
 // Read-only preview items, cached per Claude session id. The cache outlives
@@ -438,88 +523,6 @@ export function applyPreviewItems(sessionId: string, items: PreviewItem[], reset
   const cached = previewItems[sessionId]
   if (reset || !cached) previewItems[sessionId] = [...items]
   else cached.push(...items)
-}
-
-// Hooks are blind to user interrupts — documented: Stop fires only on
-// normally-completed turns, and no hook fires when a permission/question
-// dialog is dismissed. Infer those transitions from the keystrokes we
-// already forward to the PTY (observation only; the bytes pass through
-// untouched). Optimistic nudge — the next hook event stays authoritative.
-export function nudgeStatusFromKey(key: number, data: string): void {
-  const session = sessions.find((s) => s.key === key)
-  if (!session || session.type !== 'claude' || session.status === 'exited') return
-  // 0x03 is Ctrl+C — an unambiguous interrupt/cancel, so idle from either
-  // active state. A lone ESC byte is the Esc key (arrows etc. arrive as longer
-  // 0x1b-prefixed chunks).
-  if (data === '\x03') {
-    if (session.status === 'running' || session.status === 'waiting') {
-      setStatus(session, 'idle', 'key:ctrl-c')
-    }
-  } else if (data === '\x1b') {
-    // Esc dismisses an open dialog (waiting → idle). While RUNNING it is
-    // ambiguous — it ALSO just closes the slash-command menu / /btw overlay
-    // without stopping the turn (issue #6), and sends the same lone 0x1b, so it
-    // must NOT green a busy Claude. Ctrl+C remains the way to interrupt-to-idle.
-    if (session.status === 'waiting') setStatus(session, 'idle', 'key:esc-dismiss-dialog')
-  } else if (data === '\r' && session.status === 'waiting') {
-    // Enter answers the dialog — approve and deny-with-feedback both resume the turn.
-    setStatus(session, 'running', 'key:enter-answers-dialog')
-  }
-}
-
-// The terminal-title spinner is the one signal that survives a user interrupt:
-// Claude animates the title while a turn runs and stops when it ends — but NO
-// hook fires on an Esc/Ctrl+C interrupt (verified — the spinner-status probe),
-// and a lone Esc mid-turn is ambiguous with closing the /btw menu (issue #6).
-// So watch the RUNNING turn's spinner: every spinner-bearing title re-arms a
-// decay; when frames stop for SPINNER_IDLE_MS the turn ended (completed OR
-// interrupted) → idle. Scoped to `running` — the decay's own `running` guard
-// leaves a `waiting` dialog (hook-owned, spinner already stopped) alone, and
-// normal completion (Stop) / Ctrl+C (keystroke) still idle instantly; this is
-// the latency safety net for the hook-blind interrupt. The OS/ConPTY
-// "claude" title has no spinner (hasSpinner), so the title's flap is ignored.
-// MEASURED, not guessed: the title spinner ticks about once a second — across
-// four turns in two node-pty probes the gaps between spinner-bearing titles ran
-// 957-1055ms. The original 1200ms sat only ~1.2x that period, which is not a
-// watchdog margin but a coin flip taken once per second: a real session was
-// caught false-greening on a 1208ms tick (8ms past the deadline, with the timer
-// itself firing on schedule — so jitter in the SIGNAL, not a stalled renderer).
-// 4000ms is ~4x the period, so ordinary jitter cannot reach it. The cost is
-// bounded and lands on the safe side: after an Esc-interrupt the dot stays red
-// up to 4s instead of 1.2s, and false-red ("still busy") beats false-green
-// ("your turn") — the same asymmetry that removed the Esc nudge in issue #6.
-const SPINNER_IDLE_MS = 4000
-const spinnerTimers = new Map<number, ReturnType<typeof setTimeout>>()
-
-// Arm (or re-arm) the decay for a session. Shared by the title watcher and the
-// PostToolUse recovery path so the two can never drift apart.
-function armSpinnerDecay(key: number): void {
-  clearSpinnerTimer(key)
-  spinnerTimers.set(
-    key,
-    setTimeout(() => {
-      spinnerTimers.delete(key)
-      const s = sessions.find((x) => x.key === key)
-      if (s && s.status === 'running') setStatus(s, 'idle', 'spinner-decay')
-    }, SPINNER_IDLE_MS)
-  )
-}
-
-function clearSpinnerTimer(key: number): void {
-  const timer = spinnerTimers.get(key)
-  if (timer !== undefined) {
-    clearTimeout(timer)
-    spinnerTimers.delete(key)
-  }
-}
-
-export function noteTitleForStatus(key: number, title: string): void {
-  const session = sessions.find((s) => s.key === key)
-  if (!session || session.type !== 'claude' || session.status !== 'running') return
-  // A non-spinner title neither re-arms nor cancels the decay: a plain `claude`
-  // title flapping in mid-turn must not be read as the turn ending.
-  if (!hasSpinner(title)) return
-  armSpinnerDecay(key)
 }
 
 // Mirrors WorktreeEntry in src/main/git.ts (the renderer can't import from
@@ -546,7 +549,7 @@ export function parkedWorktrees(
 
 // Where a session's row is headed: a pending worktree spawn counts as its
 // destination — so the reopen menu doesn't offer a worktree that's already
-// being reopened, even though the hooks haven't confirmed the move yet.
+// being reopened, even though the poll hasn't confirmed the move yet.
 export function sessionTargetCwd(session: Session): string {
   return session.spawnWorktree
     ? `${session.cwd}/.claude/worktrees/${session.spawnWorktree}`
@@ -720,7 +723,6 @@ export function snapshotState(): PersistedState {
 export function closeSession(key: number): void {
   const index = sessions.findIndex((s) => s.key === key)
   if (index === -1) return
-  clearSpinnerTimer(key)
   const claudeSessionId = sessions[index].claudeSessionId
   if (claudeSessionId) {
     delete previewItems[claudeSessionId]

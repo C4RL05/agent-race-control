@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 // Type-only: erased at build, so no runtime coupling to main.
 import type { PreviewItem } from '../main/transcript'
+import type { AgentEntry } from '../main/agents'
 import type { HookEvent } from '../main/status'
 import type { GitInfo, WorktreeEntry } from '../main/git'
 
@@ -89,6 +90,8 @@ contextBridge.exposeInMainWorld('arc', {
       return () => ipcRenderer.removeListener('transcript:items', listener)
     }
   },
+  // Turn-boundary hooks (status.ts): the raw event, routed by the session's
+  // stable spawn token. These are what colour the dot red/amber.
   status: {
     onChange: (
       callback: (hookToken: string, claudeSessionId: string, event: HookEvent, cwd: string) => void
@@ -104,6 +107,19 @@ contextBridge.exposeInMainWorld('arc', {
       }
       ipcRenderer.on('session:status', listener)
       return () => ipcRenderer.removeListener('session:status', listener)
+    }
+  },
+  // Each tick of `claude agents --json` (agents.ts): the FULL list of active
+  // sessions, machine-wide. The renderer matches the ones it owns and ignores
+  // the rest — but only ever to force green, since `busy` here includes a
+  // finished turn that still owns a background shell.
+  agents: {
+    onUpdate: (callback: (entries: AgentEntry[]) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, entries: AgentEntry[]): void => {
+        callback(entries)
+      }
+      ipcRenderer.on('session:agents', listener)
+      return () => ipcRenderer.removeListener('session:agents', listener)
     }
   }
 })

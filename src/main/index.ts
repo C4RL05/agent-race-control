@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
-import { registerPtyHandlers, killAllPtys } from './pty'
+import { registerPtyHandlers, killAllPtys, hasClaudeSessions } from './pty'
+import { startAgentPolling, stopAgentPolling } from './agents'
 import { startStatusServer } from './status'
 import { registerTranscriptHandlers, disposeAllTails } from './transcript'
 import { loadState, saveState, flushState } from './state'
@@ -190,16 +191,26 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
+    // Two channels, deliberately unequal (see the kickoff doc): hooks carry the
+    // TURN boundaries — instant and precise — while the poll is only a floor,
+    // because `claude agents --json` reports `busy` for a finished turn that
+    // still owns a background shell and so can never colour the dot red.
     await startStatusServer((hookToken, claudeSessionId, event, cwd) => {
       win?.webContents.send('session:status', hookToken, claudeSessionId, event, cwd)
     })
     registerPtyHandlers(() => win?.webContents ?? null)
     registerTranscriptHandlers(() => win?.webContents ?? null)
+    // One `claude agents --json` per tick for the whole tower, and only while a
+    // Claude PTY is alive (see agents.ts).
+    startAgentPolling(hasClaudeSessions, (entries) => {
+      win?.webContents.send('session:agents', entries)
+    })
     createWindow()
   })
 
   app.on('will-quit', () => {
     flushState()
+    stopAgentPolling()
     releasePageResources()
   })
 
