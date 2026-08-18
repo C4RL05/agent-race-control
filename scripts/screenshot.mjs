@@ -8,8 +8,9 @@
 //     ARC_USERDATA override) restores the tower rows,
 //   - every row is a real process — real claudes idling at their prompt
 //     (zero tokens), real Git Bash shells — named through the real rename flow,
-//   - status variety comes from synthetic hook POSTs to the app's own
-//     localhost status server: its observations are staged, the app never is,
+//   - status variety is REAL: the app polls `claude agents --json`, so a dot
+//     can no longer be faked from outside — the rows are made genuinely busy
+//     and genuinely blocked on a permission dialog instead (best-effort),
 //   - the hero conversation is genuinely real: one haiku prompt on a fresh
 //     run; reruns --resume the pinned session ids and spend nothing,
 //   - branch rows and their state markers come from a real scratch repo
@@ -253,7 +254,7 @@ async function waitForClaudePrompt(timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const text = await terminalText()
-    if (/trust the files/i.test(text)) {
+    if (/trust this folder|trust the files|safety check/i.test(text)) {
       await page.keyboard.press('Enter')
       await page.waitForTimeout(1500)
     } else if (text.includes('❯')) {
@@ -332,25 +333,47 @@ if (heroIsFresh) {
   }
 }
 
-// Traffic-light variety for the background rows, staged through the app's
-// own observability channel: POST the same JSON a real hook would to the
-// URL the app wrote into the scratch profile's hook settings. Since the
-// /clear fix those are PER-SESSION files — arc-hooks/<hookToken>.json, the
-// hook token being the pinned spawn id — each carrying its own routed URL.
-function hookUrlFor(sessionId) {
-  return JSON.parse(readFileSync(join(profileDir, 'arc-hooks', `${sessionId}.json`), 'utf8')).hooks
-    .UserPromptSubmit[0].hooks[0].url
+// Traffic-light variety for the background rows. This USED to be staged with
+// synthetic hook POSTs to the app's status server — that server is gone (the
+// app now polls `claude agents --json`, which reports what the CLI is really
+// doing), and a polled truth cannot be faked from outside. So the rows are
+// made genuinely busy and genuinely blocked, which is the harness's stated
+// principle anyway: real claudes, real keystrokes, nothing staged in the app.
+//
+// Both are BEST-EFFORT: a scene that doesn't settle in time leaves its dot
+// green rather than failing the run, because doc images must never be the
+// reason a build breaks. The amber row is the cheap one — a permission dialog
+// waits indefinitely and burns almost no tokens; the red row costs a real
+// (small) turn on every run, which is the price of no longer being able to lie
+// to the app about status.
+async function stageRow(index, prompt, dotClass, label) {
+  try {
+    await rows.nth(index).click()
+    await waitForClaudePrompt(60_000)
+    await focusTerminal()
+    await page.keyboard.type(prompt, { delay: 15 })
+    await page.keyboard.press('Enter')
+    await rows.nth(index).locator(`.dot.${dotClass}`).waitFor({ timeout: 45_000 })
+  } catch {
+    console.warn(`[screenshots] could not stage ${label} on row ${index} — it stays idle`)
+  }
 }
-async function postStatus(sessionId, event) {
-  await fetch(hookUrlFor(sessionId), {
-    method: 'POST',
-    body: JSON.stringify({ session_id: sessionId, hook_event_name: event })
-  })
-}
-await postStatus(ids.busy, 'UserPromptSubmit') // running — red
-await postStatus(ids.login, 'PermissionRequest') // waiting — amber
-await rows.nth(1).locator('.dot.running').waitFor({ timeout: 5_000 })
-await rows.nth(4).locator('.dot.waiting').waitFor({ timeout: 5_000 })
+
+// Amber: a tool call the session has no standing permission for parks on the
+// approval dialog and stays there, which is exactly the state we want frozen.
+await stageRow(
+  4,
+  'Run the shell command `git status --short` for me using the Bash tool.',
+  'waiting',
+  'waiting/amber'
+)
+// Red: a turn long enough to still be running when both theme passes capture.
+await stageRow(
+  1,
+  'Without using any tools, write a detailed essay of at least 800 words about how a Formula 1 pit crew rehearses a sub-three-second stop.',
+  'running',
+  'running/red'
+)
 
 mkdirSync(imagesDir, { recursive: true })
 // The outline is BAKED INTO the PNG — GitHub strips inline styles from
