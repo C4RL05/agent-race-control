@@ -133,6 +133,14 @@
             }`
           },
           { label: 'Poll seen', value: since(session.agentEntryAt) },
+          // The state that decides whether the poll's `busy` is allowed to mean
+          // anything, and how close the floor is to overriding an open turn.
+          {
+            label: 'Turn open',
+            value: session.turnOpen
+              ? `yes  ·  idle ticks ${session.idleTicks}/3`
+              : `no${session.idleTicks > 0 ? `  ·  idle ticks ${session.idleTicks}` : ''}`
+          },
           {
             label: 'Last hook',
             value: session.lastHook

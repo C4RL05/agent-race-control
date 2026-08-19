@@ -35,6 +35,8 @@ function fakeSession(overrides: Partial<Session>): Session {
     claudePid: null,
     claudeStartedAt: null,
     subagentCount: 0,
+    turnOpen: false,
+    idleTicks: 0,
     statusSince: 0,
     lastHook: null,
     lastHookAt: null,
@@ -283,6 +285,91 @@ describe('applyAgents', () => {
     applyAgents([{ sessionId: 'whatever', pid: 10, status: 'idle' }])
     expect(sessions[0].status).toBe('running')
     expect(sessions[0].claudePid).toBe(null)
+  })
+})
+
+// The floor vs an OPEN turn. This is the 2026-08-19 field bug: the poll blinked
+// idle once, mid-turn, the dot went green, and it stayed green for the next 14
+// minutes of real work — red only ever comes from UserPromptSubmit, and that
+// turn had already spent it.
+describe('applyAgents and an open turn', () => {
+  const tick = (status: string): void => applyAgents([{ sessionId: 'sid', pid: 10, status }])
+
+  it('one idle blink mid-turn does NOT green the dot', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('running')
+    tick('idle')
+    expect(sessions[0].status).toBe('running')
+    tick('idle')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('but the CLI HOLDING idle still ends the turn — the self-heal survives', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    tick('idle')
+    tick('idle')
+    tick('idle')
+    expect(sessions[0].status).toBe('idle')
+    expect(sessions[0].turnOpen).toBe(false)
+  })
+
+  it('any non-idle sample resets the streak, so blinks never accumulate', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    tick('idle')
+    tick('idle')
+    tick('busy') // back to work: the two idles above are not evidence any more
+    tick('idle')
+    tick('idle')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('with no turn open a single idle still greens immediately', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
+    tick('idle')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  // busy alone is still not evidence of anything — but a turn the hooks opened
+  // and never closed makes it corroboration, and then the green is what is wrong.
+  it('busy restores red when a turn is open and the dot somehow went green', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle', turnOpen: true }))
+    tick('busy')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('busy still means nothing with no turn open — that is the background shell', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    tick('busy')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('busy never overrides amber or delegating, which the hooks own', () => {
+    for (const from of ['waiting', 'delegating'] as const) {
+      sessions.length = 0
+      sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: from, turnOpen: true }))
+      tick('busy')
+      expect(sessions[0].status).toBe(from)
+    }
+  })
+
+  it('Stop closes the turn, so a later busy cannot re-paint red', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    applyHook('tok', 'sid', 'Stop')
+    tick('busy')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('an interrupt closes the turn too — a shell outliving it must not re-paint red', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    nudgeStatusFromKey(1, '\x03')
+    expect(sessions[0].status).toBe('idle')
+    tick('busy')
+    expect(sessions[0].status).toBe('idle')
   })
 })
 

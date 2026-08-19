@@ -60,6 +60,17 @@ export interface Session {
   // and self-healing: the poll zeroes it whenever the CLI confirms the session
   // has nothing running at all.
   subagentCount: number
+  // A turn the hooks have opened and not yet closed: UserPromptSubmit sets it,
+  // Stop/StopFailure (and a Ctrl+C interrupt) clear it. This is what lets the
+  // poll's `busy` mean something: on its own it cannot tell an agent from a
+  // background shell, but while a turn is KNOWN to be open it corroborates
+  // rather than guesses. See applyAgents.
+  turnOpen: boolean
+  // Consecutive `idle` samples from the poll. One is not evidence a turn ended
+  // — a single transient idle mid-turn used to green the dot for the rest of
+  // that turn, because red only ever comes from UserPromptSubmit and that had
+  // already been spent.
+  idleTicks: number
   // Pure observation, for the Session tab — none of these feed the dot.
   // When the CURRENT status was set (setStatus). A dot stuck on the wrong
   // colour is only diagnosable if you can see how long it has been stuck.
@@ -256,6 +267,8 @@ function createSession(init: {
     claudePid: null,
     claudeStartedAt: null,
     subagentCount: 0,
+    turnOpen: false,
+    idleTicks: 0,
     statusSince: Date.now(),
     lastHook: null,
     lastHookAt: null,
@@ -378,7 +391,17 @@ function switchClaudeSession(session: Session, nextId: string): void {
     globalThis.window?.arc?.transcript.drop(prev)
   }
   session.claudeSessionId = nextId
+  // A new conversation inherits no open turn from the old one.
+  session.turnOpen = false
+  session.idleTicks = 0
 }
+
+// How many consecutive `idle` samples end a turn the hooks opened. The poll runs
+// about once a second, so this is ~3s of the CLI holding idle before the floor
+// overrides an open turn — long enough that a single blink cannot green a
+// working session, short enough that a missed Stop still self-heals quickly.
+// One sample is still enough when no turn is open, which is the common case.
+const IDLE_TICKS_TO_END_TURN = 3
 
 // Mirrors HookEvent in src/main/status.ts (the renderer can't import from main).
 export type HookEvent =
@@ -428,6 +451,7 @@ export function applyHook(
   session.lastHookAt = Date.now()
   switch (event) {
     case 'UserPromptSubmit':
+      session.turnOpen = true
       setStatus(session, 'running')
       break
     case 'PermissionRequest':
@@ -438,6 +462,7 @@ export function applyHook(
     // which fires NO Stop, so without it the dot would stay red forever.
     case 'Stop':
     case 'StopFailure':
+      session.turnOpen = false
       setStatus(session, statusAfterTurn(session))
       break
     case 'SubagentStart':
@@ -524,10 +549,31 @@ export function applyAgents(entries: AgentEntry[]): void {
       session.spawnWorktree = null
       touchDir(entry.cwd)
     }
-    // The floor, and the ONLY status this channel is allowed to apply.
+    // The floor. `idle` still greens and `busy` still cannot paint red on its
+    // own, but neither is applied blind any more.
     if (entry.status === 'idle') {
-      session.subagentCount = 0
-      setStatus(session, 'idle')
+      session.idleTicks += 1
+      // One idle sample is not proof a turn ended. Measured in the field: a
+      // single transient idle landed mid-turn, forced green, and the dot stayed
+      // green for the remaining 14 minutes of that turn — red comes only from
+      // UserPromptSubmit, which that turn had already spent. So while a turn is
+      // open the floor has to see the CLI HOLD idle, not blink it.
+      if (!session.turnOpen || session.idleTicks >= IDLE_TICKS_TO_END_TURN) {
+        session.subagentCount = 0
+        session.turnOpen = false
+        setStatus(session, 'idle')
+      }
+    } else {
+      session.idleTicks = 0
+      // `busy` stays untrusted as a general signal — it also describes a
+      // finished turn still holding a background shell, which is not the agent
+      // driving. But when the hooks say a turn is OPEN and the dot is somehow
+      // green, both channels agree work is happening and the green is the thing
+      // that must be wrong, so restore red. Amber and delegating are hook-owned
+      // and left alone.
+      if (session.turnOpen && entry.status === 'busy' && session.status === 'idle') {
+        setStatus(session, 'running')
+      }
     }
   }
 }
@@ -547,7 +593,10 @@ export function nudgeStatusFromKey(key: number, data: string): void {
   const session = sessions.find((s) => s.key === key)
   if (!session || session.type !== 'claude' || session.status === 'exited') return
   if (data === '\x03' && session.status !== 'idle') {
-    // An interrupt kills the main turn AND its subagents, so the count goes too.
+    // An interrupt kills the main turn AND its subagents, so the count goes
+    // too. The turn is as over as a Stop would have made it — without this the
+    // poll's `busy` (a shell outliving the interrupt) would re-paint red.
+    session.turnOpen = false
     session.subagentCount = 0
     setStatus(session, 'idle')
   }
