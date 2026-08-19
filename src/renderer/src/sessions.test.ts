@@ -3,6 +3,7 @@ import type { Session, GitInfo } from './sessions.svelte'
 import {
   sessions,
   cleanTitle,
+  towerTitle,
   previewItems,
   applyPreviewItems,
   applyAgents,
@@ -63,6 +64,27 @@ describe('cleanTitle', () => {
     expect(cleanTitle('Fix the bug')).toBe('Fix the bug')
     expect(cleanTitle('build MINGW64: later')).toBe('build MINGW64: later') // only a leading prefix
     expect(cleanTitle('')).toBe('')
+  })
+})
+
+describe('towerTitle', () => {
+  it('keeps the spinner (the row mirrors the terminal title) but drops MSYS prefixes', () => {
+    expect(towerTitle('✳ Fix the bug')).toBe('✳ Fix the bug')
+    expect(towerTitle('⠂ deploy')).toBe('⠂ deploy') // braille frame survives too
+    expect(towerTitle('MINGW64: /d/Projects/x')).toBe('/d/Projects/x')
+    expect(towerTitle('MINGW64:/d/Projects/x')).toBe('/d/Projects/x') // no space after the colon
+    expect(towerTitle('UCRT64: /d/x')).toBe('/d/x')
+    expect(towerTitle('Fix the bug')).toBe('Fix the bug')
+    expect(towerTitle('build MINGW64: later')).toBe('build MINGW64: later') // only a leading prefix
+    expect(towerTitle('')).toBe('')
+  })
+
+  // The pair is the whole point: same input, two readings. A title shown in a
+  // row may churn; the one offered as a name may not.
+  it('differs from cleanTitle only by the spinner', () => {
+    expect(towerTitle('✳ Fix the bug')).not.toBe(cleanTitle('✳ Fix the bug'))
+    expect(towerTitle('MINGW64: /d/x')).toBe(cleanTitle('MINGW64: /d/x'))
+    expect(towerTitle('plain')).toBe(cleanTitle('plain'))
   })
 })
 

@@ -209,17 +209,28 @@ export const ui = $state<{
 
 // Claude Code's animated title spinner: the asterisk churn (✳ ✶ ✻ …) it
 // originally used PLUS the braille frames (⠀-⣿) newer builds also cycle
-// through. Cosmetic only now — status no longer reads the title at all (it is
-// polled, see applyAgents); this just keeps the tower's names clean.
+// through. Cosmetic only — status no longer reads the title at all (it is
+// polled, see applyAgents).
 const SPINNER_LEAD = /^[✳✶✻✽·∴※+*●○◐◑⠀-⣿]+\s*/u
 
-// Claude Code prefixes titles with the spinner above while it works; Git Bash
-// prefixes the cwd with the MSYS system name (MINGW64:). Strip both — the tower
-// wants the conversation name / the path, nothing else.
+// Git Bash prefixes the cwd with the MSYS system name (MINGW64:). That is the
+// terminal describing itself, not the session, so it comes off everywhere.
+const MSYS_LEAD = /^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/
+
+// What the TOWER shows: the live terminal title with only the MSYS prefix off.
+// Claude Code's spinner survives on purpose — a row then reads exactly what the
+// Session tab's "Terminal title" reads, churn included. No session-type branch
+// needed: a shell never emits the spinner, Claude never emits MINGW64:.
+export function towerTitle(title: string): string {
+  return title.replace(MSYS_LEAD, '')
+}
+
+// The same title read as a NAME — spinner frames off as well. For the places a
+// title is proposed as one (the rename prefill, which types it into a live
+// session) or matched as one, all of which want the stable string rather than
+// whichever frame was current.
 export function cleanTitle(title: string): string {
-  return title
-    .replace(SPINNER_LEAD, '')
-    .replace(/^(MINGW64|MINGW32|MSYS|UCRT64|CLANG64|CLANGARM64):\s*/, '')
+  return title.replace(SPINNER_LEAD, '').replace(MSYS_LEAD, '')
 }
 
 // Every session literal in one place — defaults change here and nowhere

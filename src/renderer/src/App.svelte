@@ -16,6 +16,7 @@
     restoreState,
     snapshotState,
     cleanTitle,
+    towerTitle,
     duplicateSession,
     renameSession,
     applySpawnCwd,
@@ -307,10 +308,13 @@
   }
 
   // What a row is called: user label, else the session's own live name from
-  // the terminal title, else the bare type. Never the folder name.
+  // the terminal title, else the bare type. Never the folder name. towerTitle,
+  // not cleanTitle — the row shows the title verbatim (Claude's spinner churn
+  // included), so it says the same thing the Session tab's "Terminal title"
+  // does. Only the rename prefill below still wants the name-shaped version.
   function displayName(session: (typeof sessions)[number]): string {
     return (
-      session.name || cleanTitle(session.title) || (session.type === 'claude' ? 'Claude' : 'Shell')
+      session.name || towerTitle(session.title) || (session.type === 'claude' ? 'Claude' : 'Shell')
     )
   }
 
