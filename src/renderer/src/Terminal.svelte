@@ -116,13 +116,20 @@
     // Zero new muscle memory: Windows Terminal conventions only.
     // Ctrl+Shift+C/V for copy/paste; everything else passes through untouched
     // (Ctrl+C stays Claude's interrupt).
+    // preventDefault is load-bearing, not decoration: returning false only tells
+    // xterm to skip the key — it bails BEFORE its own cancel(), so the browser
+    // default still runs. Ctrl+Shift+V is Chromium's own "paste as plain text",
+    // which pastes into xterm's focused helper textarea and fires the paste
+    // event xterm forwards to the PTY, so the text landed twice.
     t.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true
       if (event.ctrlKey && event.shiftKey && event.code === 'KeyC' && t.hasSelection()) {
+        event.preventDefault()
         void navigator.clipboard.writeText(t.getSelection())
         return false
       }
       if (event.ctrlKey && event.shiftKey && event.code === 'KeyV') {
+        event.preventDefault()
         void navigator.clipboard.readText().then((text) => t.paste(text))
         return false
       }
