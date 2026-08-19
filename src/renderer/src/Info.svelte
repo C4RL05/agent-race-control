@@ -2,8 +2,9 @@
   import { gitInfo, type Session } from './sessions.svelte'
 
   // The Session tab: everything the app knows about one running Claude session,
-  // as read-only labeled text. It is an instrument panel, not a feature — no
-  // controls, no actions, nothing here writes anywhere.
+  // as read-only labeled text. It is an instrument panel, not a feature — the
+  // one control on it copies what is already on screen, and nothing here writes
+  // anywhere else.
   //
   // Three sources, deliberately shown side by side rather than reconciled:
   //   - the store (our computed status, the hook we last saw, the raw poll entry)
@@ -106,180 +107,321 @@
       session.agentEntry.status !== session.status &&
       !(session.agentEntry.status === 'busy' && session.status === 'running')
   )
+
+  // The pane is DATA, not markup: one array feeds both the rendered rows and
+  // the clipboard text. Copying is only worth having if the paste is the same
+  // reading you were looking at — two renderers would drift, and a diagnosis
+  // built on a field that only exists in one of them is worse than none.
+  type InfoRow = { label: string; value: string; prose?: boolean; dot?: string }
+  type InfoSection = { heading: string; rows: InfoRow[]; note?: string }
+
+  const report = $derived.by((): InfoSection[] => {
+    const sections: InfoSection[] = [
+      {
+        heading: 'Status',
+        rows: [
+          {
+            label: 'Tower dot',
+            value: `${session.status}${session.todo ? ' · todo' : ''}`,
+            dot: session.status
+          },
+          { label: 'Age in status', value: since(session.statusSince) },
+          {
+            label: 'Poll reports',
+            value: `${text(session.agentEntry?.status ?? live?.status)}${
+              disagrees ? '  (differs — expected while a shell or subagent outlives the turn)' : ''
+            }`
+          },
+          { label: 'Poll seen', value: since(session.agentEntryAt) },
+          {
+            label: 'Last hook',
+            value: session.lastHook
+              ? `${session.lastHook}  ·  ${since(session.lastHookAt)} ago`
+              : DASH
+          },
+          { label: 'Age in CLI status', value: since(live?.statusUpdatedAt) }
+        ]
+      },
+      {
+        heading: 'Identity',
+        rows: [
+          { label: 'Terminal title', value: text(session.title) },
+          { label: 'Conversation title', value: text(facts?.aiTitle) },
+          {
+            label: 'CLI name',
+            value: live?.name
+              ? `${live.name}${live.nameSource ? `  (${live.nameSource})` : ''}`
+              : DASH
+          },
+          { label: 'Slug', value: text(facts?.slug) },
+          { label: 'Conversation id', value: text(session.claudeSessionId) },
+          { label: 'Spawn id (hook route)', value: text(session.hookToken) },
+          {
+            label: 'Claude pid',
+            value: session.claudePid === null ? DASH : String(session.claudePid)
+          },
+          { label: 'Claude started', value: stamp(session.claudeStartedAt) },
+          { label: 'Uptime', value: since(session.claudeStartedAt) },
+          { label: 'PTY id', value: text(session.ptyId) },
+          {
+            label: 'Kind',
+            value: live?.kind
+              ? `${live.kind}${live.entrypoint ? ` · ${live.entrypoint}` : ''}`
+              : DASH
+          }
+        ]
+      },
+      {
+        heading: 'Conversation',
+        rows: [
+          { label: 'Model', value: text(facts?.model) },
+          { label: 'Effort', value: text(facts?.effort) },
+          { label: 'Permission mode', value: text(facts?.permissionMode) },
+          { label: 'Mode', value: text(facts?.mode) },
+          { label: 'Turns', value: count(facts?.turns) },
+          { label: 'Last turn', value: duration(facts?.lastTurnMs) },
+          { label: 'Messages', value: count(facts?.messageCount) },
+          {
+            label: 'Context',
+            value:
+              facts?.contextTokens === null || facts?.contextTokens === undefined
+                ? DASH
+                : `${tokens(facts.contextTokens)} tokens`
+          },
+          {
+            label: 'Last output',
+            value:
+              facts?.outputTokens === null || facts?.outputTokens === undefined
+                ? DASH
+                : `${tokens(facts.outputTokens)} tokens${
+                    facts.thinkingTokens ? ` · ${tokens(facts.thinkingTokens)} thinking` : ''
+                  }`
+          },
+          { label: 'Service tier', value: text(facts?.serviceTier) },
+          {
+            label: 'Compactions',
+            value:
+              facts && facts.compactions > 0
+                ? `${facts.compactions}  ·  last ${facts.compactTrigger || 'unknown'}: ${tokens(
+                    facts.compactPreTokens
+                  )} → ${tokens(facts.compactPostTokens)}`
+                : count(facts?.compactions)
+          },
+          { label: 'Claude Code', value: text(live?.version ?? facts?.version) },
+          { label: 'Last transcript entry', value: stamp(facts?.lastEntryAt) }
+        ]
+      },
+      {
+        heading: 'In flight',
+        // Two independent counts of the same thing, on purpose. The hook count
+        // is an edge tally (SubagentStart/Stop) and is what decides the
+        // delegating dot; the transcript count is a level re-derived from the
+        // file. When they disagree, the hook channel is the one that drifted.
+        rows: [
+          { label: 'Subagents (hooks)', value: String(session.subagentCount) },
+          {
+            label: 'Subagents (transcript)',
+            value: facts
+              ? `${facts.subagentsOpen} open  ·  ${facts.subagentsStarted} started`
+              : DASH
+          },
+          {
+            label: 'Background shells',
+            value: facts ? `${facts.shellsOpen} open  ·  ${facts.shellsStarted} started` : DASH
+          },
+          { label: 'Queued prompts', value: count(facts?.queued) },
+          {
+            label: 'Hooks at last turn end',
+            value:
+              facts && facts.lastHooks.length > 0
+                ? facts.lastHooks.map((hook) => `${hook.command} (${hook.durationMs}ms)`).join('\n')
+                : DASH
+          },
+          { label: 'Hook errors', value: count(facts?.hookErrors) }
+        ],
+        note:
+          'Open = started in this conversation and never recorded as finished. A run the app ' +
+          'outlived leaves its shell counted here; the poll line above is the authority on ' +
+          'whether anything is actually running.'
+      },
+      {
+        heading: 'Place',
+        rows: [
+          { label: 'Working directory', value: session.cwd },
+          { label: 'Repo', value: git?.isRepo ? git.repoName : DASH },
+          { label: 'Worktree', value: git?.isRepo ? text(git.worktreeName) : DASH },
+          { label: 'Branch', value: git?.isRepo ? text(git.branch) : DASH },
+          {
+            label: 'Branch state',
+            value: git?.isRepo
+              ? `${git.dirty ? 'dirty' : 'clean'}${
+                  git.base ? `  ·  ↑${git.ahead} ↓${git.behind} vs ${git.base}` : ''
+                }`
+              : DASH
+          },
+          { label: 'Transcript', value: info ? info.transcriptPath : DASH },
+          {
+            label: 'Transcript size',
+            value:
+              info?.transcriptBytes === null || info?.transcriptBytes === undefined
+                ? 'not written yet'
+                : bytes(info.transcriptBytes)
+          },
+          { label: 'Resume id', value: text(session.resumeId) },
+          {
+            label: 'Pending worktree',
+            value: session.spawnWorktree === null ? DASH : `'${session.spawnWorktree}'`
+          },
+          { label: 'Remote control', value: text(facts?.bridgeUrl || live?.bridgeSessionId) }
+        ]
+      }
+    ]
+
+    // Claude Code's own written summary of where this session got to. Not ours,
+    // not derived — it just happens to be the single most useful line in the
+    // transcript.
+    const latest: InfoRow[] = []
+    if (facts?.lastPrompt)
+      latest.push({ label: 'Last prompt', value: facts.lastPrompt, prose: true })
+    if (facts?.awaySummary)
+      latest.push({ label: 'Session summary', value: facts.awaySummary, prose: true })
+    if (latest.length > 0) sections.push({ heading: 'Latest', rows: latest })
+
+    return sections
+  })
+
+  // Plain text, deliberately NOT fenced: a copied prompt can contain a fence of
+  // its own, and one broken block costs more than the alignment it buys. Labels
+  // are padded so the paste reads as the same two columns the pane does.
+  const LABEL_WIDTH = 24
+
+  function reportText(): string {
+    const lines = ['Agent Race Control — session info', stamp(Date.now()), '']
+    for (const section of report) {
+      lines.push(`## ${section.heading}`)
+      for (const { label, value, prose } of section.rows) {
+        // Prose and the hook list are already multi-line; padding them into a
+        // column would wrap into nonsense, so they get a block instead.
+        if (prose || value.includes('\n')) {
+          lines.push(`${label}:`)
+          for (const line of value.split('\n')) lines.push(`  ${line}`)
+        } else {
+          lines.push(`${label.padEnd(LABEL_WIDTH)}${value}`)
+        }
+      }
+      // The note travels with the numbers it disambiguates — a paste is read by
+      // someone who cannot see this pane.
+      if (section.note) lines.push(`(${section.note})`)
+      lines.push('')
+    }
+    return lines.join('\n')
+  }
+
+  // The button is the only feedback surface here, so a rejected write has to
+  // say so rather than look like success.
+  let copyState = $state<'idle' | 'copied' | 'failed'>('idle')
+  let copyTimer: ReturnType<typeof setTimeout> | null = null
+
+  function copyAll(): void {
+    const settle = (next: 'copied' | 'failed'): void => {
+      copyState = next
+      if (copyTimer) clearTimeout(copyTimer)
+      copyTimer = setTimeout(() => (copyState = 'idle'), 1600)
+    }
+    navigator.clipboard.writeText(reportText()).then(
+      () => settle('copied'),
+      () => settle('failed')
+    )
+  }
+
+  $effect(() => () => {
+    if (copyTimer) clearTimeout(copyTimer)
+  })
 </script>
 
-{#snippet row(label: string, value: string, mono = true)}
-  <div class="row">
-    <div class="label">{label}</div>
-    <div class="value" class:mono>{value}</div>
-  </div>
-{/snippet}
-
-{#snippet block(label: string, value: string)}
-  <div class="row">
-    <div class="label">{label}</div>
-    <div class="value prose">{value}</div>
-  </div>
-{/snippet}
-
 <div class="info" style:--mono={codeFont}>
-  <section>
-    <h2>Status</h2>
-    <div class="row">
-      <div class="label">Tower dot</div>
-      <div class="value mono">
-        <span class="dot {session.status}"></span>{session.status}{session.todo ? ' · todo' : ''}
-      </div>
-    </div>
-    {@render row('Age in status', since(session.statusSince))}
-    {@render row(
-      'Poll reports',
-      `${text(session.agentEntry?.status ?? live?.status)}${disagrees ? '  (differs — expected while a shell or subagent outlives the turn)' : ''}`
-    )}
-    {@render row('Poll seen', since(session.agentEntryAt))}
-    {@render row(
-      'Last hook',
-      session.lastHook ? `${session.lastHook}  ·  ${since(session.lastHookAt)} ago` : DASH
-    )}
-    {@render row('Age in CLI status', since(live?.statusUpdatedAt))}
-  </section>
+  <!-- Sticky, because the reason to copy usually occurs to you at the bottom of
+       the pane. -->
+  <div class="bar">
+    <button
+      class="copy"
+      class:done={copyState === 'copied'}
+      title="Copy every field below as text"
+      onclick={copyAll}
+    >
+      <span class="material-symbols-outlined">
+        {copyState === 'copied' ? 'check' : copyState === 'failed' ? 'error' : 'content_copy'}
+      </span>
+      {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Failed' : 'Copy all'}
+    </button>
+  </div>
 
-  <section>
-    <h2>Identity</h2>
-    {@render row('Terminal title', text(session.title))}
-    {@render row('Conversation title', text(facts?.aiTitle))}
-    {@render row(
-      'CLI name',
-      live?.name ? `${live.name}${live.nameSource ? `  (${live.nameSource})` : ''}` : DASH
-    )}
-    {@render row('Slug', text(facts?.slug))}
-    {@render row('Conversation id', text(session.claudeSessionId))}
-    {@render row('Spawn id (hook route)', text(session.hookToken))}
-    {@render row('Claude pid', session.claudePid === null ? DASH : String(session.claudePid))}
-    {@render row('Claude started', stamp(session.claudeStartedAt))}
-    {@render row('Uptime', since(session.claudeStartedAt))}
-    {@render row('PTY id', text(session.ptyId))}
-    {@render row(
-      'Kind',
-      live?.kind ? `${live.kind}${live.entrypoint ? ` · ${live.entrypoint}` : ''}` : DASH
-    )}
-  </section>
-
-  <section>
-    <h2>Conversation</h2>
-    {@render row('Model', text(facts?.model))}
-    {@render row('Effort', text(facts?.effort))}
-    {@render row('Permission mode', text(facts?.permissionMode))}
-    {@render row('Mode', text(facts?.mode))}
-    {@render row('Turns', count(facts?.turns))}
-    {@render row('Last turn', duration(facts?.lastTurnMs))}
-    {@render row('Messages', count(facts?.messageCount))}
-    {@render row(
-      'Context',
-      facts?.contextTokens === null || facts?.contextTokens === undefined
-        ? DASH
-        : `${tokens(facts.contextTokens)} tokens`
-    )}
-    {@render row(
-      'Last output',
-      facts?.outputTokens === null || facts?.outputTokens === undefined
-        ? DASH
-        : `${tokens(facts.outputTokens)} tokens${facts.thinkingTokens ? ` · ${tokens(facts.thinkingTokens)} thinking` : ''}`
-    )}
-    {@render row('Service tier', text(facts?.serviceTier))}
-    {@render row(
-      'Compactions',
-      facts && facts.compactions > 0
-        ? `${facts.compactions}  ·  last ${facts.compactTrigger || 'unknown'}: ${tokens(facts.compactPreTokens)} → ${tokens(facts.compactPostTokens)}`
-        : count(facts?.compactions)
-    )}
-    {@render row('Claude Code', text(live?.version ?? facts?.version))}
-    {@render row('Last transcript entry', stamp(facts?.lastEntryAt))}
-  </section>
-
-  <section>
-    <h2>In flight</h2>
-    <!-- Two independent counts of the same thing, on purpose. The hook count is
-         an edge tally (SubagentStart/Stop) and is what decides the delegating
-         dot; the transcript count is a level re-derived from the file. When they
-         disagree, the hook channel is the one that drifted. -->
-    {@render row('Subagents (hooks)', String(session.subagentCount))}
-    {@render row(
-      'Subagents (transcript)',
-      facts ? `${facts.subagentsOpen} open  ·  ${facts.subagentsStarted} started` : DASH
-    )}
-    {@render row(
-      'Background shells',
-      facts ? `${facts.shellsOpen} open  ·  ${facts.shellsStarted} started` : DASH
-    )}
-    {@render row('Queued prompts', count(facts?.queued))}
-    {@render row(
-      'Hooks at last turn end',
-      facts && facts.lastHooks.length > 0
-        ? facts.lastHooks.map((hook) => `${hook.command} (${hook.durationMs}ms)`).join('\n')
-        : DASH
-    )}
-    {@render row('Hook errors', count(facts?.hookErrors))}
-    <p class="note">
-      Open = started in this conversation and never recorded as finished. A run the app outlived
-      leaves its shell counted here; the poll line above is the authority on whether anything is
-      actually running.
-    </p>
-  </section>
-
-  <section>
-    <h2>Place</h2>
-    {@render row('Working directory', session.cwd)}
-    {@render row('Repo', git?.isRepo ? git.repoName : DASH)}
-    {@render row('Worktree', git?.isRepo ? text(git.worktreeName) : DASH)}
-    {@render row('Branch', git?.isRepo ? text(git.branch) : DASH)}
-    {@render row(
-      'Branch state',
-      git?.isRepo
-        ? `${git.dirty ? 'dirty' : 'clean'}${git.base ? `  ·  ↑${git.ahead} ↓${git.behind} vs ${git.base}` : ''}`
-        : DASH
-    )}
-    {@render row('Transcript', info ? info.transcriptPath : DASH)}
-    {@render row(
-      'Transcript size',
-      info?.transcriptBytes === null || info?.transcriptBytes === undefined
-        ? 'not written yet'
-        : bytes(info.transcriptBytes)
-    )}
-    {@render row('Resume id', text(session.resumeId))}
-    {@render row(
-      'Pending worktree',
-      session.spawnWorktree === null ? DASH : `'${session.spawnWorktree}'`
-    )}
-    {@render row('Remote control', text(facts?.bridgeUrl || live?.bridgeSessionId))}
-  </section>
-
-  {#if facts?.lastPrompt || facts?.awaySummary}
+  {#each report as section (section.heading)}
     <section>
-      <h2>Latest</h2>
-      {#if facts.lastPrompt}
-        {@render block('Last prompt', facts.lastPrompt)}
-      {/if}
-      <!-- Claude Code's own written summary of where this session got to. Not
-           ours, not derived — it just happens to be the single most useful line
-           in the transcript. -->
-      {#if facts.awaySummary}
-        {@render block('Session summary', facts.awaySummary)}
+      <h2>{section.heading}</h2>
+      {#each section.rows as row (row.label)}
+        <div class="row">
+          <div class="label">{row.label}</div>
+          <div class="value" class:mono={!row.prose} class:prose={row.prose}>
+            {#if row.dot}<span class="dot {row.dot}"></span>{/if}{row.value}
+          </div>
+        </div>
+      {/each}
+      {#if section.note}
+        <p class="note">{section.note}</p>
       {/if}
     </section>
-  {/if}
+  {/each}
 </div>
 
 <style>
   .info {
     height: 100%;
     overflow-y: auto;
-    padding: 12px 16px 24px;
+    padding: 0 16px 24px;
     box-sizing: border-box;
     font-size: 12px;
     line-height: 1.5;
     /* Half the point of the tab is pasting a field into a bug report. */
     user-select: text;
+  }
+
+  /* Rides above the sections so Copy stays reachable at any scroll depth. */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 0 6px;
+    background: var(--bg);
+  }
+
+  .copy {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-subtle);
+    color: var(--fg-muted);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .copy:hover {
+    color: var(--fg);
+  }
+
+  .copy.done {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .copy .material-symbols-outlined {
+    font-size: 13px;
   }
 
   section {
