@@ -21,10 +21,13 @@ import { basename, dirname, join } from 'node:path'
 // the regex: [\\/:] alone breaks any dotted cwd, which silently kills both
 // the preview and --resume. The base honors a relocated CLAUDE_CONFIG_DIR
 // (deliberately preserved user config — see the env scrub in pty.ts).
+export function claudeConfigDir(): string {
+  return process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
+}
+
 export function transcriptPath(cwd: string, sessionId: string): string {
-  const configDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
   const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-')
-  return join(configDir, 'projects', encoded, `${sessionId}.jsonl`)
+  return join(claudeConfigDir(), 'projects', encoded, `${sessionId}.jsonl`)
 }
 
 export type PreviewItem = { kind: 'user'; text: string } | { kind: 'assistant'; text: string }

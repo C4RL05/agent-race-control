@@ -60,6 +60,20 @@ export interface Session {
   // and self-healing: the poll zeroes it whenever the CLI confirms the session
   // has nothing running at all.
   subagentCount: number
+  // Pure observation, for the Session tab — none of these feed the dot.
+  // When the CURRENT status was set (setStatus). A dot stuck on the wrong
+  // colour is only diagnosable if you can see how long it has been stuck.
+  statusSince: number
+  // The last turn-boundary hook this session received, and when. Makes the
+  // otherwise invisible hook channel visible — including SubagentStart/Stop,
+  // whose firing the tower currently takes on faith.
+  lastHook: HookEvent | null
+  lastHookAt: number | null
+  // The last raw `claude agents --json` entry that matched this session. Kept
+  // verbatim: its `status` is the one the tower deliberately ignores for red
+  // and amber, and seeing it disagree with our dot is the point of the tab.
+  agentEntry: AgentEntry | null
+  agentEntryAt: number | null
   // Set on sessions restored from the state JSON: spawn with --resume.
   resumeId: string | null
   // Set on sessions the repo card spawns into a fresh worktree: pass
@@ -69,9 +83,10 @@ export interface Session {
   // row takes over). Persisted only while pending and named, so a parked
   // never-prompted session survives restart and re-arms --worktree.
   spawnWorktree: string | null
-  // Which pane tab is showing: the live terminal or the read-only
-  // conversation preview (Claude sessions only). Transient — not persisted.
-  view: 'terminal' | 'preview'
+  // Which pane tab is showing: the live terminal, the read-only conversation
+  // preview, or the session inspector (Claude sessions only). Transient — not
+  // persisted.
+  view: 'terminal' | 'preview' | 'info'
   // Cosmetic "revisit later" flag overlaid on the status dot (both types).
   // Purely visual — no effect on sorting/focus/logic. Persisted so it survives
   // restart; auto-cleared when the underlying status changes color (setStatus).
@@ -230,6 +245,11 @@ function createSession(init: {
     claudePid: null,
     claudeStartedAt: null,
     subagentCount: 0,
+    statusSince: Date.now(),
+    lastHook: null,
+    lastHookAt: null,
+    agentEntry: null,
+    agentEntryAt: null,
     resumeId: init.resumeId ?? null,
     spawnWorktree: init.worktree ?? null,
     view: 'terminal',
@@ -251,6 +271,10 @@ export function setStatus(session: Session, next: Session['status']): void {
   // no polling). Deliberately NOT on exited: after Claude's worktree cleanup
   // the dir is gone, and a refresh would flip the row into a plain folder.
   if (next === 'idle' && next !== session.status) loadGitInfo(session.cwd)
+  // Stamped only on a real change, so the Session tab's "age in status" reads
+  // how long the dot has been THIS colour, not how long since the last tick
+  // re-asserted it.
+  if (next !== session.status) session.statusSince = Date.now()
   session.status = next
 }
 
@@ -389,6 +413,8 @@ export function applyHook(
     session.spawnWorktree = null
     touchDir(cwd)
   }
+  session.lastHook = event
+  session.lastHookAt = Date.now()
   switch (event) {
     case 'UserPromptSubmit':
       setStatus(session, 'running')
@@ -461,6 +487,10 @@ export function applyAgents(entries: AgentEntry[]): void {
 
     const entry = entries.find((e) => matchesSession(session, e))
     if (!entry) continue
+    // Kept verbatim for the Session tab before anything is read off it — the
+    // raw `busy` this channel reports is exactly what the dot refuses to use.
+    session.agentEntry = entry
+    session.agentEntryAt = Date.now()
 
     // Learn the stable handle on the first match, so a later `/clear` (which
     // changes sessionId but not the process) still finds this session.

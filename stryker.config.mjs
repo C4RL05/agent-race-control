@@ -6,7 +6,12 @@
 export default {
   testRunner: 'vitest',
   vitest: { configFile: 'vitest.config.ts' },
-  mutate: ['src/main/transcript.ts', 'src/main/git.ts', 'src/renderer/src/sessions.svelte.ts'],
+  mutate: [
+    'src/main/transcript.ts',
+    'src/main/git.ts',
+    'src/main/sessioninfo.ts',
+    'src/renderer/src/sessions.svelte.ts'
+  ],
   reporters: ['html', 'clear-text', 'progress'],
   clearTextReporter: { allowColor: false },
   thresholds: { high: 80, low: 60, break: null }

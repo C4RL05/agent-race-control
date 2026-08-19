@@ -5,6 +5,7 @@ import type { PreviewItem } from '../main/transcript'
 import type { AgentEntry } from '../main/agents'
 import type { HookEvent } from '../main/status'
 import type { GitInfo, WorktreeEntry } from '../main/git'
+import type { SessionInfo } from '../main/sessioninfo'
 
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
@@ -89,6 +90,13 @@ contextBridge.exposeInMainWorld('arc', {
       ipcRenderer.on('transcript:items', listener)
       return () => ipcRenderer.removeListener('transcript:items', listener)
     }
+  },
+  // Everything knowable about one session, for the pane's Session tab
+  // (sessioninfo.ts). PULL, not push: nothing is computed unless that tab is
+  // open and asks, and nothing it returns ever colours the status dot.
+  info: {
+    get: (opts: { sessionId: string; cwd: string; pid: number | null }): Promise<SessionInfo> =>
+      ipcRenderer.invoke('session:info', opts)
   },
   // Turn-boundary hooks (status.ts): the raw event, routed by the session's
   // stable spawn token. These are what colour the dot red/amber.

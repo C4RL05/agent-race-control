@@ -1,6 +1,7 @@
 <script lang="ts">
   import Terminal from './Terminal.svelte'
   import Preview from './Preview.svelte'
+  import Info from './Info.svelte'
   import { palettes } from './theme'
   import type { Mode } from './theme'
   import {
@@ -790,6 +791,15 @@
             >
               <span class="material-symbols-outlined">article</span>Preview
             </button>
+            <button
+              class="tab"
+              class:active={session.view === 'info'}
+              role="tab"
+              aria-selected={session.view === 'info'}
+              onclick={() => (session.view = 'info')}
+            >
+              <span class="material-symbols-outlined">speed</span>Session
+            </button>
           </div>
         {/if}
         <!-- The terminal stays mounted while hidden — the PTY's lifetime is
@@ -826,6 +836,18 @@
             }}
           />
         </div>
+        {#if session.view === 'info'}
+          <div class="view">
+            <!-- Mounted for the focused session only, same as the preview: the
+                 pull runs on an interval, so an unfocused tab must not keep
+                 asking main for facts nobody is reading. -->
+            {#if session.claudeSessionId && ui.focused === session.key}
+              <Info {session} codeFont={monoFont} />
+            {:else if !session.claudeSessionId}
+              <div class="empty">No session yet.</div>
+            {/if}
+          </div>
+        {/if}
         {#if session.view === 'preview'}
           <div class="view">
             {#if session.claudeSessionId && ui.focused === session.key}

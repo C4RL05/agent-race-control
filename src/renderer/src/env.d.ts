@@ -63,6 +63,67 @@ type WorktreeEntry = {
   locked: boolean
 }
 
+// Everything knowable about one running Claude session, for the pane's Session
+// tab — hand-copied from src/main/sessioninfo.ts, same can't-import-from-main
+// reason as PreviewItem. Both underlying formats are Claude Code internals, so
+// every field is best-effort: '' / null means "not known", never an error.
+type LiveSession = {
+  pid?: number
+  sessionId?: string
+  cwd?: string
+  startedAt?: number
+  procStart?: string
+  version?: string
+  kind?: string
+  entrypoint?: string
+  name?: string
+  nameSource?: string
+  status?: string
+  updatedAt?: number
+  statusUpdatedAt?: number
+  bridgeSessionId?: string
+}
+
+type TranscriptFacts = {
+  aiTitle: string
+  slug: string
+  mode: string
+  permissionMode: string
+  model: string
+  effort: string
+  version: string
+  gitBranch: string
+  turns: number
+  lastTurnMs: number | null
+  messageCount: number | null
+  contextTokens: number | null
+  outputTokens: number | null
+  thinkingTokens: number | null
+  serviceTier: string
+  compactions: number
+  compactTrigger: string
+  compactPreTokens: number | null
+  compactPostTokens: number | null
+  awaySummary: string
+  bridgeUrl: string
+  lastPrompt: string
+  queued: number
+  subagentsStarted: number
+  subagentsOpen: number
+  shellsStarted: number
+  shellsOpen: number
+  lastHooks: Array<{ command: string; durationMs: number }>
+  hookErrors: number
+  lastEntryAt: string
+}
+
+type SessionInfo = {
+  live: LiveSession | null
+  facts: TranscriptFacts | null
+  transcriptPath: string
+  transcriptBytes: number | null
+}
+
 // The preload contextBridge API — the renderer's only window into main.
 interface Window {
   arc: {
@@ -105,6 +166,12 @@ interface Window {
       onItems: (
         callback: (sessionId: string, items: PreviewItem[], reset: boolean) => void
       ) => () => void
+    }
+    // Everything knowable about one session, for the Session tab
+    // (src/main/sessioninfo.ts). PULL, not push: main computes nothing unless
+    // an open tab asks, and nothing it returns ever colours the status dot.
+    info: {
+      get: (opts: { sessionId: string; cwd: string; pid: number | null }) => Promise<SessionInfo>
     }
     // Turn-boundary hooks (HookEvent in src/main/status.ts, hand-copied — the
     // renderer can't import from main). hookToken is the session's stable spawn
