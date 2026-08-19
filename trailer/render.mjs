@@ -105,8 +105,7 @@ try {
     if (!mp4 && existsSync(outputDir)) {
       mp4 =
         readdirSync(outputDir).find(
-          (f) =>
-            f.endsWith('.mp4') && statSync(join(outputDir, f)).mtimeMs > renderStart - 5_000
+          (f) => f.endsWith('.mp4') && statSync(join(outputDir, f)).mtimeMs > renderStart - 5_000
         ) ?? null
       if (mp4) console.log('exporter writing', mp4)
     }

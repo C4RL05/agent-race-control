@@ -1,11 +1,5 @@
 import { makeScene2D, Txt } from '@motion-canvas/2d'
-import {
-  all,
-  createRef,
-  fadeTransition,
-  linear,
-  waitFor
-} from '@motion-canvas/core'
+import { all, createRef, fadeTransition, linear, waitFor } from '@motion-canvas/core'
 import { BG, MUTED, MONO, SANS, rise } from '../lib'
 
 // Beat 3 (0:10–0:13.5) — the ethos, stated plainly on an empty canvas.
@@ -20,9 +14,7 @@ export default makeScene2D(function* (view) {
   const sub = createRef<Txt>()
 
   view.add(head.node)
-  view.add(
-    <Txt ref={mono} text={''} fontFamily={MONO} fontSize={34} fill={MUTED} y={10} />
-  )
+  view.add(<Txt ref={mono} text={''} fontFamily={MONO} fontSize={34} fill={MUTED} y={10} />)
   view.add(
     <Txt
       ref={sub}

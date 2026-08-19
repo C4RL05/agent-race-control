@@ -4,7 +4,7 @@ import ffmpegPlugin from '@motion-canvas/ffmpeg'
 
 // Both Motion Canvas plugins ship CJS with `exports.default`; imported from
 // this ESM config the function arrives nested one level deep — unwrap it.
-const unwrap = <T,>(m: T): T => ((m as { default?: T }).default ?? m) as T
+const unwrap = <T>(m: T): T => ((m as { default?: T }).default ?? m) as T
 const motionCanvas = unwrap(motionCanvasPlugin)
 const ffmpeg = unwrap(ffmpegPlugin)
 

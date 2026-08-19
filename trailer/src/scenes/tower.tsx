@@ -75,9 +75,7 @@ export default makeScene2D(function* (view) {
   )
   yield* sequence(
     0.22,
-    ...dots.map(({ dot, txt }) =>
-      all(dot().scale(1, 0.5, easeOutBack), txt().opacity(1, 0.4))
-    )
+    ...dots.map(({ dot, txt }) => all(dot().scale(1, 0.5, easeOutBack), txt().opacity(1, 0.4)))
   )
   // The amber dot pulses — the same "wants you" signal the app animates.
   yield* all(

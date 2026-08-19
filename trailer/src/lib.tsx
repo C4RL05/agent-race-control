@@ -1,11 +1,6 @@
 import { Img, Rect, Txt, type TxtProps } from '@motion-canvas/2d'
 import arcIcon from '../../src/renderer/src/assets/arc.png'
-import {
-  createRef,
-  easeInCubic,
-  easeOutExpo,
-  type ThreadGenerator
-} from '@motion-canvas/core'
+import { createRef, easeInCubic, easeOutExpo, type ThreadGenerator } from '@motion-canvas/core'
 
 // The trailer's design tokens — the app's own Primer-derived palette, so the
 // canvas reads as the same product the screenshots show.
