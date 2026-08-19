@@ -542,7 +542,7 @@
             )
           }}
         >
-          <span class="material-symbols-outlined">asterisk</span>
+          <span class="material-symbols-outlined">dashboard_2_add</span>
         </button>
         <button
           class="icon-btn"
@@ -556,7 +556,7 @@
             )
           }}
         >
-          <span class="material-symbols-outlined">terminal_2</span>
+          <span class="material-symbols-outlined">terminal_add</span>
         </button>
       </div>
       <div class="search">
@@ -587,7 +587,7 @@
           }}
         >
           <span class="material-symbols-outlined">
-            {filterClaude ? 'asterisk' : filterShell ? 'terminal_2' : 'filter_list'}
+            {filterClaude ? 'dashboard_2' : filterShell ? 'terminal' : 'filter_list'}
           </span>
           <span class="material-symbols-outlined caret">expand_more</span>
         </button>
@@ -784,7 +784,7 @@
               aria-selected={session.view === 'terminal'}
               onclick={() => (session.view = 'terminal')}
             >
-              <span class="material-symbols-outlined">terminal_2</span>Terminal
+              <span class="material-symbols-outlined">terminal</span>Terminal
             </button>
             <button
               class="tab"
@@ -952,7 +952,7 @@
         void newSession('claude', dir)
       }}
     >
-      <span class="material-symbols-outlined">asterisk</span>
+      <span class="material-symbols-outlined">dashboard_2_add</span>
     </button>
     <button
       class="spawn-btn"
@@ -963,7 +963,7 @@
         void newSession('shell', dir)
       }}
     >
-      <span class="material-symbols-outlined">terminal_2</span>
+      <span class="material-symbols-outlined">terminal_add</span>
     </button>
     <button
       class="spawn-btn"
@@ -1028,7 +1028,7 @@
       <span
         class="type-icon material-symbols-outlined"
         title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-        >{session.type === 'claude' ? 'asterisk' : 'terminal_2'}</span
+        >{session.type === 'claude' ? 'dashboard_2' : 'terminal'}</span
       >
 
       {#if renaming === session.key}
@@ -1141,7 +1141,7 @@
             menu = null
           }}
         >
-          <span class="material-symbols-outlined">asterisk</span>Claude sessions
+          <span class="material-symbols-outlined">dashboard_2</span>Claude sessions
         </button>
         <button
           class="menu-item"
@@ -1152,7 +1152,7 @@
             menu = null
           }}
         >
-          <span class="material-symbols-outlined">terminal_2</span>Shell sessions
+          <span class="material-symbols-outlined">terminal</span>Shell sessions
         </button>
       {:else if menu.kind === 'color'}
         {#each DOT_COLORS as entry (entry.name)}
