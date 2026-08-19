@@ -1,4 +1,14 @@
 <script lang="ts">
+  // The two session-type icons are Phosphor (regular weight, MIT — path data
+  // lifted verbatim from @phosphor-icons/core 2.1.1), inlined rather than added
+  // as a second icon dependency: a whole webfont alongside Material Symbols is
+  // not a trade two glyphs earn. Everything else in the app stays Material.
+  const PHOSPHOR = {
+    cpu: 'M152,96H104a8,8,0,0,0-8,8v48a8,8,0,0,0,8,8h48a8,8,0,0,0,8-8V104A8,8,0,0,0,152,96Zm-8,48H112V112h32Zm88,0H216V112h16a8,8,0,0,0,0-16H216V56a16,16,0,0,0-16-16H160V24a8,8,0,0,0-16,0V40H112V24a8,8,0,0,0-16,0V40H56A16,16,0,0,0,40,56V96H24a8,8,0,0,0,0,16H40v32H24a8,8,0,0,0,0,16H40v40a16,16,0,0,0,16,16H96v16a8,8,0,0,0,16,0V216h32v16a8,8,0,0,0,16,0V216h40a16,16,0,0,0,16-16V160h16a8,8,0,0,0,0-16Zm-32,56H56V56H200v95.87s0,.09,0,.13,0,.09,0,.13V200Z',
+    'terminal-window':
+      'M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z'
+  }
+
   import Terminal from './Terminal.svelte'
   import Preview from './Preview.svelte'
   import Info from './Info.svelte'
@@ -511,6 +521,23 @@
   }
 </script>
 
+<!-- A snippet, not a component: an <svg> rendered by a child component would
+     not match this file's scoped `.tab .ph`-style rules, and sizing every call
+     site by hand is how the icon column stops lining up. Sized in em so the
+     existing font-size rules keep driving it, exactly like the font icons. -->
+{#snippet ph(name: keyof typeof PHOSPHOR, cls = '', label = '')}
+  <svg
+    class="ph {cls}"
+    viewBox="0 0 256 256"
+    fill="currentColor"
+    role={label ? 'img' : 'presentation'}
+    aria-label={label ? label : undefined}
+  >
+    {#if label}<title>{label}</title>{/if}
+    <path d={PHOSPHOR[name]} />
+  </svg>
+{/snippet}
+
 <div
   class="shell"
   style:--ui-font={chromeFont}
@@ -542,7 +569,7 @@
             )
           }}
         >
-          <span class="material-symbols-outlined">dashboard_2_add</span>
+          {@render ph('cpu')}
         </button>
         <button
           class="icon-btn"
@@ -556,7 +583,7 @@
             )
           }}
         >
-          <span class="material-symbols-outlined">terminal_add</span>
+          {@render ph('terminal-window')}
         </button>
       </div>
       <div class="search">
@@ -586,9 +613,13 @@
             openMenu({ kind: 'type-filter', x: rect.left, y: rect.bottom + 4 }, 110)
           }}
         >
-          <span class="material-symbols-outlined">
-            {filterClaude ? 'dashboard_2' : filterShell ? 'terminal' : 'filter_list'}
-          </span>
+          {#if filterClaude}
+            {@render ph('cpu')}
+          {:else if filterShell}
+            {@render ph('terminal-window')}
+          {:else}
+            <span class="material-symbols-outlined">filter_list</span>
+          {/if}
           <span class="material-symbols-outlined caret">expand_more</span>
         </button>
       </div>
@@ -784,7 +815,7 @@
               aria-selected={session.view === 'terminal'}
               onclick={() => (session.view = 'terminal')}
             >
-              <span class="material-symbols-outlined">terminal</span>Terminal
+              {@render ph('terminal-window')}Terminal
             </button>
             <button
               class="tab"
@@ -952,7 +983,7 @@
         void newSession('claude', dir)
       }}
     >
-      <span class="material-symbols-outlined">dashboard_2_add</span>
+      {@render ph('cpu')}
     </button>
     <button
       class="spawn-btn"
@@ -963,7 +994,7 @@
         void newSession('shell', dir)
       }}
     >
-      <span class="material-symbols-outlined">terminal_add</span>
+      {@render ph('terminal-window')}
     </button>
     <button
       class="spawn-btn"
@@ -1025,11 +1056,11 @@
         }}
       ></button>
 
-      <span
-        class="type-icon material-symbols-outlined"
-        title={session.type === 'claude' ? 'Claude session' : 'Shell session'}
-        >{session.type === 'claude' ? 'dashboard_2' : 'terminal'}</span
-      >
+      {@render ph(
+        session.type === 'claude' ? 'cpu' : 'terminal-window',
+        'type-icon',
+        session.type === 'claude' ? 'Claude session' : 'Shell session'
+      )}
 
       {#if renaming === session.key}
         <input
@@ -1141,7 +1172,7 @@
             menu = null
           }}
         >
-          <span class="material-symbols-outlined">dashboard_2</span>Claude sessions
+          {@render ph('cpu')}Claude sessions
         </button>
         <button
           class="menu-item"
@@ -1152,7 +1183,7 @@
             menu = null
           }}
         >
-          <span class="material-symbols-outlined">terminal</span>Shell sessions
+          {@render ph('terminal-window')}Shell sessions
         </button>
       {:else if menu.kind === 'color'}
         {#each DOT_COLORS as entry (entry.name)}
@@ -1627,7 +1658,8 @@
     border-left: 1px solid var(--border);
   }
 
-  .spawn-btn .material-symbols-outlined {
+  .spawn-btn .material-symbols-outlined,
+  .spawn-btn .ph {
     font-size: 14px;
   }
 
@@ -1679,6 +1711,14 @@
   .dot:hover {
     outline: 1px solid var(--fg);
     outline-offset: 4px;
+  }
+
+  /* Phosphor icons are inline svg, so they take their size from the same
+     font-size rules as the font icons — 1em square, and never flex-shrunk. */
+  .ph {
+    width: 1em;
+    height: 1em;
+    flex: none;
   }
 
   .type-icon {
@@ -1864,7 +1904,8 @@
     cursor: pointer;
   }
 
-  .chip .material-symbols-outlined {
+  .chip .material-symbols-outlined,
+  .chip .ph {
     font-size: 14px;
   }
 
@@ -1933,7 +1974,8 @@
     color: var(--accent);
   }
 
-  .icon-btn .material-symbols-outlined {
+  .icon-btn .material-symbols-outlined,
+  .icon-btn .ph {
     font-size: 16px;
   }
 
@@ -1973,7 +2015,8 @@
     cursor: pointer;
   }
 
-  .tab .material-symbols-outlined {
+  .tab .material-symbols-outlined,
+  .tab .ph {
     font-size: 14px;
   }
 
@@ -2047,7 +2090,8 @@
     background: var(--bg-subtle);
   }
 
-  .menu-item .material-symbols-outlined {
+  .menu-item .material-symbols-outlined,
+  .menu-item .ph {
     font-size: 15px;
     color: var(--fg-muted);
   }
@@ -2060,7 +2104,8 @@
     color: var(--accent);
   }
 
-  .menu-item.active .material-symbols-outlined {
+  .menu-item.active .material-symbols-outlined,
+  .menu-item.active .ph {
     color: var(--accent);
   }
 
