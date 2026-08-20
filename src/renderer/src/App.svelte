@@ -1,12 +1,39 @@
 <script lang="ts">
-  // The two session-type icons are Phosphor (regular weight, MIT — path data
-  // lifted verbatim from @phosphor-icons/core 2.1.1), inlined rather than added
-  // as a second icon dependency: a whole webfont alongside Material Symbols is
-  // not a trade two glyphs earn. Everything else in the app stays Material.
-  const PHOSPHOR = {
-    cpu: 'M152,96H104a8,8,0,0,0-8,8v48a8,8,0,0,0,8,8h48a8,8,0,0,0,8-8V104A8,8,0,0,0,152,96Zm-8,48H112V112h32Zm88,0H216V112h16a8,8,0,0,0,0-16H216V56a16,16,0,0,0-16-16H160V24a8,8,0,0,0-16,0V40H112V24a8,8,0,0,0-16,0V40H56A16,16,0,0,0,40,56V96H24a8,8,0,0,0,0,16H40v32H24a8,8,0,0,0,0,16H40v40a16,16,0,0,0,16,16H96v16a8,8,0,0,0,16,0V216h32v16a8,8,0,0,0,16,0V216h40a16,16,0,0,0,16-16V160h16a8,8,0,0,0,0-16Zm-32,56H56V56H200v95.87s0,.09,0,.13,0,.09,0,.13V200Z',
-    'terminal-window':
-      'M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z'
+  // The two session-type icons come from two different sets, both inlined as
+  // geometry rather than added as dependencies: a whole icon package (let alone
+  // two) alongside Material Symbols is not a trade two glyphs earn. Everything
+  // else in the app stays Material. They are shaped differently on purpose —
+  // Lucide draws STROKES on a 24 grid, Phosphor draws FILLS on a 256 one — so
+  // each carries its own viewBox and paint mode rather than assuming Phosphor's.
+  // `stroke` is the WIDTH (0 = a filled icon). Weight only compares as a
+  // FRACTION of the icon, never as a raw stroke-width, and the two sets are
+  // matched on that fraction — measured off the geometry, not eyeballed:
+  //   Phosphor terminal-window BOLD, border 20→44 of 256    = 0.09375
+  //   Lucide bot, stroke 2.25 of a 24 grid                   = 0.09375
+  // Exactly level, and that is why the Lucide side carries 2.25 rather than its
+  // default 2 (= 0.0833, a hair light against bold). Phosphor's weights are
+  // fixed steps — regular is 16/256 = 0.0625, a QUARTER lighter than the bot's
+  // default, which is what read as an obviously thinner icon beside it — so the
+  // adjustable side is the stroke. Changing EITHER number alone unbalances the
+  // pair; they are two halves of one measurement.
+  const ICONS = {
+    // Lucide `bot` (ISC, lucide-static 1.33.0).
+    bot: {
+      box: '0 0 24 24',
+      stroke: 2.25,
+      paths: ['M12 8V4H8', 'M2 14h2', 'M20 14h2', 'M15 13v2', 'M9 13v2'],
+      rects: [{ x: 4, y: 8, w: 16, h: 12, r: 2 }]
+    },
+    // Phosphor `terminal-window`, BOLD weight (MIT, @phosphor-icons/core 2.1.1)
+    // — bold to sit level with the bot, see the weight arithmetic above.
+    'terminal-window': {
+      box: '0 0 256 256',
+      stroke: 0,
+      paths: [
+        'M72.5,150.63,100.79,128,72.5,105.37a12,12,0,1,1,15-18.74l40,32a12,12,0,0,1,0,18.74l-40,32a12,12,0,0,1-15-18.74ZM144,172h32a12,12,0,0,0,0-24H144a12,12,0,0,0,0,24ZM236,56V200a20,20,0,0,1-20,20H40a20,20,0,0,1-20-20V56A20,20,0,0,1,40,36H216A20,20,0,0,1,236,56Zm-24,4H44V196H212Z'
+      ],
+      rects: []
+    }
   }
 
   import Terminal from './Terminal.svelte'
@@ -525,16 +552,26 @@
      not match this file's scoped `.tab .ph`-style rules, and sizing every call
      site by hand is how the icon column stops lining up. Sized in em so the
      existing font-size rules keep driving it, exactly like the font icons. -->
-{#snippet ph(name: keyof typeof PHOSPHOR, cls = '', label = '')}
+{#snippet icon(name: keyof typeof ICONS, cls = '', label = '')}
+  {@const i = ICONS[name]}
   <svg
-    class="ph {cls}"
-    viewBox="0 0 256 256"
-    fill="currentColor"
+    class="svg-icon {cls}"
+    viewBox={i.box}
+    fill={i.stroke ? 'none' : 'currentColor'}
+    stroke={i.stroke ? 'currentColor' : null}
+    stroke-width={i.stroke || null}
+    stroke-linecap="round"
+    stroke-linejoin="round"
     role={label ? 'img' : 'presentation'}
     aria-label={label ? label : undefined}
   >
     {#if label}<title>{label}</title>{/if}
-    <path d={PHOSPHOR[name]} />
+    {#each i.rects as r (r.x)}
+      <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.r} />
+    {/each}
+    {#each i.paths as d (d)}
+      <path {d} />
+    {/each}
   </svg>
 {/snippet}
 
@@ -569,7 +606,7 @@
             )
           }}
         >
-          {@render ph('cpu')}
+          {@render icon('bot')}
         </button>
         <button
           class="icon-btn"
@@ -583,7 +620,7 @@
             )
           }}
         >
-          {@render ph('terminal-window')}
+          {@render icon('terminal-window')}
         </button>
       </div>
       <div class="search">
@@ -614,9 +651,9 @@
           }}
         >
           {#if filterClaude}
-            {@render ph('cpu')}
+            {@render icon('bot')}
           {:else if filterShell}
-            {@render ph('terminal-window')}
+            {@render icon('terminal-window')}
           {:else}
             <span class="material-symbols-outlined">filter_list</span>
           {/if}
@@ -815,7 +852,7 @@
               aria-selected={session.view === 'terminal'}
               onclick={() => (session.view = 'terminal')}
             >
-              {@render ph('terminal-window')}Terminal
+              {@render icon('terminal-window')}Terminal
             </button>
             <button
               class="tab"
@@ -983,7 +1020,7 @@
         void newSession('claude', dir)
       }}
     >
-      {@render ph('cpu')}
+      {@render icon('bot')}
     </button>
     <button
       class="spawn-btn"
@@ -994,7 +1031,7 @@
         void newSession('shell', dir)
       }}
     >
-      {@render ph('terminal-window')}
+      {@render icon('terminal-window')}
     </button>
     <button
       class="spawn-btn"
@@ -1056,8 +1093,8 @@
         }}
       ></button>
 
-      {@render ph(
-        session.type === 'claude' ? 'cpu' : 'terminal-window',
+      {@render icon(
+        session.type === 'claude' ? 'bot' : 'terminal-window',
         'type-icon',
         session.type === 'claude' ? 'Claude session' : 'Shell session'
       )}
@@ -1172,7 +1209,7 @@
             menu = null
           }}
         >
-          {@render ph('cpu')}Claude sessions
+          {@render icon('bot')}Claude sessions
         </button>
         <button
           class="menu-item"
@@ -1183,7 +1220,7 @@
             menu = null
           }}
         >
-          {@render ph('terminal-window')}Shell sessions
+          {@render icon('terminal-window')}Shell sessions
         </button>
       {:else if menu.kind === 'color'}
         {#each DOT_COLORS as entry (entry.name)}
@@ -1659,7 +1696,7 @@
   }
 
   .spawn-btn .material-symbols-outlined,
-  .spawn-btn .ph {
+  .spawn-btn .svg-icon {
     font-size: 14px;
   }
 
@@ -1713,9 +1750,9 @@
     outline-offset: 4px;
   }
 
-  /* Phosphor icons are inline svg, so they take their size from the same
+  /* These are inline svg, so they take their size from the same
      font-size rules as the font icons — 1em square, and never flex-shrunk. */
-  .ph {
+  .svg-icon {
     width: 1em;
     height: 1em;
     flex: none;
@@ -1905,7 +1942,7 @@
   }
 
   .chip .material-symbols-outlined,
-  .chip .ph {
+  .chip .svg-icon {
     font-size: 14px;
   }
 
@@ -1975,7 +2012,7 @@
   }
 
   .icon-btn .material-symbols-outlined,
-  .icon-btn .ph {
+  .icon-btn .svg-icon {
     font-size: 16px;
   }
 
@@ -2016,7 +2053,7 @@
   }
 
   .tab .material-symbols-outlined,
-  .tab .ph {
+  .tab .svg-icon {
     font-size: 14px;
   }
 
@@ -2091,7 +2128,7 @@
   }
 
   .menu-item .material-symbols-outlined,
-  .menu-item .ph {
+  .menu-item .svg-icon {
     font-size: 15px;
     color: var(--fg-muted);
   }
@@ -2105,7 +2142,7 @@
   }
 
   .menu-item.active .material-symbols-outlined,
-  .menu-item.active .ph {
+  .menu-item.active .svg-icon {
     color: var(--accent);
   }
 
