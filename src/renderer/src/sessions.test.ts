@@ -326,6 +326,22 @@ describe('applyAgents and an open turn', () => {
     expect(sessions[0].status).toBe('running')
   })
 
+  // The streak has to start AT the prompt. A session waiting at its prompt is
+  // idle tick after idle tick, so a counter carried into the new turn is
+  // already past the threshold, and the first idle sample — one that merely
+  // beat the CLI's own flip to busy — would close the turn on tick one.
+  it('a prompt zeroes the streak, so idle sitting time is not evidence', () => {
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle' }))
+    for (let i = 0; i < 5; i++) tick('idle') // sitting at the prompt, unprompted
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].idleTicks).toBe(0)
+    tick('idle') // the poll hasn't caught up with the turn yet
+    expect(sessions[0].status).toBe('running')
+    tick('idle')
+    tick('idle')
+    expect(sessions[0].status).toBe('idle') // and the self-heal still lands
+  })
+
   it('with no turn open a single idle still greens immediately', () => {
     sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
     tick('idle')

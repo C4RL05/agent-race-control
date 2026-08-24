@@ -68,10 +68,11 @@ export interface Session {
   // background shell, but while a turn is KNOWN to be open it corroborates
   // rather than guesses. See applyAgents.
   turnOpen: boolean
-  // Consecutive `idle` samples from the poll. One is not evidence a turn ended
-  // — a single transient idle mid-turn used to green the dot for the rest of
-  // that turn, because red only ever comes from UserPromptSubmit and that had
-  // already been spent.
+  // Consecutive `idle` samples from the poll, counted since the turn opened
+  // (UserPromptSubmit zeroes it). One is not evidence a turn ended — a single
+  // transient idle mid-turn used to green the dot for the rest of that turn,
+  // because red only ever comes from UserPromptSubmit and that had already been
+  // spent.
   idleTicks: number
   // Pure observation, for the Session tab — none of these feed the dot.
   // When the CURRENT status was set (setStatus). A dot stuck on the wrong
@@ -454,6 +455,13 @@ export function applyHook(
   switch (event) {
     case 'UserPromptSubmit':
       session.turnOpen = true
+      // The idle streak counts from HERE, or the floor's debounce is a fiction:
+      // a session sitting at its prompt (the normal way to start a turn) has
+      // been idle for minutes, so a counter carried across the boundary is
+      // already past the threshold and the first idle sample of the new turn —
+      // one that merely beat the CLI's flip to `busy` — would close the turn
+      // the guard was written to protect.
+      session.idleTicks = 0
       setStatus(session, 'running')
       break
     case 'PermissionRequest':
