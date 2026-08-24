@@ -45,10 +45,12 @@ export interface Session {
   // this even after `/clear` changes claudeSessionId, so a turn boundary is
   // always attributed to the right session.
   hookToken: string | null
-  // The claude.exe pid, learned from the first agent poll that matches this
-  // session by conversation id. It is the STABLE handle: `/clear` mints a new
-  // conversation id but never restarts the process, so once known we follow the
-  // pid and read the new id off the same entry. Not persisted — a live fact.
+  // The claude.exe pid currently running this conversation, learned from the
+  // agent poll. The FALLBACK handle, not the primary one: `/clear` mints a new
+  // conversation id without restarting the process, so the pid is what carries
+  // the row across it — but parking moves the conversation to a different
+  // process entirely, so the id wins when both are on offer (see findEntry).
+  // Not persisted — a live fact, and it can change mid-session.
   // (The PTY's own pid is useless here: claude is its grandchild.)
   claudePid: number | null
   // The polled `startedAt` for that pid, kept only to defeat Windows pid reuse —
@@ -480,20 +482,36 @@ export function applyHook(
   }
 }
 
-// Whether a polled entry is the session we think it is. The pid is the stable
-// handle across `/clear`, but Windows recycles pids — so a known pid must also
-// match the start time we recorded with it. Before we know the pid, the pinned
-// spawn id (`--session-id`) is the join.
-function matchesSession(session: Session, entry: AgentEntry): boolean {
-  if (session.claudePid !== null && entry.pid !== undefined) {
-    if (entry.pid !== session.claudePid) return false
-    return (
-      session.claudeStartedAt === null ||
-      entry.startedAt === undefined ||
-      entry.startedAt === session.claudeStartedAt
-    )
-  }
-  return !!entry.sessionId && entry.sessionId === session.claudeSessionId
+// Which polled entry is this session? THE CONVERSATION FIRST, the process
+// second — because a tower row is a conversation, and a conversation does not
+// always stay in the process we spawned it in.
+//
+// Measured 2026-08-21: parking a session ("moved to the background from this
+// window") hands its conversation to a NEW claude process — a `kind: background`
+// entry with its own pid, carrying the conversation's id — while the interactive
+// process we spawned stays alive and reports `idle` for as long as it is parked.
+// Matching pid-first pinned the row to that idle husk, so the floor greened a
+// session that was working and no `busy` could ever restore red.
+//
+// The pid stays as the fallback, and is still load-bearing: `/clear` mints a new
+// conversation id in the SAME process and nothing announces it until the next
+// hook, so an entry carrying an id we have never seen, on the pid we know, is
+// that clear — and applyAgents adopts the new id off it.
+function findEntry(session: Session, entries: AgentEntry[]): AgentEntry | undefined {
+  const byConversation = session.claudeSessionId
+    ? entries.find((entry) => entry.sessionId === session.claudeSessionId)
+    : undefined
+  if (byConversation) return byConversation
+  if (session.claudePid === null) return undefined
+  return entries.find(
+    (entry) =>
+      entry.pid === session.claudePid &&
+      // Windows recycles pids, so a known pid must also match the start time
+      // recorded with it — a recycled one belongs to some other claude.
+      (session.claudeStartedAt === null ||
+        entry.startedAt === undefined ||
+        entry.startedAt === session.claudeStartedAt)
+  )
 }
 
 // One tick of `claude agents --json`: every session on the machine, as a LEVEL
@@ -512,8 +530,9 @@ function matchesSession(session: Session, entry: AgentEntry): boolean {
 // agent count — so it must never paint red or amber. Hooks own those.
 //
 // The entry's identity fields are used unconditionally though: `sessionId`
-// follows a `/clear` to the new transcript, and `cwd` is how a `--worktree`
-// session's real directory reaches the tower.
+// follows a `/clear` to the new transcript, `cwd` is how a `--worktree`
+// session's real directory reaches the tower, and `pid` follows a parked
+// conversation into the background process now running it (findEntry).
 export function applyAgents(entries: AgentEntry[]): void {
   for (const session of sessions) {
     if (session.type !== 'claude' || session.status === 'exited') continue
@@ -521,15 +540,16 @@ export function applyAgents(entries: AgentEntry[]): void {
     // be identified — skip rather than match something else by accident.
     if (session.claudePid === null && !session.claudeSessionId) continue
 
-    const entry = entries.find((e) => matchesSession(session, e))
+    const entry = findEntry(session, entries)
     if (!entry) continue
     // Kept verbatim for the Session tab before anything is read off it — the
     // raw `busy` this channel reports is exactly what the dot refuses to use.
     session.agentEntry = entry
     session.agentEntryAt = Date.now()
 
-    // Learn the stable handle on the first match, so a later `/clear` (which
-    // changes sessionId but not the process) still finds this session.
+    // Follow the conversation onto whatever process is running it: this pid
+    // carries the row across a `/clear` (same process, new id), and adopting a
+    // background job's pid is how the row leaves the husk it was parked out of.
     if (entry.pid !== undefined) {
       session.claudePid = entry.pid
       session.claudeStartedAt = entry.startedAt ?? null

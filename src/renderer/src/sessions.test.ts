@@ -373,6 +373,74 @@ describe('applyAgents and an open turn', () => {
   })
 })
 
+// Parking: the conversation moves to a background claude with its own pid, and
+// the interactive process we spawned stays alive reporting `idle` for as long as
+// it is parked. The row is the CONVERSATION, so it has to follow the id, not the
+// husk (field bug, 2026-08-21 — a session that had been working for an hour and
+// a half showed green).
+describe('applyAgents follows a conversation that moves process', () => {
+  // The parked pair, exactly as `claude agents --json` reports it.
+  const husk = { sessionId: 'sid', pid: 10, startedAt: 100, kind: 'interactive', status: 'idle' }
+  const job = { sessionId: 'bg', pid: 20, startedAt: 900, kind: 'background', status: 'busy' }
+
+  const parked = (): Session =>
+    fakeSession({ key: 1, claudeSessionId: 'sid', claudePid: 10, claudeStartedAt: 100 })
+
+  it('adopts the background job pid once a hook reports its conversation', () => {
+    sessions.push(parked())
+    // The background process runs the inherited --settings hooks, so the POST
+    // routes on our stable hookToken but carries ITS conversation id.
+    applyHook('tok', 'bg', 'UserPromptSubmit')
+    applyAgents([husk, job])
+    expect(sessions[0].claudePid).toBe(20)
+    expect(sessions[0].agentEntry?.kind).toBe('background')
+  })
+
+  it('the parked husk can no longer green a working session', () => {
+    sessions.push(parked())
+    applyHook('tok', 'bg', 'UserPromptSubmit')
+    for (let i = 0; i < 5; i++) applyAgents([husk, job])
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[0].turnOpen).toBe(true)
+  })
+
+  // The other half of the old bug: hook and poll each dragged the row onto their
+  // own id, and every switch reset turnOpen and the idle streak — so the first
+  // idle sample after a prompt greened the dot with the guard bypassed.
+  it('stops the hook and the poll fighting over the conversation id', () => {
+    sessions.push(parked())
+    applyHook('tok', 'bg', 'UserPromptSubmit')
+    applyAgents([husk, job])
+    expect(sessions[0].claudeSessionId).toBe('bg')
+    applyAgents([husk, job])
+    expect(sessions[0].claudeSessionId).toBe('bg')
+  })
+
+  it('greens when the background job itself goes idle — the floor still works', () => {
+    sessions.push(parked())
+    applyHook('tok', 'bg', 'UserPromptSubmit')
+    applyAgents([husk, job])
+    for (let i = 0; i < 3; i++) applyAgents([husk, { ...job, status: 'idle' }])
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  // The fallback that must survive: `/clear` keeps the process and changes the
+  // id, and nothing announces it — so an unknown id on a known pid is a clear.
+  it('still follows the pid through a /clear, when no entry carries our id', () => {
+    sessions.push(parked())
+    applyAgents([{ ...husk, sessionId: 'cleared' }])
+    expect(sessions[0].claudeSessionId).toBe('cleared')
+    expect(sessions[0].claudePid).toBe(10)
+  })
+
+  it('does not match a recycled pid whose claude started at a different time', () => {
+    sessions.push(parked())
+    applyAgents([{ ...husk, sessionId: 'someone-else', startedAt: 777 }])
+    expect(sessions[0].claudeSessionId).toBe('sid')
+    expect(sessions[0].agentEntry).toBe(null)
+  })
+})
+
 // The only keystroke inference left. No hook fires on an interrupt, and the
 // poll's floor can't help while a background shell keeps the session "busy".
 describe('nudgeStatusFromKey', () => {
