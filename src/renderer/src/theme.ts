@@ -117,6 +117,16 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       cursor: '#0969da',
       cursorAccent: '#ffffff',
       selectionBackground: 'rgba(84, 174, 255, 0.4)',
+      // xterm 6 draws its own scrollbar (the VS Code scrollable element, not a
+      // native one), and left alone it derives the slider from the FOREGROUND
+      // at 20/40/50% opacity — which on the dark palette is #e6edf3, i.e. a
+      // white bar, the brightest thing on the screen. Painting it from the
+      // chrome tokens instead makes every scrollbar in the app the same border
+      // color (the app-chrome ones come from `scrollbar-color` in App.svelte),
+      // brightening through the two existing text tones on hover and drag.
+      scrollbarSliderBackground: '#d0d7de',
+      scrollbarSliderHoverBackground: '#656d76',
+      scrollbarSliderActiveBackground: '#1f2328',
       black: '#24292f',
       red: '#cf222e',
       green: '#116329',
@@ -153,6 +163,11 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       cursor: '#2f81f7',
       cursorAccent: '#0d1117',
       selectionBackground: 'rgba(56, 139, 253, 0.4)',
+      // The dark half of the scrollbar note in the light palette above: border,
+      // then fgMuted on hover, then fg while dragging.
+      scrollbarSliderBackground: '#30363d',
+      scrollbarSliderHoverBackground: '#7d8590',
+      scrollbarSliderActiveBackground: '#e6edf3',
       // primer 7.10 ships black/#0d1117 and brightBlack/#161b22 — invisible on
       // the #0d1117 background (a defect GitHub later fixed). Legible grays:
       black: '#484f58',

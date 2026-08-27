@@ -1372,6 +1372,15 @@
     font-family: var(--ui-font);
     background: var(--bg);
     color: var(--fg);
+    /* Scrollbars from the palette, not Chromium's light default — which paints
+       them white, and on the dark theme that is the brightest thing on screen.
+       `scrollbar-color` is inherited, so this one declaration reaches every
+       scroll container: the tower, the Preview and Session tabs, the menus,
+       and xterm's own viewport (all of them live inside .shell, which is also
+       where the palette vars are set). The thumb is the same line color every
+       divider in the app already uses; the track stays transparent so it takes
+       whichever surface it happens to sit on. */
+    scrollbar-color: var(--border) transparent;
   }
 
   .tower {
