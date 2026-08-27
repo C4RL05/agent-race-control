@@ -55,17 +55,33 @@ function resolveClaude(): Promise<string | null> {
       done(null)
       return
     }
-    execFile(
-      bash,
-      ['--login', '-c', 'cygpath -w "$(command -v claude)"'],
-      { encoding: 'utf8', timeout: 15000, windowsHide: true },
-      (error, stdout) => {
-        // claude not installed or not on the login PATH — polling stays off and
-        // the tower simply shows no status changes. Never fatal.
-        claudePath = !error && stdout.trim() ? stdout.trim() : null
-        done(claudePath)
-      }
-    )
+    try {
+      execFile(
+        bash,
+        ['--login', '-c', 'cygpath -w "$(command -v claude)"'],
+        { encoding: 'utf8', timeout: 15000, windowsHide: true },
+        (error, stdout) => {
+          // claude not installed or not on the login PATH — polling stays off and
+          // the tower simply shows no status changes. Never fatal.
+          claudePath = !error && stdout.trim() ? stdout.trim() : null
+          done(claudePath)
+        }
+      )
+    } catch {
+      // spawn can fail SYNCHRONOUSLY — this path never reaches the callback
+      // above, so the callback's error handling cannot cover it. Deliberately
+      // NOT cached as `null`: a synchronous failure is transient (see tick),
+      // not "there is no claude on this machine".
+      done(null)
+    }
+  })
+  // An attempt that finished without learning a path was that transient
+  // failure, so drop the memo — otherwise every later call replays the same
+  // resolved-null promise and polling never recovers. Runs after the
+  // assignment above, which is why it is a .then and not a catch inside the
+  // executor (the executor body runs BEFORE `resolving` is assigned).
+  void resolving.then(() => {
+    if (claudePath === undefined) resolving = null
   })
   return resolving
 }
@@ -84,6 +100,10 @@ export function startAgentPolling(
 
   const schedule = (): void => {
     if (!running) return
+    // Clearing first makes this idempotent: the guards below may call it on a
+    // path that already armed one, and two live timers would fork the loop in
+    // two — permanently, and doubling on every later fork.
+    if (timer) clearTimeout(timer)
     timer = setTimeout(tick, POLL_MS)
   }
 
@@ -95,31 +115,47 @@ export function startAgentPolling(
       schedule()
       return
     }
-    void resolveClaude().then((exe) => {
-      if (!running) return
-      if (!exe) {
-        schedule()
-        return
-      }
-      execFile(
-        exe,
-        ['agents', '--json'],
-        { encoding: 'utf8', timeout: 15000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-        (error, stdout) => {
-          if (!running) return
-          if (!error) {
-            try {
-              const parsed: unknown = JSON.parse(stdout)
-              if (Array.isArray(parsed)) onUpdate(parsed as AgentEntry[])
-            } catch {
-              // A partial or non-JSON write is a dropped tick, nothing more —
-              // the next one re-reads the whole truth.
+    void resolveClaude()
+      .then((exe) => {
+        if (!running) return
+        if (!exe) {
+          schedule()
+          return
+        }
+        try {
+          execFile(
+            exe,
+            ['agents', '--json'],
+            { encoding: 'utf8', timeout: 15000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+            (error, stdout) => {
+              if (!running) return
+              if (!error) {
+                try {
+                  const parsed: unknown = JSON.parse(stdout)
+                  if (Array.isArray(parsed)) onUpdate(parsed as AgentEntry[])
+                } catch {
+                  // A partial or non-JSON write is a dropped tick, nothing more —
+                  // the next one re-reads the whole truth.
+                }
+              }
+              schedule()
             }
-          }
+          )
+        } catch {
+          // `spawn EBUSY`, observed in the wild 2026-08-25: Claude Code
+          // auto-updates by replacing its own ~380MB claude.exe in place, and
+          // we spawn that exe once a second, so the poll lands in the swap
+          // window sooner or later. child_process throws it SYNCHRONOUSLY, so
+          // the callback's error branch never runs — and since schedule() sits
+          // after the throwing call, the loop simply stopped, for the life of
+          // the app (`running` stays true, so startAgentPolling won't restart
+          // it either). A dropped tick is fine; a dead floor is not.
           schedule()
         }
-      )
-    })
+      })
+      // Nothing whatsoever may kill the loop. schedule() clears before it arms,
+      // so a double-call here cannot fork it.
+      .catch(() => schedule())
   }
 
   tick()
