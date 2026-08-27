@@ -98,9 +98,14 @@ export interface Session {
   // never-prompted session survives restart and re-arms --worktree.
   spawnWorktree: string | null
   // Which pane tab is showing: the live terminal, the read-only conversation
-  // preview, or the session inspector (Claude sessions only). Transient — not
-  // persisted.
-  view: 'terminal' | 'preview' | 'info'
+  // preview, the session inspector, or the notes scratchpad (the last three
+  // are Claude sessions only). Transient — not persisted.
+  view: 'terminal' | 'preview' | 'info' | 'notes'
+  // Free text the user keeps about this session (the Notes tab). Plain text,
+  // no format, no file of its own — it persists as a field on the session in
+  // the state JSON, so it survives a restart and dies when the row is closed,
+  // exactly like the row's other remembered facts.
+  notes: string
   // Cosmetic "revisit later" flag overlaid on the status dot (both types).
   // Purely visual — no effect on sorting/focus/logic. Persisted so it survives
   // restart; auto-cleared when the underlying status changes color (setStatus).
@@ -280,7 +285,8 @@ function createSession(init: {
     resumeId: init.resumeId ?? null,
     spawnWorktree: init.worktree ?? null,
     view: 'terminal',
-    todo: false
+    todo: false,
+    notes: ''
   }
 }
 
@@ -791,6 +797,9 @@ export async function restoreState(): Promise<void> {
     // Restore the TODO flag directly (not via setStatus) — the spawn's status
     // defaults must not count as the color change that would clear it.
     restored.todo = s.todo ?? false
+    // Absent for every session written before the Notes tab existed, and for
+    // every session whose notes are empty (see snapshotState).
+    restored.notes = s.notes ?? ''
     sessions.push(restored)
     colorIndex++
   }
@@ -830,6 +839,9 @@ export function snapshotState(): PersistedState {
       cwd: s.cwd,
       claudeSessionId: s.claudeSessionId,
       todo: s.todo,
+      // An empty editor is not state — only text anyone actually typed is
+      // written, so the file doesn't grow a `"notes": ""` per session.
+      notes: s.notes || undefined,
       // Only a NAMED pending flag persists: restoring '' (auto-name) would
       // mint a second random worktree — the orphan stays visible in the
       // reopen menu instead.

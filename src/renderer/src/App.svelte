@@ -39,6 +39,7 @@
   import Terminal from './Terminal.svelte'
   import Preview from './Preview.svelte'
   import Info from './Info.svelte'
+  import Notes from './Notes.svelte'
   import { palettes } from './theme'
   import type { Mode } from './theme'
   import {
@@ -872,6 +873,15 @@
             >
               <span class="material-symbols-outlined">speed</span>Session
             </button>
+            <button
+              class="tab"
+              class:active={session.view === 'notes'}
+              role="tab"
+              aria-selected={session.view === 'notes'}
+              onclick={() => (session.view = 'notes')}
+            >
+              <span class="material-symbols-outlined">edit_note</span>Notes
+            </button>
           </div>
         {/if}
         <!-- The terminal stays mounted while hidden — the PTY's lifetime is
@@ -908,6 +918,19 @@
             }}
           />
         </div>
+        <!-- Notes stay mounted with the terminal rather than mounting per tab
+             like Preview/Info: a textarea that unmounts loses its undo history
+             and scroll, and there is nothing to disarm — the text lives in the
+             store, not in a watcher. -->
+        {#if session.type === 'claude'}
+          <div class="view" style:display={session.view === 'notes' ? 'block' : 'none'}>
+            <Notes
+              {session}
+              codeFont={monoFont}
+              active={ui.focused === session.key && session.view === 'notes'}
+            />
+          </div>
+        {/if}
         {#if session.view === 'info'}
           <div class="view">
             <!-- Mounted for the focused session only, same as the preview: the

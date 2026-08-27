@@ -31,6 +31,9 @@ interface PersistedState {
     // Pending --worktree spawn still awaiting its hook cwd-follow (named
     // only) — additive/optional; restore re-arms the flag.
     spawnWorktree?: string | null
+    // The Notes tab's text — additive/optional, and written only when the
+    // user typed something (absent → an empty editor).
+    notes?: string
   }>
 }
 

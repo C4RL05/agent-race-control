@@ -46,6 +46,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     spawnWorktree: null,
     view: 'terminal',
     todo: false,
+    notes: '',
     ...overrides
   }
 }

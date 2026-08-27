@@ -189,6 +189,16 @@ A **third tab in the pane strip — Terminal | Preview | Session** — on Claude
   - **Plain text, no code fence:** the panel includes the last prompt verbatim, which can itself contain a fence and would break the block. Labels are padded to a fixed column so a monospace paste reads as the same two columns; the "open ≠ running" note travels with the counts it disambiguates, since whoever reads the paste can't see this pane. `navigator.clipboard.writeText` (the same route as the row menu's *Copy path* — no new preload surface), and a rejected write says **Failed** rather than silently looking like success.
 - **Parked, deliberately not built:** `sessions/<pid>.json` is a *file*, so an fs-watch on `~/.claude/sessions/` could eventually replace the 275ms `claude agents --json` subprocess poll entirely. Real, and tempting, but it trades a documented CLI contract for an undocumented file — its own decision, not this one.
 
+## Notes tab (2026-08-27)
+
+A **fourth tab in the pane strip — Terminal | Preview | Session | Notes** — on Claude sessions only: a plain-text scratchpad for what you're keeping in your head about that session. Explicitly **the original Notepad, not an editor**: no markdown, no toolbar, no formatting, no find, no export. Checked against the out-of-scope list and clear of it — the one rule it touches is "no database", which it honours by not having storage of its own.
+
+- **The text is a field on the session**, so it rides the same state JSON as the row's other remembered facts (`todo`, cwd, conversation id). Consequences, both intended: notes **survive a restart** with the session, and they **die when the row is closed** — a note is about *this* session, not about the directory. If they should ever outlive a closed row, that is a different keying (per cwd, or an archive) and its own decision.
+- **Written only when non-empty**, and the field is additive/optional on both the main and renderer state types — an empty editor is not state, and no version bump is needed (same rule the `statusRgb`/font fields already follow).
+- **Bound straight to the store, no debounce in the renderer.** `saveState` in main already coalesces at 300ms, so a keystroke costs one IPC message and one snapshot map — the same cost the tower-width drag has always paid.
+- **Stays mounted and merely hidden between tab switches**, like the terminal and *unlike* Preview/Info. Those two unmount to disarm a watcher; the notepad has nothing to disarm, and a textarea that unmounts loses its **undo history and scroll position** — losing Ctrl+Z by glancing at the terminal is not what a notepad does. Focus follows the tab (the editor is ready to type the moment it is picked), scoped to the focused pane so the other sessions' mounted editors never steal it.
+- **Deliberately not built:** markdown rendering, search, export, per-directory or global notes, a tower indicator that a session *has* notes. Flag them rather than build them.
+
 ## Packaging (post-v1, settled 2026-07-13)
 
 Ship a real Windows app without growing the stack: **electron-builder** (26.15.3, devDep, verified against the registry) packaging the electron-vite `out/` build into `dist/` (gitignored).

@@ -9,6 +9,9 @@ export interface PersistedSession {
   name: string
   cwd: string
   claudeSessionId: string | null
+  // The Notes tab's text. Optional/additive like the fields on AppState below:
+  // absent means the user never typed any, so it needs no version bump.
+  notes?: string
 }
 
 export interface AppState {
