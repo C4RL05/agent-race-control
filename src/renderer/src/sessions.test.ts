@@ -3,6 +3,7 @@ import type { Session, GitInfo } from './sessions.svelte'
 import {
   sessions,
   cleanTitle,
+  glyphLead,
   towerTitle,
   previewItems,
   applyPreviewItems,
@@ -88,6 +89,24 @@ describe('towerTitle', () => {
     expect(towerTitle('✳ Fix the bug')).not.toBe(cleanTitle('✳ Fix the bug'))
     expect(towerTitle('MINGW64: /d/x')).toBe(cleanTitle('MINGW64: /d/x'))
     expect(towerTitle('plain')).toBe(cleanTitle('plain'))
+  })
+})
+
+describe('glyphLead', () => {
+  it('classifies the leading glyph by family, first character deciding', () => {
+    expect(glyphLead('✳ Fix the bug')).toEqual({ glyph: '✳', family: 'star' })
+    expect(glyphLead('✻✶ churning')).toEqual({ glyph: '✻✶', family: 'star' }) // whole same-family run
+    expect(glyphLead('◐ working')).toEqual({ glyph: '◐', family: 'circle' })
+    expect(glyphLead('●')).toEqual({ glyph: '●', family: 'circle' })
+    expect(glyphLead('✻◐ mixed')).toEqual({ glyph: '✻', family: 'star' }) // run stops at the family edge
+  })
+
+  it('leaves anything else uncolored', () => {
+    expect(glyphLead('⠂ deploy')).toBe(null) // braille frames are neither family
+    expect(glyphLead('Fix the bug')).toBe(null)
+    expect(glyphLead('/d/Projects/x')).toBe(null)
+    expect(glyphLead(' ✳ leading space')).toBe(null) // the FIRST character or nothing
+    expect(glyphLead('')).toBe(null)
   })
 })
 

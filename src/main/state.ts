@@ -22,6 +22,11 @@ export interface AppState {
   // Optional/additive — absent means false, so it needs no version bump
   // (the no-compat policy governs breaking changes, not compatible ones).
   statusRgb?: boolean
+  // Draw the status dot at all. The one toggle whose default is ON, so absent
+  // must read as true (see restoreState).
+  statusDot?: boolean
+  // Paint a row title's leading glyph by which glyph it is.
+  glyphColor?: boolean
   // Selected font ids (see the renderer's FONTS/UI_FONTS). Absent → the default.
   font?: string
   uiFont?: string

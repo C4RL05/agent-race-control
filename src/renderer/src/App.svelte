@@ -55,6 +55,7 @@
     snapshotState,
     cleanTitle,
     towerTitle,
+    glyphLead,
     duplicateSession,
     renameSession,
     applySpawnCwd,
@@ -591,6 +592,7 @@
   style:--dot-waiting={dots.waiting}
   style:--dot-idle={dots.idle}
   style:--dot-todo={dots.todo}
+  style:--dot-track={ui.statusDot ? '16px' : '0px'}
 >
   <aside class="tower" style:width={`${ui.towerWidth}px`}>
     <div class="tower-filter">
@@ -973,6 +975,16 @@
     {/if}
   </main>
 
+  <!-- One settings checkbox — the boolean twin of fontGroup's radio rows,
+       same menu-item idiom, with the box glyph carrying the state. -->
+  {#snippet checkbox(label: string, checked: boolean, toggle: () => void)}
+    <button class="menu-item" role="menuitemcheckbox" aria-checked={checked} onclick={toggle}>
+      <span class="material-symbols-outlined"
+        >{checked ? 'check_box' : 'check_box_outline_blank'}</span
+      >{label}
+    </button>
+  {/snippet}
+
   <!-- One radio group per font setting. Each label previews itself in its own
        family (the icon keeps its own font). font-family only — terminal/preview
        size is the Ctrl+=/−/0 zoom. -->
@@ -1020,7 +1032,7 @@
         }
       }}
     >
-      {#if collapsed}
+      {#if collapsed && ui.statusDot}
         {@const r = rollupDot(group)}
         {#if r}<span class="rollup dot {r.status}" class:plain={r.plain}></span>{/if}
       {/if}
@@ -1103,18 +1115,20 @@
       }}
       onkeydown={(e) => e.key === 'Enter' && focusSession(session.key)}
     >
-      <button
-        class="dot {session.status}"
-        class:plain={session.type === 'shell'}
-        class:todo={session.todo}
-        title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
-        aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
-        aria-pressed={session.todo}
-        onclick={(e) => {
-          e.stopPropagation()
-          toggleTodo(session.key)
-        }}
-      ></button>
+      {#if ui.statusDot}
+        <button
+          class="dot {session.status}"
+          class:plain={session.type === 'shell'}
+          class:todo={session.todo}
+          title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
+          aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
+          aria-pressed={session.todo}
+          onclick={(e) => {
+            e.stopPropagation()
+            toggleTodo(session.key)
+          }}
+        ></button>
+      {/if}
 
       {@render icon(
         session.type === 'claude' ? 'bot' : 'terminal-window',
@@ -1134,12 +1148,17 @@
           }}
         />
       {:else}
+        {@const label = displayName(session)}
+        {@const lead = ui.glyphColor ? glyphLead(label) : null}
         <span
           class="name"
           role="button"
           tabindex="-1"
           title={`${session.cwd} — double-click to rename`}
-          ondblclick={() => (renaming = session.key)}>{displayName(session)}</span
+          ondblclick={() => (renaming = session.key)}
+          >{#if lead}<span class="glyph {lead.family}">{lead.glyph}</span>{label.slice(
+              lead.glyph.length
+            )}{:else}{label}{/if}</span
         >
       {/if}
 
@@ -1348,16 +1367,13 @@
         {/each}
 
         <div class="menu-divider"></div>
-        <button
-          class="menu-item"
-          role="menuitemcheckbox"
-          aria-checked={ui.statusRgb}
-          onclick={() => (ui.statusRgb = !ui.statusRgb)}
-        >
-          <span class="material-symbols-outlined"
-            >{ui.statusRgb ? 'check_box' : 'check_box_outline_blank'}</span
-          >Status RGB
-        </button>
+        {@render checkbox('Status RGB', ui.statusRgb, () => (ui.statusRgb = !ui.statusRgb))}
+        {@render checkbox('Status dot', ui.statusDot, () => (ui.statusDot = !ui.statusDot))}
+        {@render checkbox(
+          'Color title glyph',
+          ui.glyphColor,
+          () => (ui.glyphColor = !ui.glyphColor)
+        )}
         {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
         {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
         {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}
@@ -1525,7 +1541,7 @@
   .row {
     position: relative;
     display: grid;
-    grid-template-columns: 18px 16px 18px minmax(0, 1fr) auto;
+    grid-template-columns: 18px var(--dot-track) 18px minmax(0, 1fr) auto;
     align-items: center;
   }
 
@@ -1801,6 +1817,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
+  }
+
+  /* "Color title glyph" (settings, off by default): the title's leading glyph
+     painted by which glyph it is — star family green, circle family red. The
+     Primer semantic tones, deliberately NOT the --dot-* palette: this axis
+     reads the glyph, not the session's status, so Status RGB doesn't reach it. */
+  .name .glyph.star {
+    color: var(--success);
+  }
+
+  .name .glyph.circle {
+    color: var(--danger);
   }
 
   .rename {

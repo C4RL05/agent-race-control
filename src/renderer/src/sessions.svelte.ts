@@ -211,6 +211,14 @@ export const ui = $state<{
   // (red/green/amber) instead of the Primer semantic tones, in both themes.
   // Off by default — the Primer tones are the documented default.
   statusRgb: boolean
+  // Settings toggle: draw the status dot at all. On by default — turning it
+  // off leaves the rows text-only (and takes the TODO toggle with it, the
+  // dot being its only affordance).
+  statusDot: boolean
+  // Settings toggle: paint the leading glyph of a row's title by which glyph
+  // it is (see glyphLead) — nothing to do with the dot's status colors.
+  // Off by default.
+  glyphColor: boolean
   // Selected font ids: terminal (mono, theme.ts FONTS), interface/app chrome
   // and preview prose (both sans, theme.ts UI_FONTS).
   font: string
@@ -221,6 +229,8 @@ export const ui = $state<{
   mode: 'system',
   towerWidth: 240,
   statusRgb: false,
+  statusDot: true,
+  glyphColor: false,
   font: DEFAULT_FONT_ID,
   uiFont: DEFAULT_UI_FONT_ID,
   previewFont: DEFAULT_UI_FONT_ID
@@ -231,6 +241,30 @@ export const ui = $state<{
 // through. Cosmetic only — status no longer reads the title at all (it is
 // polled, see applyAgents).
 const SPINNER_LEAD = /^[✳✶✻✽·∴※+*●○◐◑⠀-⣿]+\s*/u
+
+// The two families a leading title glyph can belong to, for the "Color title
+// glyph" setting: Claude's asterisk/star churn and its circle frames. The
+// glyph alone decides the color — this reads nothing about session status, and
+// borrows none of the dot palette. Anything else (braille frames, a shell
+// title, a user label) classifies as null and renders in the row's own ink.
+const GLYPH_FAMILIES = [
+  { family: 'star', match: /^[✳✶✻✽✢✱∗※∴*+]+/u },
+  { family: 'circle', match: /^[●○◐◑◒◓◔◕]+/u }
+] as const
+
+export type GlyphLead = { glyph: string; family: 'star' | 'circle' }
+
+// Split a row label into its leading glyph run and the rest. The FIRST
+// character picks the family; the run is every following character from that
+// same family, so a multi-frame lead ("✻✶ churning") paints as one glyph
+// rather than half-colored. Null when the label doesn't start with one.
+export function glyphLead(label: string): GlyphLead | null {
+  for (const { family, match } of GLYPH_FAMILIES) {
+    const hit = match.exec(label)
+    if (hit) return { glyph: hit[0], family }
+  }
+  return null
+}
 
 // Git Bash prefixes the cwd with the MSYS system name (MINGW64:). That is the
 // terminal describing itself, not the session, so it comes off everywhere.
@@ -769,6 +803,9 @@ export async function restoreState(): Promise<void> {
   if (!saved) return
   ui.mode = saved.mode
   ui.statusRgb = saved.statusRgb ?? false
+  // Absent → the default, which for the dot is ON (unlike the other two).
+  ui.statusDot = saved.statusDot ?? true
+  ui.glyphColor = saved.glyphColor ?? false
   ui.font = saved.font ?? DEFAULT_FONT_ID
   ui.uiFont = saved.uiFont ?? DEFAULT_UI_FONT_ID
   ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID
@@ -818,6 +855,8 @@ export function snapshotState(): PersistedState {
     version: 2,
     mode: ui.mode,
     statusRgb: ui.statusRgb,
+    statusDot: ui.statusDot,
+    glyphColor: ui.glyphColor,
     font: ui.font,
     uiFont: ui.uiFont,
     previewFont: ui.previewFont,
