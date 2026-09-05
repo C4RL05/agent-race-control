@@ -57,6 +57,8 @@
     towerTitle,
     glyphLead,
     duplicateSession,
+    relaunchSession,
+    finishRelaunch,
     renameSession,
     applySpawnCwd,
     applyPreviewItems,
@@ -913,7 +915,12 @@
               session.claudeStartedAt = null
               applySpawnCwd(session.key, cwd)
             }}
-            onExited={() => setStatus(session, 'exited')}
+            onExited={() => {
+              // A relaunch kills the PTY on purpose and swaps the row for a
+              // resumed one — that exit is the mechanism, not the end of the
+              // session, so it must not paint the row exited on the way past.
+              if (!finishRelaunch(session.key)) setStatus(session, 'exited')
+            }}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => {
               session.title = title
@@ -1111,7 +1118,7 @@
       onclick={() => focusSession(session.key)}
       oncontextmenu={(e) => {
         e.preventDefault()
-        openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 220)
+        openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 250)
       }}
       onkeydown={(e) => e.key === 'Enter' && focusSession(session.key)}
     >
@@ -1324,6 +1331,17 @@
               }}
             >
               <span class="material-symbols-outlined">palette</span>Apply folder color
+            </button>
+          {/if}
+          {#if menuSession.type === 'claude' && menuSession.claudeSessionId}
+            <button
+              class="menu-item"
+              onclick={() => {
+                relaunchSession(menuSession.key)
+                menu = null
+              }}
+            >
+              <span class="material-symbols-outlined">restart_alt</span>Relaunch session
             </button>
           {/if}
           <button

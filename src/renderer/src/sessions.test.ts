@@ -19,7 +19,10 @@ import {
   sameDir,
   parkedWorktrees,
   worktreeSpawnName,
-  sessionTargetCwd
+  sessionTargetCwd,
+  relaunchSession,
+  finishRelaunch,
+  ui
 } from './sessions.svelte'
 
 function fakeSession(overrides: Partial<Session>): Session {
@@ -48,6 +51,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     view: 'terminal',
     todo: false,
     notes: '',
+    relaunching: false,
     ...overrides
   }
 }
@@ -730,5 +734,102 @@ describe('moveGroup', () => {
     dirOrder.push('D:\\a', 'D:\\b')
     moveGroup('D:\\a', 'D:\\nope')
     expect([...dirOrder]).toEqual(['D:\\b', 'D:\\a'])
+  })
+})
+
+describe('relaunch', () => {
+  // The store reaches for window.arc.pty.kill; the test env has no window, so
+  // stand one up just long enough to see which PTY was asked to die. Fixture
+  // keys start at 101 so a freshly minted key can never collide with one.
+  function withFakeWindow(run: (killed: string[]) => void): void {
+    const killed: string[] = []
+    const g = globalThis as unknown as { window?: unknown }
+    g.window = { arc: { pty: { kill: (id: string) => killed.push(id) } } }
+    try {
+      run(killed)
+    } finally {
+      delete g.window
+    }
+  }
+
+  it('arms the row and kills its PTY, and swaps only once the exit arrives', () => {
+    withFakeWindow((killed) => {
+      sessions.push(
+        fakeSession({
+          key: 101,
+          ptyId: '7',
+          claudeSessionId: 'conv-1',
+          notes: 'keep me',
+          todo: true,
+          view: 'notes'
+        })
+      )
+      ui.focused = 101
+      relaunchSession(101)
+      // Armed, not swapped: `claude --resume` refuses while the id is live, so
+      // the new spawn waits for the old process to actually be gone.
+      expect(killed).toEqual(['7'])
+      expect(sessions[0].key).toBe(101)
+      expect(sessions[0].relaunching).toBe(true)
+
+      expect(finishRelaunch(101)).toBe(true)
+      const next = sessions[0]
+      expect(sessions).toHaveLength(1)
+      expect(next.key).not.toBe(101)
+      expect(next.resumeId).toBe('conv-1') // the same conversation comes back
+      expect(next.claudeSessionId).toBe(null) // the spawn re-reports it
+      expect(next.relaunching).toBe(false)
+      // The row is the same row: what the user put on it rides across.
+      expect(next.notes).toBe('keep me')
+      expect(next.todo).toBe(true)
+      expect(next.view).toBe('notes')
+      expect(ui.focused).toBe(next.key)
+    })
+  })
+
+  it('keeps the row in its place in the tower', () => {
+    withFakeWindow(() => {
+      sessions.push(
+        fakeSession({ key: 101, ptyId: 'a', claudeSessionId: 'c1' }),
+        fakeSession({ key: 102, ptyId: 'b', claudeSessionId: 'c2' }),
+        fakeSession({ key: 103, ptyId: 'c', claudeSessionId: 'c3' })
+      )
+      ui.focused = 101 // a relaunch elsewhere must not steal focus
+      relaunchSession(102)
+      finishRelaunch(102)
+      expect(sessions.map((s) => s.resumeId)).toEqual([null, 'c2', null])
+      expect(sessions[0].key).toBe(101)
+      expect(sessions[2].key).toBe(103)
+      expect(sessions[1].key).not.toBe(102)
+      expect(ui.focused).toBe(101)
+    })
+  })
+
+  it('an exited row swaps straight away — there is no process to wait for', () => {
+    withFakeWindow((killed) => {
+      sessions.push(fakeSession({ key: 101, status: 'exited', ptyId: '7', claudeSessionId: 'c1' }))
+      relaunchSession(101)
+      expect(killed).toEqual([]) // nothing left to kill
+      expect(sessions[0].key).not.toBe(101)
+      expect(sessions[0].resumeId).toBe('c1')
+    })
+  })
+
+  it('leaves shells, unspawned rows, and ordinary exits alone', () => {
+    withFakeWindow((killed) => {
+      sessions.push(
+        fakeSession({ key: 101, type: 'shell', ptyId: '7', claudeSessionId: null }),
+        // Claude, but the spawn has not reported its id yet — nothing to resume.
+        fakeSession({ key: 102, ptyId: '8', claudeSessionId: null })
+      )
+      relaunchSession(101)
+      relaunchSession(102)
+      relaunchSession(999)
+      expect(killed).toEqual([])
+      expect(sessions.map((s) => s.key)).toEqual([101, 102])
+      // An exit nobody armed is a real exit: the caller still marks it exited.
+      expect(finishRelaunch(102)).toBe(false)
+      expect(finishRelaunch(999)).toBe(false)
+    })
   })
 })

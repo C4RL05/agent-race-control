@@ -110,6 +110,10 @@ export interface Session {
   // Purely visual — no effect on sorting/focus/logic. Persisted so it survives
   // restart; auto-cleared when the underlying status changes color (setStatus).
   todo: boolean
+  // A relaunch is in flight: the kill has been sent and this row is waiting for
+  // its own PTY's exit before the resumed spawn goes up (relaunchSession).
+  // Transient by nature — it lives for the length of one process death.
+  relaunching: boolean
 }
 
 let nextKey = 1
@@ -320,7 +324,8 @@ function createSession(init: {
     spawnWorktree: init.worktree ?? null,
     view: 'terminal',
     todo: false,
-    notes: ''
+    notes: '',
+    relaunching: false
   }
 }
 
@@ -901,6 +906,76 @@ export function closeSession(key: number): void {
   if (ui.focused === key) {
     ui.focused = sessions[Math.min(index, sessions.length - 1)]?.key ?? null
   }
+}
+
+// Relaunch (row menu): end this session's Claude process and bring the SAME
+// conversation back up in a fresh one. It is exactly what a restart already
+// does to every row — createSession with a resumeId, the blessed `--resume`
+// spawn — applied to one row on demand, so it adds no spawn-line deviation of
+// its own. Claude Code has the same idea for its background sessions
+// (`claude respawn`, "so it runs the current Claude Code version").
+//
+// Why it can't be a plain kill-and-swap in one flush: `claude --resume <id>`
+// REFUSES while that id is still live. Verified on 2.1.261 —
+//   Error: Session <id> is running as a background session (9b1f46e0). Run
+//   `claude attach …` … or `claude stop …` first to resume it here. Add
+//   --fork-session to branch off a copy instead.
+// — and it resumed cleanly, same id, the moment the process was stopped. So the
+// new spawn has to WAIT for the old process's death rather than race it. Two
+// steps joined by the PTY's own exit event: arm here, swap in finishRelaunch.
+export function relaunchSession(key: number): void {
+  const session = sessions.find((s) => s.key === key)
+  // No conversation id, nothing to resume — the menu hides the item in that
+  // window (it lasts from spawn until the PTY answers, milliseconds).
+  if (!session || session.type !== 'claude' || !session.claudeSessionId) return
+  // Nothing alive to wait for: a spawn that errored, or a process that already
+  // died. The conversation is still on disk, so go straight to the swap.
+  if (session.status === 'exited' || !session.ptyId) {
+    swapInRelaunch(session)
+    return
+  }
+  session.relaunching = true
+  // window is absent in the unit-test env; the store is otherwise pure.
+  globalThis.window?.arc?.pty.kill(session.ptyId)
+}
+
+// A PTY reported its exit (App's onExited). Returns whether that exit was a
+// relaunch's — in which case it is NOT the session ending, and the caller must
+// not mark the row exited: `setStatus(_, 'exited')` would clear the TODO flag
+// this row is about to carry across.
+export function finishRelaunch(key: number): boolean {
+  const session = sessions.find((s) => s.key === key)
+  if (!session?.relaunching) return false
+  swapInRelaunch(session)
+  return true
+}
+
+// The swap itself: a new row, in the old row's place, resuming its conversation.
+// A new key (so the keyed {#each} tears the old terminal down and mounts a fresh
+// one) but the same row as far as the user is concerned — everything they put on
+// it rides across. The preview cache and main's transcript tail are deliberately
+// NOT dropped the way closeSession drops them: the conversation id is unchanged,
+// so the tail is still the right tail and the resumed session appends to it.
+function swapInRelaunch(session: Session): void {
+  const index = sessions.indexOf(session)
+  if (index === -1) return
+  const next = createSession({
+    type: 'claude',
+    cwd: session.cwd,
+    resumeId: session.claudeSessionId,
+    // Mirrors restoreState: a NAMED pending worktree re-arms --worktree (a
+    // resume with a transcript ignores it anyway), '' would mint a second
+    // random one.
+    worktree: session.spawnWorktree || undefined
+  })
+  // todo is set directly, not through setStatus — same rule restore follows, so
+  // the fresh spawn's status defaults never count as the colour change that
+  // clears the flag.
+  next.todo = session.todo
+  next.notes = session.notes
+  next.view = session.view
+  sessions.splice(index, 1, next)
+  if (ui.focused === session.key) ui.focused = next.key
 }
 
 // The two blessed forms of writing into a session (/color, /rename):
