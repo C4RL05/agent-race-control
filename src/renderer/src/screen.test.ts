@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { screenStatus, __regions } from './screen'
 import { IDLE, WORKING, BLOCKED_PERMISSION, BLOCKED_TRUST } from './screens.fixtures'
+import { CODEX_WORKING, CODEX_IDLE } from './codex.fixtures'
 
 const { isHorizontalRule, bottomNonEmptyLines, afterLastHorizontalRule, promptBoxBody } = __regions
 
@@ -137,5 +138,56 @@ describe('regions', () => {
     expect(bottomNonEmptyLines(['a', '', 'b', '', ''], 2)).toEqual(['a', '', 'b', '', ''])
     expect(bottomNonEmptyLines(['a', '', 'b', '', ''], 1)).toEqual(['b', '', ''])
     expect(bottomNonEmptyLines(['', ''], 3)).toEqual([])
+  })
+})
+
+describe('screenStatus on real Codex 0.153.4 screens', () => {
+  it('reads a running turn as running', () => {
+    expect(screenStatus(CODEX_WORKING, 'codex')).toBe('running')
+  })
+
+  it('reads a settled composer as idle', () => {
+    expect(screenStatus(CODEX_IDLE, 'codex')).toBe('idle')
+  })
+
+  it('takes the state from the title, which for codex carries all three', () => {
+    // The whole reason codex needs no hook channel: unlike Claude, its title
+    // distinguishes waiting from idle on its own.
+    const lines = CODEX_IDLE.lines
+    expect(screenStatus({ title: '⠹ demo', lines }, 'codex')).toBe('running')
+    expect(screenStatus({ title: 'Action Required — demo', lines }, 'codex')).toBe('waiting')
+    expect(screenStatus({ title: 'demo', lines }, 'codex')).toBe('idle')
+  })
+
+  it('falls back to the screen when the title says nothing', () => {
+    expect(
+      screenStatus(
+        { title: '', lines: ['• Working (39s • esc to interrupt)', '› Ask Codex to do anything'] },
+        'codex'
+      )
+    ).toBe('running')
+    expect(
+      screenStatus(
+        {
+          title: '',
+          lines: ['› Ask Codex', 'Allow command?', 'press enter to confirm or esc to cancel']
+        },
+        'codex'
+      )
+    ).toBe('waiting')
+  })
+
+  it('a Working line left on screen without the interrupt hint is not running', () => {
+    expect(screenStatus({ title: '', lines: ['• Working (39s)', '› Ask Codex'] }, 'codex')).toBe(
+      null
+    )
+  })
+
+  it('the two rule sets do not bleed into each other', () => {
+    // Codex's braille frames are Claude's OLD spinner, and Claude's settled
+    // title glyph means nothing to codex — read under the wrong set both lie.
+    expect(screenStatus({ title: '⠹ demo', lines: [] }, 'codex')).toBe('running')
+    expect(screenStatus({ title: 'demo', lines: [] }, 'codex')).toBe('idle')
+    expect(screenStatus({ title: 'demo', lines: [] }, 'claude')).toBe(null)
   })
 })

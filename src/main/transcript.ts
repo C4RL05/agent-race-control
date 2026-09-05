@@ -5,6 +5,8 @@ import type { FSWatcher } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import type { AgentKind } from './cli'
+import { parseCodexLine, rolloutPath as codexRolloutPath } from './codex'
 
 // Read-only conversation preview: tail the transcript JSONL Claude Code
 // writes for the pinned session id, reduce it to the readable conversation
@@ -225,7 +227,11 @@ class TranscriptTail {
 
   constructor(
     readonly path: string,
-    private push: Push
+    private push: Push,
+    // How one line of THIS transcript becomes preview items. The tailing —
+    // offset, remainder, the missed-event backstop — is identical for every
+    // agent; only the record schema differs, so the fold is the seam.
+    private parse: (line: string) => PreviewItem[] = parseLine
   ) {}
 
   // Watch the transcript's directory — the file itself may not exist yet (a
@@ -361,7 +367,7 @@ class TranscriptTail {
       let items: PreviewItem[] = []
       let nl: number
       while ((nl = data.indexOf(0x0a)) !== -1) {
-        items.push(...parseLine(data.subarray(0, nl).toString('utf8')))
+        items.push(...this.parse(data.subarray(0, nl).toString('utf8')))
         data = data.subarray(nl + 1)
         if (items.length >= BATCH) {
           if (this.disposed) return
@@ -393,8 +399,15 @@ class TranscriptTail {
 const tails = new Map<string, TranscriptTail>()
 
 export function registerTranscriptHandlers(getWebContents: () => WebContents | null): void {
-  ipcMain.on('transcript:watch', (_event, sessionId: string, cwd: string) => {
-    const path = transcriptPath(cwd, sessionId)
+  ipcMain.on('transcript:watch', (_event, sessionId: string, cwd: string, kind?: AgentKind) => {
+    // Where the transcript is, and how to read it, are the two things that
+    // differ per agent. Claude's path is derived from the cwd and the id;
+    // codex's embeds a timestamp, so only discovery can supply it — and until
+    // discovery has, there is nothing to tail yet.
+    const codex = kind === 'codex'
+    const path = codex ? codexRolloutPath(sessionId) : transcriptPath(cwd, sessionId)
+    if (!path) return
+    const parse = codex ? parseCodexLine : parseLine
     let tail = tails.get(sessionId)
     if (tail && tail.path !== path) {
       // Same id, different cwd (dead-path spawn fallback resolved late) —
@@ -404,9 +417,13 @@ export function registerTranscriptHandlers(getWebContents: () => WebContents | n
       tail = undefined
     }
     if (!tail) {
-      tail = new TranscriptTail(path, (items, reset) => {
-        getWebContents()?.send('transcript:items', sessionId, items, reset)
-      })
+      tail = new TranscriptTail(
+        path,
+        (items, reset) => {
+          getWebContents()?.send('transcript:items', sessionId, items, reset)
+        },
+        parse
+      )
       tails.set(sessionId, tail)
     }
     tail.arm()
