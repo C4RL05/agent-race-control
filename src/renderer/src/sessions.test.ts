@@ -22,6 +22,7 @@ import {
   sessionTargetCwd,
   relaunchSession,
   finishRelaunch,
+  applyScreen,
   ui
 } from './sessions.svelte'
 
@@ -59,6 +60,8 @@ function fakeSession(overrides: Partial<Session>): Session {
 beforeEach(() => {
   sessions.length = 0
   for (const key of Object.keys(previewItems)) delete previewItems[key]
+  // Which technique owns the dot is module state, and the tests below flip it.
+  ui.statusSource = 'hooks'
 })
 
 describe('cleanTitle', () => {
@@ -831,5 +834,67 @@ describe('relaunch', () => {
       expect(finishRelaunch(102)).toBe(false)
       expect(finishRelaunch(999)).toBe(false)
     })
+  })
+})
+
+describe('status source (which technique colours the dot)', () => {
+  // One technique at a time. The other keeps its bookkeeping and stops
+  // painting — never both writing the dot, which is the disagreement the
+  // status rewrite removed.
+  it('the screen scan is ignored while hooks own the dot', () => {
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyScreen(1, 'waiting')
+    expect(sessions[0].status).toBe('idle')
+  })
+
+  it('hooks stop painting once the screen owns the dot', () => {
+    ui.statusSource = 'screen'
+    sessions.push(fakeSession({ key: 1, status: 'idle' }))
+    applyHook('tok', 'sid', 'UserPromptSubmit')
+    expect(sessions[0].status).toBe('idle') // would be running under hooks
+    applyHook('tok', 'sid', 'PermissionRequest')
+    expect(sessions[0].status).toBe('idle') // would be waiting under hooks
+    applyScreen(1, 'running')
+    expect(sessions[0].status).toBe('running')
+  })
+
+  it('the poll stops painting too, but its floor logic is untouched', () => {
+    ui.statusSource = 'screen'
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', status: 'running' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'idle' }])
+    expect(sessions[0].status).toBe('running') // the floor no longer greens
+    expect(sessions[0].claudePid).toBe(10) // but it still tracked the process
+  })
+
+  it('hooks keep every bit of bookkeeping while not painting', () => {
+    ui.statusSource = 'screen'
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', cwd: 'D:\\repo' }))
+    // A /clear mints a new conversation id; the row must still follow it, or
+    // the preview and the resume handle both point at a dead transcript.
+    applyHook('tok', 'next-sid', 'UserPromptSubmit', 'D:\\repo\\wt')
+    expect(sessions[0].claudeSessionId).toBe('next-sid')
+    expect(sessions[0].cwd).toBe('D:\\repo\\wt')
+    expect(sessions[0].turnOpen).toBe(true)
+    expect(sessions[0].lastHook).toBe('UserPromptSubmit')
+  })
+
+  it('the poll still adopts a worktree cwd and retains its raw entry', () => {
+    ui.statusSource = 'screen'
+    sessions.push(fakeSession({ key: 1, claudeSessionId: 'sid', cwd: 'D:\\repo' }))
+    applyAgents([{ sessionId: 'sid', pid: 10, status: 'busy', cwd: 'D:\\repo\\wt' }])
+    expect(sessions[0].cwd).toBe('D:\\repo\\wt')
+    expect(sessions[0].agentEntry?.status).toBe('busy')
+  })
+
+  it('the screen scan never touches shells or exited rows', () => {
+    ui.statusSource = 'screen'
+    sessions.push(
+      fakeSession({ key: 1, type: 'shell', status: 'running' }),
+      fakeSession({ key: 2, status: 'exited' })
+    )
+    applyScreen(1, 'waiting')
+    applyScreen(2, 'running')
+    expect(sessions[0].status).toBe('running')
+    expect(sessions[1].status).toBe('exited')
   })
 })

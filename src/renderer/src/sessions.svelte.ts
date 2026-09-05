@@ -1,4 +1,5 @@
 import { DOT_COLORS, DEFAULT_FONT_ID, DEFAULT_UI_FONT_ID, type Mode } from './theme'
+import type { ScreenState } from './screen'
 
 // Read-only branch/worktree facts for the tower's repo→branch tree (issue #5),
 // fetched from main (window.arc.git) and cached per cwd in `gitInfo`. Mirrors
@@ -223,6 +224,12 @@ export const ui = $state<{
   // it is (see glyphLead) — nothing to do with the dot's status colors.
   // Off by default.
   glyphColor: boolean
+  // WHICH TECHNIQUE COLOURS THE DOT. 'hooks' is the default and the documented
+  // one: turn-boundary hooks with the agent poll as a green floor. 'screen'
+  // hands the dot to the screen scan instead (screen.ts) — one technique at a
+  // time, deliberately, so a disagreement between them can never be something
+  // the user has to untangle by eye.
+  statusSource: 'hooks' | 'screen'
   // Selected font ids: terminal (mono, theme.ts FONTS), interface/app chrome
   // and preview prose (both sans, theme.ts UI_FONTS).
   font: string
@@ -235,6 +242,7 @@ export const ui = $state<{
   statusRgb: false,
   statusDot: true,
   glyphColor: false,
+  statusSource: 'hooks',
   font: DEFAULT_FONT_ID,
   uiFont: DEFAULT_UI_FONT_ID,
   previewFont: DEFAULT_UI_FONT_ID
@@ -348,6 +356,29 @@ export function setStatus(session: Session, next: Session['status']): void {
   // re-asserted it.
   if (next !== session.status) session.statusSince = Date.now()
   session.status = next
+}
+
+// Status writes that belong to the DEFAULT technique. When the screen scan owns
+// the dot instead, the hooks and the poll keep every bit of their bookkeeping —
+// following a `/clear` to its new conversation id, adopting a spawned worktree's
+// cwd, tracking the claude pid, retaining the raw entry the Session tab reads —
+// and only stop painting. Two techniques writing one dot is the disagreement the
+// status rewrite spent three attempts removing; it is not coming back as a
+// setting.
+function setStatusFromHooks(session: Session, next: Session['status']): void {
+  if (ui.statusSource !== 'hooks') return
+  setStatus(session, next)
+}
+
+// The screen scan's verdict for one session (Terminal.svelte hands it over on a
+// debounce). Null never reaches here — the scanner drops "no opinion" so the dot
+// simply holds, which is how a TUI change degrades: a stale colour, not a wrong
+// one. An exited row is final, and a shell has no screen state to read.
+export function applyScreen(key: number, state: ScreenState): void {
+  if (ui.statusSource !== 'screen') return
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.type !== 'claude' || session.status === 'exited') return
+  setStatus(session, state)
 }
 
 // Left-clicking the status dot toggles the TODO flag (both session types).
@@ -507,18 +538,18 @@ export function applyHook(
       // one that merely beat the CLI's flip to `busy` — would close the turn
       // the guard was written to protect.
       session.idleTicks = 0
-      setStatus(session, 'running')
+      setStatusFromHooks(session, 'running')
       break
     case 'PermissionRequest':
     case 'Notification':
-      setStatus(session, 'waiting')
+      setStatusFromHooks(session, 'waiting')
       break
     // Both ends of a turn: Stop is the normal one, StopFailure is an API error —
     // which fires NO Stop, so without it the dot would stay red forever.
     case 'Stop':
     case 'StopFailure':
       session.turnOpen = false
-      setStatus(session, statusAfterTurn(session))
+      setStatusFromHooks(session, statusAfterTurn(session))
       break
     case 'SubagentStart':
       session.subagentCount += 1
@@ -528,7 +559,7 @@ export function applyHook(
       // The last subagent finishing ends the delegation — but never touch a red
       // or amber dot: the main agent is driving or asking, and that outranks it.
       if (session.status === 'delegating' && session.subagentCount === 0) {
-        setStatus(session, 'idle')
+        setStatusFromHooks(session, 'idle')
       }
       break
     }
@@ -634,7 +665,7 @@ export function applyAgents(entries: AgentEntry[]): void {
       if (!session.turnOpen || session.idleTicks >= IDLE_TICKS_TO_END_TURN) {
         session.subagentCount = 0
         session.turnOpen = false
-        setStatus(session, 'idle')
+        setStatusFromHooks(session, 'idle')
       }
     } else {
       session.idleTicks = 0
@@ -645,7 +676,7 @@ export function applyAgents(entries: AgentEntry[]): void {
       // that must be wrong, so restore red. Amber and delegating are hook-owned
       // and left alone.
       if (session.turnOpen && entry.status === 'busy' && session.status === 'idle') {
-        setStatus(session, 'running')
+        setStatusFromHooks(session, 'running')
       }
     }
   }
@@ -671,7 +702,7 @@ export function nudgeStatusFromKey(key: number, data: string): void {
     // poll's `busy` (a shell outliving the interrupt) would re-paint red.
     session.turnOpen = false
     session.subagentCount = 0
-    setStatus(session, 'idle')
+    setStatusFromHooks(session, 'idle')
   }
 }
 
@@ -811,6 +842,7 @@ export async function restoreState(): Promise<void> {
   // Absent → the default, which for the dot is ON (unlike the other two).
   ui.statusDot = saved.statusDot ?? true
   ui.glyphColor = saved.glyphColor ?? false
+  ui.statusSource = saved.statusSource ?? 'hooks'
   ui.font = saved.font ?? DEFAULT_FONT_ID
   ui.uiFont = saved.uiFont ?? DEFAULT_UI_FONT_ID
   ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID
@@ -862,6 +894,7 @@ export function snapshotState(): PersistedState {
     statusRgb: ui.statusRgb,
     statusDot: ui.statusDot,
     glyphColor: ui.glyphColor,
+    statusSource: ui.statusSource,
     font: ui.font,
     uiFont: ui.uiFont,
     previewFont: ui.previewFont,

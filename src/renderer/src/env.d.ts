@@ -14,6 +14,8 @@ interface PersistedState {
   statusDot?: boolean
   // Paint a row title's leading glyph by which glyph it is.
   glyphColor?: boolean
+  // Which technique colours the status dot. Absent → 'hooks', the default.
+  statusSource?: 'hooks' | 'screen'
   // Selected font ids (see theme.ts FONTS/UI_FONTS). Absent → the default.
   font?: string
   uiFont?: string
