@@ -59,6 +59,7 @@
     duplicateSession,
     relaunchSession,
     finishRelaunch,
+    applyScreen,
     renameSession,
     applySpawnCwd,
     applyPreviewItems,
@@ -124,6 +125,20 @@
     light: 'Light',
     dark: 'Dark'
   }
+
+  // Which technique colours the status dot. One at a time — see screen.ts.
+  const STATUS_SOURCES = [
+    {
+      id: 'hooks' as const,
+      label: 'Hooks + poll',
+      hint: 'Turn-boundary hooks decide red and amber; the agent poll is a green floor.'
+    },
+    {
+      id: 'screen' as const,
+      label: 'Screen',
+      hint: "Reads the session's own screen — the spinner, the prompt box, an open dialog."
+    }
+  ]
 
   let systemDark = $state(window.matchMedia('(prefers-color-scheme: dark)').matches)
 
@@ -921,6 +936,8 @@
               // session, so it must not paint the row exited on the way past.
               if (!finishRelaunch(session.key)) setStatus(session, 'exited')
             }}
+            scanning={ui.statusSource === 'screen' && session.type === 'claude'}
+            onScreen={(state) => applyScreen(session.key, state)}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => {
               session.title = title
@@ -1392,6 +1409,24 @@
           ui.glyphColor,
           () => (ui.glyphColor = !ui.glyphColor)
         )}
+        <div class="menu-divider"></div>
+        <div class="menu-label">Status detection</div>
+        {#each STATUS_SOURCES as source (source.id)}
+          <button
+            class="menu-item"
+            role="menuitemradio"
+            aria-checked={ui.statusSource === source.id}
+            title={source.hint}
+            onclick={() => (ui.statusSource = source.id)}
+          >
+            <span class="material-symbols-outlined"
+              >{ui.statusSource === source.id
+                ? 'radio_button_checked'
+                : 'radio_button_unchecked'}</span
+            >{source.label}
+          </button>
+        {/each}
+
         {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
         {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
         {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}

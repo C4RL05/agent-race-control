@@ -5,6 +5,7 @@
   import { FitAddon } from '@xterm/addon-fit'
   import { ClipboardAddon } from '@xterm/addon-clipboard'
   import '@xterm/xterm/css/xterm.css'
+  import { screenStatus, type ScreenState } from './screen'
 
   let {
     type = 'shell',
@@ -15,9 +16,11 @@
     focusEpoch = 0,
     theme,
     fontFamily,
+    scanning = false,
     onSpawned,
     onExited,
     onTitle,
+    onScreen,
     onInput
   }: {
     type?: 'shell' | 'claude'
@@ -32,11 +35,18 @@
     focusEpoch?: number
     theme: ITheme
     fontFamily: string
+    // Whether the screen-scan status technique is the selected one. Off, the
+    // buffer is never read at all — the alternate technique costs nothing
+    // while it isn't the one driving the dot.
+    scanning?: boolean
     // cwd is where the PTY actually started — may differ from the requested
     // directory (dead paths fall back to the home dir in main).
     onSpawned?: (ptyId: string, claudeSessionId: string | undefined, cwd: string) => void
     onExited?: (exitCode: number) => void
     onTitle?: (title: string) => void
+    // A screen-scan verdict. Only ever called with a state the scan is sure
+    // of — "no opinion" is dropped here rather than travelling as a null.
+    onScreen?: (state: ScreenState) => void
     // Observes what the user types (already bound for the PTY) — the bytes
     // themselves pass through to pty.write untouched.
     onInput?: (data: string) => void
@@ -45,6 +55,48 @@
   let container: HTMLDivElement
   let term: Terminal | null = null
   let fit: FitAddon | null = null
+
+  // The screen-scan technique (screen.ts). The buffer is read here because
+  // this is the only place that owns the xterm instance — the classifier
+  // itself is pure and lives in its own module.
+  //
+  // Reading the buffer is observation, the same kind the terminal title
+  // already is: nothing is written, intercepted or rewritten, and the byte
+  // stream reaches the emulator untouched. What is read is what the user
+  // would see if they looked at this pane.
+  let lastTitle = ''
+  let scanTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Coalesce a burst of writes into one scan. The spinner animates while a
+  // turn runs, so data keeps arriving and the state keeps being re-affirmed;
+  // when it stops, the timer set by the last burst still fires and reads the
+  // settled frame. A throttle, not a trailing debounce: it bounds the work at
+  // one scan per interval however hard the session is writing.
+  const SCAN_INTERVAL = 250
+
+  function scheduleScan(): void {
+    if (!scanning || scanTimer) return
+    scanTimer = setTimeout(() => {
+      scanTimer = null
+      const t = term
+      if (!t || !scanning) return
+      const buffer = t.buffer.active
+      const lines: string[] = []
+      for (let y = 0; y < t.rows; y++) {
+        const line = buffer.getLine(buffer.viewportY + y)
+        lines.push(line ? line.translateToString(true) : '')
+      }
+      const state = screenStatus({ title: lastTitle, lines })
+      if (state) onScreen?.(state)
+    }, SCAN_INTERVAL)
+  }
+
+  // Selecting the technique must colour the tower straight away — an idle
+  // session emits no bytes, so waiting for the next write could mean waiting
+  // for the next turn.
+  $effect(() => {
+    if (scanning) scheduleScan()
+  })
 
   // Never fit while hidden (display:none gives 0x0 and garbage dimensions).
   function safeFit(): void {
@@ -166,10 +218,16 @@
 
     // Surface the terminal title (OSC 0/2) — Claude Code keeps it set to the
     // conversation name; Git Bash sets it to the cwd.
-    t.onTitleChange((title) => onTitle?.(title))
+    t.onTitleChange((title) => {
+      lastTitle = title
+      onTitle?.(title)
+    })
 
     const offData = window.arc.pty.onData((id, data) => {
-      if (id === ptyId) t.write(data)
+      if (id === ptyId) {
+        t.write(data)
+        scheduleScan()
+      }
     })
     const offExit = window.arc.pty.onExit((id, exitCode) => {
       if (id === ptyId) {
@@ -202,6 +260,8 @@
 
     return () => {
       disposed = true
+      if (scanTimer) clearTimeout(scanTimer)
+      scanTimer = null
       resizeObserver.disconnect()
       offData()
       offExit()
