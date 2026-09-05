@@ -20,6 +20,8 @@ import {
   parkedWorktrees,
   worktreeSpawnName,
   sessionTargetCwd,
+  newSession,
+  duplicateSession,
   relaunchSession,
   finishRelaunch,
   ui
@@ -831,5 +833,39 @@ describe('relaunch', () => {
       expect(finishRelaunch(102)).toBe(false)
       expect(finishRelaunch(999)).toBe(false)
     })
+  })
+})
+
+describe('newSession ordering', () => {
+  // Cwds no other test touches: dirOrder and dirColors are module state that
+  // beforeEach deliberately leaves alone, and newSession writes to both.
+  it('inserts before the first row sharing its cwd, not at the top of the tower', async () => {
+    sessions.push(
+      fakeSession({ key: 101, cwd: 'D:\top-b' }),
+      fakeSession({ key: 102, cwd: 'D:\top-a' }),
+      fakeSession({ key: 103, cwd: 'D:\top-a' })
+    )
+    await newSession('claude', 'D:\top-a')
+    const fresh = sessions[1]
+    expect(fresh.cwd).toBe('D:\top-a')
+    // Top of its OWN dir's list; every other row keeps its place.
+    expect(sessions.map((s) => s.key)).toEqual([101, fresh.key, 102, 103])
+    expect(ui.focused).toBe(fresh.key)
+  })
+
+  it('appends when the directory has no rows yet', async () => {
+    sessions.push(fakeSession({ key: 101, cwd: 'D:\top-a' }))
+    await newSession('shell', 'D:\top-fresh')
+    expect(sessions.map((s) => s.cwd)).toEqual(['D:\top-a', 'D:\top-fresh'])
+  })
+
+  it('duplicate still lands directly under its source', async () => {
+    sessions.push(
+      fakeSession({ key: 101, cwd: 'D:\top-a' }),
+      fakeSession({ key: 102, cwd: 'D:\top-a' })
+    )
+    duplicateSession(102)
+    expect(sessions.map((s) => s.key).slice(0, 2)).toEqual([101, 102])
+    expect(sessions).toHaveLength(3)
   })
 })

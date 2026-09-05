@@ -384,8 +384,20 @@ export async function newSession(
   touchDir(cwd)
   touchRecent(cwd)
   const session = createSession({ type, cwd, worktree })
-  sessions.push(session)
+  insertNewest(session)
   ui.focused = session.key
+}
+
+// New sessions land at the TOP of their directory's list, not the bottom: the
+// one you just spawned is the one you're about to drive, so it belongs where
+// your eye already is rather than under however many rows the dir has grown.
+// The tower renders a row's sessions by filtering the array on an exact cwd
+// match, so "before the first session sharing this cwd" IS the top of the list
+// it appears in — and every other row keeps its order untouched. A directory
+// with no rows yet appends, which is the same thing.
+function insertNewest(session: Session): void {
+  const at = sessions.findIndex((s) => s.cwd === session.cwd)
+  sessions.splice(at === -1 ? sessions.length : at, 0, session)
 }
 
 // Windows Terminal's "Duplicate tab": same type, same cwd, fresh process.
