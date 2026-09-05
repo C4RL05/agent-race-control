@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('arc', {
     spawn: (opts: {
       cols: number
       rows: number
-      type?: 'shell' | 'claude'
+      type?: 'shell' | 'claude' | 'codex'
       cwd?: string
       resume?: string
       worktree?: string
@@ -58,6 +58,23 @@ contextBridge.exposeInMainWorld('arc', {
       ipcRenderer.on('pty:data', listener)
       return () => ipcRenderer.removeListener('pty:data', listener)
     },
+    // A codex row's conversation id, which arrives AFTER the spawn: codex mints
+    // its own and we learn it from the rollout it opens (main/codex.ts). Claude
+    // rows never see this — theirs comes back from spawn itself.
+    onSession: (
+      callback: (id: string, sessionId: string, name: string | null) => void
+    ): (() => void) => {
+      const listener = (
+        _event: IpcRendererEvent,
+        id: string,
+        sessionId: string,
+        name: string | null
+      ): void => {
+        callback(id, sessionId, name)
+      }
+      ipcRenderer.on('pty:session', listener)
+      return () => ipcRenderer.removeListener('pty:session', listener)
+    },
     onExit: (callback: (id: string, exitCode: number) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, id: string, exitCode: number): void => {
         callback(id, exitCode)
@@ -67,8 +84,10 @@ contextBridge.exposeInMainWorld('arc', {
     }
   },
   transcript: {
-    watch: (sessionId: string, cwd: string): void => {
-      ipcRenderer.send('transcript:watch', sessionId, cwd)
+    // kind selects both where the transcript lives and how a line folds into
+    // preview items — the only two things that differ per agent.
+    watch: (sessionId: string, cwd: string, kind?: 'claude' | 'codex'): void => {
+      ipcRenderer.send('transcript:watch', sessionId, cwd, kind)
     },
     unwatch: (sessionId: string): void => {
       ipcRenderer.send('transcript:unwatch', sessionId)

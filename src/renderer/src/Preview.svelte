@@ -61,9 +61,18 @@
   let {
     sessionId,
     cwd,
+    kind = 'claude',
     proseFont,
     codeFont
-  }: { sessionId: string; cwd: string; proseFont: string; codeFont: string } = $props()
+  }: {
+    sessionId: string
+    cwd: string
+    // Which agent wrote this transcript — main uses it to pick both the file
+    // and the fold, the only two things that differ between them.
+    kind?: 'claude' | 'codex'
+    proseFont: string
+    codeFont: string
+  } = $props()
 
   const items = $derived(previewItems[sessionId] ?? [])
   let scroller: HTMLDivElement
@@ -87,7 +96,7 @@
   // the cleanup disarms the old id and the re-run watches the new one.
   $effect(() => {
     const id = sessionId
-    window.arc.transcript.watch(id, cwd)
+    window.arc.transcript.watch(id, cwd, kind)
     return () => window.arc.transcript.unwatch(id)
   })
 

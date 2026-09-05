@@ -8,6 +8,13 @@ import { homedir } from 'node:os'
 import { findGitBash } from './bash'
 import { writeSessionHooks } from './status'
 import { transcriptPath } from './transcript'
+import { adapterFor, type SessionType } from './cli'
+import {
+  rolloutPath as codexRolloutPath,
+  watchForSession as watchForCodexSession,
+  watchForName,
+  threadName
+} from './codex'
 
 // A session that never exchanged a prompt writes no transcript, so --resume
 // would fail with "No conversation found". Only resume when the transcript
@@ -21,17 +28,27 @@ const ptys = new Map<string, IPty>()
 // `claude agents --json` subprocess while at least one is alive, so a tower of
 // plain shells costs nothing.
 const claudePtys = new Set<string>()
+// Pending codex session-id discoveries, so a row that exits before its rollout
+// appears doesn't leave a poll running against a directory nobody is watching.
+const codexWatchers = new Map<string, () => void>()
 let nextId = 1
 
 export function hasClaudeSessions(): boolean {
   return claudePtys.size > 0
 }
 
+function stopCodexWatch(id: string): void {
+  codexWatchers.get(id)?.()
+  codexWatchers.delete(id)
+}
+
 // cwd is the directory the PTY actually started in — it can differ from the
 // requested one (dead-path fallback below), and the renderer must follow the
 // truth or the preview tails a transcript directory Claude never writes.
 type SpawnResult = { id: string; claudeSessionId?: string; cwd: string } | { error: string }
-export type SessionType = 'shell' | 'claude'
+// Re-exported from the adapter registry so the preload keeps importing it from
+// here and nothing else has to learn where the CLI table lives.
+export type { SessionType }
 
 export function registerPtyHandlers(getWebContents: () => WebContents | null): void {
   ipcMain.handle(
@@ -96,36 +113,41 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         return { error: `Working directory no longer exists: ${opts.cwd}` }
       }
 
-      // Claude sessions: the login shell sources the user's profile (so claude
-      // resolves from their real PATH), then exec makes bash *become* claude —
-      // the PTY's lifetime IS the claude process's lifetime.
-      // --session-id gives a deterministic session id, which is both the resume
-      // handle and the join key against `claude agents --json` (see agents.ts).
+      // Agent sessions: the login shell sources the user's profile (so the CLI
+      // resolves from the user's real PATH), then exec makes bash *become* it —
+      // the PTY's lifetime IS the agent process's lifetime. What each CLI is
+      // handed on that line lives in cli/index.ts; everything below is shared.
       const cwd = opts.cwd ?? homedir()
+      const adapter = adapterFor(opts.type)
 
+      // The conversation id, when it is knowable at spawn. Claude's is pinned
+      // here (it is also the join key for the agent poll and the hook routing
+      // token); codex mints its own, so this stays undefined and the id is
+      // discovered from the rollout it opens (see codex.ts).
       let claudeSessionId: string | undefined
       let args: string[]
-      if (opts.type === 'claude') {
-        // Fresh session: pin our own UUID. Restored session: --resume it —
-        // but only if a transcript actually exists; else fresh with same id.
-        claudeSessionId = opts.resume ?? randomUUID()
-        const canResume = opts.resume !== undefined && claudeTranscriptExists(cwd, opts.resume)
-        let cmd = canResume
-          ? `exec claude --resume ${claudeSessionId}`
-          : `exec claude --session-id ${claudeSessionId}`
-        // Fresh spawns only — a resumed session's cwd already IS its worktree
-        // (transcripts live under the worktree cwd; --resume there continues
-        // mid-feature). The renderer slugifies the name; stripping quotes here
-        // is belt-and-suspenders for the bash -c string.
-        if (!canResume && opts.worktree !== undefined) {
-          const name = opts.worktree.replace(/'/g, '')
-          cmd += name ? ` --worktree '${name}'` : ' --worktree'
-        }
-        // Per-session turn-boundary hooks: the spawn id is the URL's routing
-        // token, so this session's hooks keep arriving even after `/clear` mints
-        // a new conversation id (see status.ts + issue #2).
-        const hookSettings = writeSessionHooks(claudeSessionId)
-        if (hookSettings) cmd += ` --settings '${hookSettings.replace(/\\/g, '/')}'`
+      if (adapter) {
+        const resumeId = adapter.identity === 'pinned' ? (opts.resume ?? randomUUID()) : opts.resume
+        const resumable =
+          opts.resume !== undefined &&
+          (adapter.kind === 'claude'
+            ? claudeTranscriptExists(cwd, opts.resume)
+            : codexRolloutPath(opts.resume) !== null)
+        // Per-session turn-boundary hooks, for the CLI that takes them: the
+        // spawn id is the URL's routing token, so this session's hooks keep
+        // arriving even after `/clear` mints a new conversation id (issue #2).
+        const hookSettings =
+          adapter.capabilities.hooks && resumeId
+            ? (writeSessionHooks(resumeId) ?? undefined)
+            : undefined
+        const cmd = adapter.spawnCommand({
+          cwd,
+          resumeId,
+          resumable,
+          worktree: adapter.capabilities.worktree ? opts.worktree : undefined,
+          hookSettings
+        })
+        if (adapter.identity === 'pinned') claudeSessionId = resumeId
         args = ['--login', '-i', '-c', cmd]
       } else {
         args = ['--login', '-i']
@@ -141,12 +163,41 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
 
       const id = String(nextId++)
       ptys.set(id, pty)
+      // Claude sessions only: the poller shells out to `claude agents --json`,
+      // which knows nothing about codex, so a tower of codex rows must not
+      // keep it alive.
       if (opts.type === 'claude') claudePtys.add(id)
+
+      // Codex mints its own conversation id, so the row spawns without one and
+      // learns it when the rollout appears (usually within a second). The
+      // renderer keys the preview and the resume handle off this arriving.
+      if (opts.type === 'codex') {
+        let stopName: (() => void) | null = null
+        const stopSession = watchForCodexSession(cwd, Date.now(), (session) => {
+          getWebContents()?.send(
+            'pty:session',
+            id,
+            session.sessionId,
+            threadName(session.sessionId)
+          )
+          // The conversation's name is not in codex's terminal title, and it
+          // is not set at all until a turn or two in — so follow the index for
+          // a while and report it when it lands.
+          stopName = watchForName(session.sessionId, (name) => {
+            getWebContents()?.send('pty:session', id, session.sessionId, name)
+          })
+        })
+        codexWatchers.set(id, () => {
+          stopSession()
+          stopName?.()
+        })
+      }
 
       pty.onData((data) => getWebContents()?.send('pty:data', id, data))
       pty.onExit(({ exitCode }) => {
         ptys.delete(id)
         claudePtys.delete(id)
+        stopCodexWatch(id)
         getWebContents()?.send('pty:exit', id, exitCode)
       })
 
@@ -166,11 +217,14 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
     ptys.get(id)?.kill()
     ptys.delete(id)
     claudePtys.delete(id)
+    stopCodexWatch(id)
   })
 }
 
 export function killAllPtys(): void {
   for (const pty of ptys.values()) pty.kill()
+  for (const stop of codexWatchers.values()) stop()
   ptys.clear()
   claudePtys.clear()
+  codexWatchers.clear()
 }

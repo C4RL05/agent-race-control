@@ -29,7 +29,7 @@ interface PersistedState {
   collapsed?: string[]
   recentDirs?: string[]
   sessions: Array<{
-    type: 'shell' | 'claude'
+    type: 'shell' | 'claude' | 'codex'
     name: string
     cwd: string
     claudeSessionId: string | null
@@ -154,7 +154,7 @@ interface Window {
       spawn: (opts: {
         cols: number
         rows: number
-        type?: 'shell' | 'claude'
+        type?: 'shell' | 'claude' | 'codex'
         cwd?: string
         resume?: string
         // Spawn claude with --worktree: Claude Code creates-and-enters a fresh
@@ -165,12 +165,15 @@ interface Window {
       resize: (id: string, cols: number, rows: number) => void
       kill: (id: string) => void
       onData: (callback: (id: string, data: string) => void) => () => void
+      onSession: (
+        callback: (id: string, sessionId: string, name: string | null) => void
+      ) => () => void
       onExit: (callback: (id: string, exitCode: number) => void) => () => void
     }
     transcript: {
       // watch arms the session's persistent tail; unwatch only disarms it
       // (byte offset survives); drop forgets it — the session closed.
-      watch: (sessionId: string, cwd: string) => void
+      watch: (sessionId: string, cwd: string, kind?: 'claude' | 'codex') => void
       unwatch: (sessionId: string) => void
       drop: (sessionId: string) => void
       onItems: (

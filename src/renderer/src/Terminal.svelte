@@ -21,9 +21,10 @@
     onExited,
     onTitle,
     onScreen,
+    onSession,
     onInput
   }: {
-    type?: 'shell' | 'claude'
+    type?: 'shell' | 'claude' | 'codex'
     cwd?: string
     resume?: string
     // Ask Claude Code for a fresh git worktree at spawn ('' = auto-name).
@@ -47,6 +48,9 @@
     // A screen-scan verdict. Only ever called with a state the scan is sure
     // of — "no opinion" is dropped here rather than travelling as a null.
     onScreen?: (state: ScreenState) => void
+    // Codex only: the conversation id, learned after the spawn, and the
+    // conversation name once codex has picked one.
+    onSession?: (sessionId: string, name: string | null) => void
     // Observes what the user types (already bound for the PTY) — the bytes
     // themselves pass through to pty.write untouched.
     onInput?: (data: string) => void
@@ -86,7 +90,9 @@
         const line = buffer.getLine(buffer.viewportY + y)
         lines.push(line ? line.translateToString(true) : '')
       }
-      const state = screenStatus({ title: lastTitle, lines })
+      // Each agent gets its own rule set — codex's states live almost
+      // entirely in its title, Claude's almost entirely on its screen.
+      const state = screenStatus({ title: lastTitle, lines }, type === 'codex' ? 'codex' : 'claude')
       if (state) onScreen?.(state)
     }, SCAN_INTERVAL)
   }
@@ -229,6 +235,11 @@
         scheduleScan()
       }
     })
+    // Codex reports its conversation id (and later its name) after the spawn,
+    // once main has matched the rollout it opened. Claude rows never fire this.
+    const offSession = window.arc.pty.onSession((id, sessionId, name) => {
+      if (id === ptyId) onSession?.(sessionId, name)
+    })
     const offExit = window.arc.pty.onExit((id, exitCode) => {
       if (id === ptyId) {
         t.write(`\r\n\x1b[2m[process exited with code ${exitCode}]\x1b[0m\r\n`)
@@ -264,6 +275,7 @@
       scanTimer = null
       resizeObserver.disconnect()
       offData()
+      offSession()
       offExit()
       if (ptyId) window.arc.pty.kill(ptyId)
       t.dispose()

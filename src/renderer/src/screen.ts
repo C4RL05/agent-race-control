@@ -177,16 +177,80 @@ function isIdlePrompt(lines: string[]): boolean {
   )
 }
 
-/**
- * Classify one session from its rendered screen. Returns null for "no opinion",
- * which is the whole safety story: Claude Code's TUI moves, and when it moves
- * far enough that no rule matches, the dot holds its last value instead of
- * guessing. A stale dot is recoverable; a confidently wrong one is what the
- * status rewrite spent three attempts undoing.
- *
- * Rules are evaluated in herdr's priority order, highest first.
- */
-export function screenStatus(input: ScreenInput): ScreenState | null {
+// --- codex ------------------------------------------------------------------
+//
+// Same engine, different rule set, ported from herdr's codex manifest
+// (version 2026.09.05.1). Codex is the easier of the two, and for a reason
+// worth stating: its title carries ALL THREE states, where Claude's cannot see
+// blocked. Measured on codex-cli 0.153.4 from a live ConPTY —
+//
+//   working  "⠹ my-project"   a braille spinner leads the title, all turn
+//   idle     "my-project"     the bare working-directory basename
+//
+// — and herdr has the third, "Action Required" in the title while codex waits
+// on you. That one is carried across on their authority rather than captured
+// here; the screen rules below are the fallback if it ever fails to appear.
+//
+// Note the title is the DIRECTORY, not the conversation: two codex rows in one
+// folder are indistinguishable by title, which is why the tower gets a codex
+// row's name from the session index instead (main/codex.ts).
+
+const CODEX_TITLE_BLOCKED = /action required/i
+const CODEX_TITLE_WORKING = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/
+
+// "• Working (39s • esc to interrupt)" — captured verbatim. The interrupt hint
+// is what separates a running turn from the same line left on screen after one.
+const CODEX_WORKING_LINE = /^[•◦]\s+Working \([^)]*esc to interrupt\)(?: · .*)?$/
+
+// Codex's composer marker, the ›. Everything below the last one is the live
+// exchange; a dialog renders there.
+const CODEX_PROMPT_LINE = /^\s*›/
+
+function afterLastPromptMarker(lines: string[]): string[] {
+  let last = -1
+  for (let i = 0; i < lines.length; i++) if (CODEX_PROMPT_LINE.test(lines[i])) last = i
+  return last === -1 ? lines : lines.slice(last + 1)
+}
+
+function codexBlocked(lines: string[]): boolean {
+  const region = lower(afterLastPromptMarker(lines))
+  const whole = lower(lines)
+  return (
+    // herdr `live_strong_blocker` (900)
+    region.includes('press enter to confirm or esc to cancel') ||
+    region.includes('enter to submit answer') ||
+    region.includes('enter to submit all') ||
+    region.includes('allow command?') ||
+    // herdr `trust_directory` (950) — a fresh folder asks before doing anything
+    (whole.includes('do you trust the contents of this directory?') &&
+      lower(lines.slice(0, 20)).includes('you are in')) ||
+    // herdr `startup_update` (950) — an update prompt holds the session shut
+    (whole.includes('update available!') && whole.includes('press enter to continue')) ||
+    // herdr `weak_blocker` (600)
+    whole.includes('[y/n]') ||
+    whole.includes('yes (y)')
+  )
+}
+
+function codexStatus(input: ScreenInput): ScreenState | null {
+  const { title, lines } = input
+  if (CODEX_TITLE_BLOCKED.test(title)) return 'waiting' // 1100
+  if (CODEX_TITLE_WORKING.test(title)) return 'running' // 1050
+  // herdr `transcript_viewer` (1000) — scrolled back through history.
+  if (lower(lines).includes('↑/↓ to scroll') && lower(lines).includes('q to quit')) return null
+  if (codexBlocked(lines)) return 'waiting' // 950 / 900 / 600
+  if (hasLine(bottomNonEmptyLines(lines, 3), CODEX_WORKING_LINE)) return 'running' // 500
+  // herdr `osc_title_idle` (100): ANY title that is neither of the two above.
+  // Deliberately weak and deliberately last — it is the absence of evidence,
+  // not evidence. It still beats returning null, because for codex a settled
+  // title is the normal resting state.
+  if (title.trim()) return 'idle'
+  return null
+}
+
+// --- entry point ------------------------------------------------------------
+
+function claudeStatus(input: ScreenInput): ScreenState | null {
   if (TITLE_WORKING.test(input.title)) return 'running' // 1100
   if (isTranscriptViewer(input.lines)) return null // 1000
   if (isBlocked(input.lines)) return 'waiting' // 980 / 850 / 840
@@ -195,6 +259,23 @@ export function screenStatus(input: ScreenInput): ScreenState | null {
   if (isModelPicker(input.lines)) return null // 900
   if (TITLE_IDLE.test(input.title)) return 'idle' // 250
   return null
+}
+
+/**
+ * Classify one session from its rendered screen. Returns null for "no opinion",
+ * which is the whole safety story: an agent's TUI moves, and when it moves far
+ * enough that no rule matches, the dot holds its last value instead of
+ * guessing. A stale dot is recoverable; a confidently wrong one is what the
+ * status rewrite spent three attempts undoing.
+ *
+ * Rules are evaluated in herdr's priority order, highest first. Which set runs
+ * is the only thing the caller has to know.
+ */
+export function screenStatus(
+  input: ScreenInput,
+  kind: 'claude' | 'codex' = 'claude'
+): ScreenState | null {
+  return kind === 'codex' ? codexStatus(input) : claudeStatus(input)
 }
 
 // Exported for the tests only — the regions are where a port like this goes

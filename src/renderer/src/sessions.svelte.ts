@@ -1,6 +1,70 @@
 import { DOT_COLORS, DEFAULT_FONT_ID, DEFAULT_UI_FONT_ID, type Mode } from './theme'
 import type { ScreenState } from './screen'
 
+// The agent CLIs a row can be running, and what the UI may offer for each.
+// Mirrors the adapter table in src/main/cli/index.ts (the renderer can't import
+// from main) — the main copy owns the spawn line, this one owns the affordances.
+// The UI reads these rather than branching on the kind, so an agent that can't
+// do something simply doesn't show the control for it.
+export type AgentKind = 'claude' | 'codex'
+export type SessionType = 'shell' | AgentKind
+
+export interface AgentTraits {
+  label: string
+  // Key into App.svelte's ICONS registry, for the row and spawn button.
+  icon: string
+  // The repo card's "new worktree" button — Claude Code runs the git itself;
+  // codex has no such flag, and the app never shells out to git on its own.
+  worktree: boolean
+  // `/rename` and `/color` typed into the TUI at the idle prompt.
+  rename: boolean
+  color: boolean
+  // Whether the terminal title IS the conversation name. Claude's is; codex
+  // titles the window with the working directory's basename, so a codex row
+  // falls back to its own label rather than showing every row the same word.
+  titleIsConversationName: boolean
+  // Which pane tabs this agent's rows get.
+  preview: boolean
+  info: boolean
+  notes: boolean
+}
+
+export const AGENTS: Record<AgentKind, AgentTraits> = {
+  claude: {
+    label: 'Claude',
+    icon: 'bot',
+    worktree: true,
+    rename: true,
+    color: true,
+    titleIsConversationName: true,
+    preview: true,
+    info: true,
+    notes: true
+  },
+  codex: {
+    label: 'Codex',
+    icon: 'hexagon',
+    worktree: false,
+    rename: false,
+    color: false,
+    titleIsConversationName: false,
+    preview: true,
+    // The Session tab reads `~/.claude/sessions/<pid>.json` and folds a claude
+    // transcript for its numbers — none of which exist for codex. Left off
+    // rather than shown mostly empty.
+    info: false,
+    notes: true
+  }
+}
+
+export function isAgent(type: SessionType | undefined): type is AgentKind {
+  return type === 'claude' || type === 'codex'
+}
+
+export function traitsOf(type: SessionType): AgentTraits | null {
+  return isAgent(type) ? AGENTS[type] : null
+}
+
 // Read-only branch/worktree facts for the tower's repo→branch tree (issue #5),
 // fetched from main (window.arc.git) and cached per cwd in `gitInfo`. Mirrors
 // GitInfo in src/main/git.ts (the renderer can't import from main).
@@ -20,7 +84,7 @@ export interface GitInfo {
 
 export interface Session {
   key: number
-  type: 'shell' | 'claude'
+  type: SessionType
   cwd: string
   // User label — shell sessions only. A Claude session's name IS its
   // conversation's, arriving via the terminal title (tower renames go
@@ -302,7 +366,7 @@ export function cleanTitle(title: string): string {
 // else. Claude starts at its prompt (idle); a shell is simply alive
 // (running).
 function createSession(init: {
-  type: 'shell' | 'claude'
+  type: SessionType
   cwd: string
   name?: string
   resumeId?: string | null
@@ -313,7 +377,7 @@ function createSession(init: {
     type: init.type,
     cwd: init.cwd,
     name: init.name ?? '',
-    status: init.type === 'claude' ? 'idle' : 'running',
+    status: isAgent(init.type) ? 'idle' : 'running',
     title: '',
     ptyId: null,
     claudeSessionId: null,
@@ -370,6 +434,22 @@ function setStatusFromHooks(session: Session, next: Session['status']): void {
   setStatus(session, next)
 }
 
+// Codex mints its own conversation id and we learn it from the rollout it
+// opens, so a codex row spawns with no id and gets one a moment later (main's
+// pty:session). Until then the row runs fine as a terminal but has no preview
+// and nothing to resume — which is why this arrives as an event rather than
+// being a precondition of anything.
+//
+// The name comes the same way and for the same reason: codex puts the working
+// DIRECTORY in the terminal title, not the conversation, so the tower would
+// otherwise show every codex row in a folder the same word.
+export function applyDiscoveredSession(key: number, sessionId: string, name: string | null): void {
+  const session = sessions.find((s) => s.key === key)
+  if (!session || session.type !== 'codex') return
+  session.claudeSessionId = sessionId
+  if (name) session.name = name
+}
+
 // The screen scan's verdict for one session (Terminal.svelte hands it over on a
 // debounce). Null never reaches here — the scanner drops "no opinion" so the dot
 // simply holds, which is how a TUI change degrades: a stale colour, not a wrong
@@ -377,7 +457,7 @@ function setStatusFromHooks(session: Session, next: Session['status']): void {
 export function applyScreen(key: number, state: ScreenState): void {
   if (ui.statusSource !== 'screen') return
   const session = sessions.find((s) => s.key === key)
-  if (!session || session.type !== 'claude' || session.status === 'exited') return
+  if (!session || !isAgent(session.type) || session.status === 'exited') return
   setStatus(session, state)
 }
 
@@ -403,7 +483,7 @@ export function sameDir(a: string, b: string): boolean {
 // auto-name) — Claude Code creates and enters the worktree; the agent poll
 // then re-points the session's cwd to it (applyAgents).
 export async function newSession(
-  type: 'shell' | 'claude',
+  type: SessionType,
   dir?: string,
   worktree?: string
 ): Promise<void> {
@@ -871,11 +951,15 @@ export async function restoreState(): Promise<void> {
     const restored = createSession({
       type: s.type,
       cwd: s.cwd,
-      // name is a shell-only label (enforced here against hand-edited
-      // state files — the title is a Claude session's source of truth).
-      name: s.type === 'shell' ? s.name : '',
-      // Claude sessions resume their conversation; shells reopen fresh.
-      resumeId: s.type === 'claude' ? s.claudeSessionId : null,
+      // A local label, for the session types whose title is not their name:
+      // shells, and codex (which titles the window with the directory). A
+      // Claude row's title IS its conversation name, so it keeps none.
+      // Enforced here against hand-edited state files.
+      name: s.type === 'claude' ? '' : s.name,
+      // Both agents resume their conversation; shells reopen fresh. Codex's
+      // id is a discovered one from the previous run, and `codex resume <id>`
+      // takes it exactly as `claude --resume` does.
+      resumeId: isAgent(s.type) ? s.claudeSessionId : null,
       // A parked never-prompted worktree spawn re-arms --worktree; adoption
       // cleared the flag for established sessions, so it never double-passes.
       worktree: (s.type === 'claude' && s.spawnWorktree) || undefined
@@ -972,7 +1056,7 @@ export function relaunchSession(key: number): void {
   const session = sessions.find((s) => s.key === key)
   // No conversation id, nothing to resume — the menu hides the item in that
   // window (it lasts from spawn until the PTY answers, milliseconds).
-  if (!session || session.type !== 'claude' || !session.claudeSessionId) return
+  if (!session || !isAgent(session.type) || !session.claudeSessionId) return
   // Nothing alive to wait for: a spawn that errored, or a process that already
   // died. The conversation is still on disk, so go straight to the swap.
   if (session.status === 'exited' || !session.ptyId) {
@@ -1005,7 +1089,7 @@ function swapInRelaunch(session: Session): void {
   const index = sessions.indexOf(session)
   if (index === -1) return
   const next = createSession({
-    type: 'claude',
+    type: session.type,
     cwd: session.cwd,
     resumeId: session.claudeSessionId,
     // Mirrors restoreState: a NAMED pending worktree re-arms --worktree (a
@@ -1051,7 +1135,11 @@ function injectColor(session: Session, name: string): void {
 export function renameSession(key: number, name: string): void {
   const session = sessions.find((s) => s.key === key)
   if (!session) return
-  if (session.type === 'shell') {
+  // Only an agent whose title IS its conversation name gets renamed by typing
+  // into the TUI, so tower and session stay in sync. Everything else — shells,
+  // and codex, whose title is the working directory — carries a plain local
+  // label, which is also the only kind of rename that can't fail.
+  if (!traitsOf(session.type)?.rename) {
     session.name = name
   } else if (injectCommand(session, `/rename ${name}`)) {
     session.title = name

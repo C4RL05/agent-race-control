@@ -24,6 +24,20 @@
       paths: ['M12 8V4H8', 'M2 14h2', 'M20 14h2', 'M15 13v2', 'M9 13v2'],
       rects: [{ x: 4, y: 8, w: 16, h: 12, r: 2 }]
     },
+    // Lucide `hexagon` (ISC, lucide-static 1.33.0) with a centred dot — the
+    // codex row's mark. Deliberately NOT a vendor logo: the tower's other two
+    // marks are generic shapes at the same optical weight, and a brand glyph
+    // among them would read as an advert rather than a row type. Same stroke
+    // as the bot so the icon column stays level.
+    hexagon: {
+      box: '0 0 24 24',
+      stroke: 2.25,
+      paths: [
+        'M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4.05a2 2 0 0 0-2 0l-7 4.05a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4.05a2 2 0 0 0 2 0l7-4.05a2 2 0 0 0 1-1.73Z',
+        'M12 10.5v3'
+      ],
+      rects: []
+    },
     // Phosphor `terminal-window`, BOLD weight (MIT, @phosphor-icons/core 2.1.1)
     // — bold to sit level with the bot, see the weight arithmetic above.
     'terminal-window': {
@@ -57,6 +71,9 @@
     towerTitle,
     glyphLead,
     duplicateSession,
+    traitsOf,
+    applyDiscoveredSession,
+    type SessionType,
     relaunchSession,
     finishRelaunch,
     applyScreen,
@@ -92,7 +109,7 @@
   // session: right-click a session row. worktrees: the repo card's reopen
   // menu — parked worktrees fetched on click, items carried in the menu.
   type Menu =
-    | { kind: 'spawn'; type: 'shell' | 'claude'; x: number; y: number }
+    | { kind: 'spawn'; type: SessionType; x: number; y: number }
     | { kind: 'color'; dir: string; x: number; y: number }
     | { kind: 'session'; key: number; x: number; y: number }
     | { kind: 'type-filter'; x: number; y: number }
@@ -369,9 +386,7 @@
   // included), so it says the same thing the Session tab's "Terminal title"
   // does. Only the rename prefill below still wants the name-shaped version.
   function displayName(session: (typeof sessions)[number]): string {
-    return (
-      session.name || towerTitle(session.title) || (session.type === 'claude' ? 'Claude' : 'Shell')
-    )
+    return session.name || towerTitle(session.title) || traitsOf(session.type)?.label || 'Shell'
   }
 
   // The tower tree (issue #5). groupCwds clusters dirOrder into repos (all their
@@ -630,6 +645,20 @@
         </button>
         <button
           class="icon-btn"
+          title="New Codex session"
+          aria-label="New Codex session"
+          onclick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            openMenu(
+              { kind: 'spawn', type: 'codex', x: rect.left, y: rect.bottom + 4 },
+              30 * recentDirs.length + 42
+            )
+          }}
+        >
+          {@render icon('hexagon')}
+        </button>
+        <button
+          class="icon-btn"
           title="New shell session"
           aria-label="New shell session"
           onclick={(e) => {
@@ -862,8 +891,9 @@
 
   <main class="pane">
     {#each sessions as session (session.key)}
+      {@const paneTraits = traitsOf(session.type)}
       <div class="host" style:display={ui.focused === session.key ? 'flex' : 'none'}>
-        {#if session.type === 'claude'}
+        {#if paneTraits}
           <div class="tabs" role="tablist">
             <button
               class="tab"
@@ -874,33 +904,39 @@
             >
               {@render icon('terminal-window')}Terminal
             </button>
-            <button
-              class="tab"
-              class:active={session.view === 'preview'}
-              role="tab"
-              aria-selected={session.view === 'preview'}
-              onclick={() => (session.view = 'preview')}
-            >
-              <span class="material-symbols-outlined">article</span>Preview
-            </button>
-            <button
-              class="tab"
-              class:active={session.view === 'info'}
-              role="tab"
-              aria-selected={session.view === 'info'}
-              onclick={() => (session.view = 'info')}
-            >
-              <span class="material-symbols-outlined">speed</span>Session
-            </button>
-            <button
-              class="tab"
-              class:active={session.view === 'notes'}
-              role="tab"
-              aria-selected={session.view === 'notes'}
-              onclick={() => (session.view = 'notes')}
-            >
-              <span class="material-symbols-outlined">edit_note</span>Notes
-            </button>
+            {#if paneTraits.preview}
+              <button
+                class="tab"
+                class:active={session.view === 'preview'}
+                role="tab"
+                aria-selected={session.view === 'preview'}
+                onclick={() => (session.view = 'preview')}
+              >
+                <span class="material-symbols-outlined">article</span>Preview
+              </button>
+            {/if}
+            {#if paneTraits.info}
+              <button
+                class="tab"
+                class:active={session.view === 'info'}
+                role="tab"
+                aria-selected={session.view === 'info'}
+                onclick={() => (session.view = 'info')}
+              >
+                <span class="material-symbols-outlined">speed</span>Session
+              </button>
+            {/if}
+            {#if paneTraits.notes}
+              <button
+                class="tab"
+                class:active={session.view === 'notes'}
+                role="tab"
+                aria-selected={session.view === 'notes'}
+                onclick={() => (session.view = 'notes')}
+              >
+                <span class="material-symbols-outlined">edit_note</span>Notes
+              </button>
+            {/if}
           </div>
         {/if}
         <!-- The terminal stays mounted while hidden — the PTY's lifetime is
@@ -936,8 +972,10 @@
               // session, so it must not paint the row exited on the way past.
               if (!finishRelaunch(session.key)) setStatus(session, 'exited')
             }}
-            scanning={ui.statusSource === 'screen' && session.type === 'claude'}
+            scanning={session.type === 'codex' ||
+              (ui.statusSource === 'screen' && session.type === 'claude')}
             onScreen={(state) => applyScreen(session.key, state)}
+            onSession={(sessionId, name) => applyDiscoveredSession(session.key, sessionId, name)}
             onInput={(data) => nudgeStatusFromKey(session.key, data)}
             onTitle={(title) => {
               session.title = title
@@ -948,7 +986,7 @@
              like Preview/Info: a textarea that unmounts loses its undo history
              and scroll, and there is nothing to disarm — the text lives in the
              store, not in a watcher. -->
-        {#if session.type === 'claude'}
+        {#if paneTraits?.notes}
           <div class="view" style:display={session.view === 'notes' ? 'block' : 'none'}>
             <Notes
               {session}
@@ -977,6 +1015,7 @@
               <Preview
                 sessionId={session.claudeSessionId}
                 cwd={session.cwd}
+                kind={session.type === 'codex' ? 'codex' : 'claude'}
                 proseFont={previewFont}
                 codeFont={monoFont}
               />
@@ -1066,9 +1105,9 @@
     </span>
   {/snippet}
 
-  <!-- The header hover cluster: new Claude / new shell / Show in Explorer, all
-       targeting one cwd. Shared by the plain-folder header and each git branch
-       subfolder (issue #5) — the leaf group always owns the spawn affordances. -->
+  <!-- The header hover cluster: new Claude / new Codex / new shell / Show in
+       Explorer, all targeting one cwd. Shared by the plain-folder header and each
+       git branch subfolder (issue #5) — the leaf group owns the affordances. -->
   {#snippet spawnButtons(dir: string)}
     <button
       class="spawn-btn"
@@ -1080,6 +1119,17 @@
       }}
     >
       {@render icon('bot')}
+    </button>
+    <button
+      class="spawn-btn"
+      title="New Codex session here"
+      aria-label="New Codex session here"
+      onclick={(e) => {
+        e.stopPropagation()
+        void newSession('codex', dir)
+      }}
+    >
+      {@render icon('hexagon')}
     </button>
     <button
       class="spawn-btn"
@@ -1155,9 +1205,9 @@
       {/if}
 
       {@render icon(
-        session.type === 'claude' ? 'bot' : 'terminal-window',
+        (traitsOf(session.type)?.icon ?? 'terminal-window') as keyof typeof ICONS,
         'type-icon',
-        session.type === 'claude' ? 'Claude session' : 'Shell session'
+        `${traitsOf(session.type)?.label ?? 'Shell'} session`
       )}
 
       {#if renaming === session.key}
@@ -1339,7 +1389,7 @@
           >
             <span class="material-symbols-outlined">edit</span>Rename
           </button>
-          {#if menuSession.type === 'claude'}
+          {#if traitsOf(menuSession.type)?.color}
             <button
               class="menu-item"
               onclick={() => {
@@ -1350,7 +1400,7 @@
               <span class="material-symbols-outlined">palette</span>Apply folder color
             </button>
           {/if}
-          {#if menuSession.type === 'claude' && menuSession.claudeSessionId}
+          {#if traitsOf(menuSession.type) && menuSession.claudeSessionId}
             <button
               class="menu-item"
               onclick={() => {
