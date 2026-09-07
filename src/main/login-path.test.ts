@@ -134,6 +134,15 @@ describe('expandWindowsVars', () => {
     expect(expandWindowsVars('%NOPE%\\bin', env)).toBe('%NOPE%\\bin')
   })
 
+  // `%` is legal in a Windows directory name. With a `[^%]+` name charset the
+  // stray one here pairs with the NEXT `%` and swallows the real reference,
+  // leaving %SystemRoot% literal in the PATH.
+  it('does not let a stray % swallow the reference after it', () => {
+    expect(expandWindowsVars('C:\\50%off;%SystemRoot%\\system32', env)).toBe(
+      'C:\\50%off;C:\\Windows\\system32'
+    )
+  })
+
   it('leaves a value with no references alone', () => {
     expect(expandWindowsVars('C:\\tools;D:\\bin', env)).toBe('C:\\tools;D:\\bin')
   })

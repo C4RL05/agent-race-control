@@ -112,8 +112,16 @@ export function parseRegPath(stdout: string): string | null {
 // in it resolves nothing. Unknown names are left exactly as they are rather
 // than blanked: a wrong-looking entry that nothing matches is harmless, while
 // turning %FOO%\bin into \bin would silently add the filesystem root to PATH.
+//
+// The name charset excludes `;`, `\` and `/` rather than being `[^%]+`, because
+// `%` is a legal character in a Windows directory name and a stray one
+// otherwise swallows the next real reference: with `[^%]+`,
+// `C:\50%off;%SystemRoot%\system32` matches `%off;%` as a name, leaving
+// `%SystemRoot%` literal and unexpanded. None of those three can appear in an
+// environment variable name that is usable here, so excluding them makes a
+// stray `%` stay stray instead of consuming its neighbour.
 export function expandWindowsVars(value: string, env: Record<string, string | undefined>): string {
-  return value.replace(/%([^%]+)%/g, (whole, name: string) => {
+  return value.replace(/%([^%;\\/]+)%/g, (whole, name: string) => {
     const found = Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())
     return found?.[1] ?? whole
   })
