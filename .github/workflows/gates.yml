@@ -1,0 +1,59 @@
+# The cheap gates, on both hosts.
+#
+# typecheck + test only: no display, no Electron binary, no agent CLI. That is
+# the whole of the affordable win, and it catches compile-level platform drift
+# on every PR — which is the class of thing that made this app Windows-only by
+# accident rather than by decision in a few places.
+#
+# `npm ci --ignore-scripts` is deliberate, not generic caution:
+#   - electron's postinstall downloads dist/, which neither gate needs. tsc
+#     compiles against node_modules/electron/electron.d.ts, which npm extracts
+#     whatever happens to scripts. Skipping it saves a ~100MB download per
+#     runner per run.
+#   - node-pty declares an install script, and this repo's rule is that it must
+#     never be rebuilt (CLAUDE.md: "no @electron/rebuild, ever" — the tarball
+#     cannot be gyp-rebuilt at all). Its prebuilds ship in the tarball, so plain
+#     extraction is all that is wanted.
+#
+# `fix-pty-perms` runs here so the script itself is exercised on both hosts,
+# and so a regression in it is caught before a release build ships blank
+# terminals. It is a no-op on Windows by construction.
+#
+# NOT here, and on purpose: any test that launches Electron. The one worth
+# adding later is a smoke test that boots the app and spawns a single PTY —
+# that single test would cover both of the failures that make this app useless
+# on a Mac (no shell found, and a spawn-helper without its execute bit). It
+# needs the Electron binary and a window server, so it is a separate job with
+# a different install, not a line in this one.
+
+name: gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is arm64, so it exercises node-pty's darwin-arm64
+        # prebuild and never darwin-x64. Add macos-13 if Intel Macs matter.
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - run: npm run fix-pty-perms
+
+      - run: npm run typecheck
+
+      - run: npm test
