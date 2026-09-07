@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { resolveShell } from './shell'
+import { askShell } from './shell'
 
 // Session status, QUERIED rather than inferred. `claude agents --json` is an
 // official command that prints every active session as a JSON array, each with
@@ -50,8 +50,8 @@ const POLL_MS = 1000
 // Windows path that execFile can spawn. On POSIX there is nothing to convert —
 // `command -v` already answers with a spawnable absolute path — and the call
 // would simply fail, caching `null` and leaving the poller silently off
-// forever (the failure path below is deliberately never fatal, which is what
-// would hide it).
+// forever (the failure below is deliberately never fatal, which is what would
+// hide it).
 //
 // Pure and platform-injected, so both forms are asserted on either host.
 export function whichClaudeCommand(platform: NodeJS.Platform): string {
@@ -64,40 +64,24 @@ let resolving: Promise<string | null> | null = null
 function resolveClaude(): Promise<string | null> {
   if (claudePath !== undefined) return Promise.resolve(claudePath)
   if (resolving) return resolving
-  resolving = new Promise<string | null>((done) => {
-    const shell = resolveShell()
-    if (!shell.ok) {
-      claudePath = null
-      done(null)
-      return
-    }
-    try {
-      // shell.shell.args rather than a literal ['--login'] — so this resolve
-      // asks the SAME shell, with the same rc files, that pty.ts spawns. That
-      // adds -i on Windows, which it did not have: an rc file sourced only for
-      // interactive shells (.bashrc) is exactly where a version manager puts
-      // `claude`, so the resolve could miss a binary the spawned session then
-      // found. Measured on Git Bash 2.x: `bash --login -i -c` exits 0 and
-      // prints the same path, with two job-control warnings on STDERR that this
-      // callback never reads.
-      execFile(
-        shell.shell.command,
-        [...shell.shell.args, '-c', whichClaudeCommand(process.platform)],
-        { encoding: 'utf8', timeout: 15000, windowsHide: true },
-        (error, stdout) => {
-          // claude not installed or not on the login PATH — polling stays off and
-          // the tower simply shows no status changes. Never fatal.
-          claudePath = !error && stdout.trim() ? stdout.trim() : null
-          done(claudePath)
-        }
-      )
-    } catch {
-      // spawn can fail SYNCHRONOUSLY — this path never reaches the callback
-      // above, so the callback's error handling cannot cover it. Deliberately
-      // NOT cached as `null`: a synchronous failure is transient (see tick),
-      // not "there is no claude on this machine".
-      done(null)
-    }
+  // askShell fences the answer, which this call cannot do without. An
+  // INTERACTIVE shell prints whatever its rc files print, ON STDOUT, and the
+  // line below takes stdout as the binary's path — so unfenced, one banner
+  // makes claudePath a string that is not a path, caches it, and leaves the
+  // poller silently dead for the whole session. Git for Windows is a concrete
+  // producer of exactly that: /etc/bash.bashrc's warning block prints to stdout
+  // when stdout is a pipe, and it is gated on the shell being interactive.
+  // shell.ts carries the measurement.
+  resolving = askShell(whichClaudeCommand(process.platform)).then((answer) => {
+    // The shell could not be started at all — transient (`spawn EBUSY` has been
+    // seen in the wild), so deliberately NOT cached: claudePath stays undefined
+    // and the memo below is dropped, so the next tick tries again.
+    if (!answer.answered) return null
+    // The shell ran. Whatever it said is the truth, including "nothing" —
+    // claude is not installed or not on the login PATH, polling stays off, and
+    // the tower simply shows no status changes. Never fatal.
+    claudePath = answer.value
+    return answer.value
   })
   // An attempt that finished without learning a path was that transient
   // failure, so drop the memo — otherwise every later call replays the same

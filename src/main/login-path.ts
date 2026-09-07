@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { delimiter } from 'node:path'
-import { resolveShell } from './shell'
+import { CAPTURE_TIMEOUT_MS, askShell } from './shell'
 
 // Give this process the PATH the user's environment would have given it.
 //
@@ -41,38 +41,11 @@ import { resolveShell } from './shell'
 // app then behaves exactly as it did before this file existed, which is the
 // right floor for something that runs before the window.
 
-/** Wraps the value so rc-file chatter cannot be mistaken for it. */
-export const PATH_START = '__ARC_PATH_START__'
-export const PATH_END = '__ARC_PATH_END__'
-
-// How long to wait. A bound on a pathological rc file, not the expected cost —
-// a normal capture measured 0.43–0.52s across five runs on a real zsh — but it
-// is spent before the window appears, so it is deliberately short rather than
-// generous. A shell slower than this loses its PATH and costs the user nothing
-// else.
-export const CAPTURE_TIMEOUT_MS = 2000
-
-// The one-liner the shell runs. Single quotes around the literals and double
-// quotes around $PATH, so a PATH entry containing a space or a quote comes back
-// intact. printf rather than echo, because echo's escape handling varies
-// between shells.
-export function loginPathCommand(): string {
-  return `printf '%s%s%s' '${PATH_START}' "$PATH" '${PATH_END}'`
-}
-
-// The fenced value, or null if it is not in there.
-//
-// Takes the LAST opening sentinel rather than the first: some interactive
-// setups echo the command line back, and that echo contains the sentinel with
-// $PATH unexpanded. The real value is always the last one written.
-export function parseLoginPath(stdout: string): string | null {
-  const start = stdout.lastIndexOf(PATH_START)
-  if (start === -1) return null
-  const from = start + PATH_START.length
-  const end = stdout.indexOf(PATH_END, from)
-  if (end === -1) return null
-  const value = stdout.slice(from, end).trim()
-  return value === '' ? null : value
+// The question, for askShell to fence and run. Double quotes around $PATH so an
+// entry containing a space comes back intact; printf rather than echo, because
+// echo's escape handling varies between shells.
+export function pathQuery(): string {
+  return 'printf \'%s\' "$PATH"'
 }
 
 // The captured PATH first, then anything this process already had that it did
@@ -165,10 +138,11 @@ function capture(file: string, args: string[]): Promise<string | null> {
   })
 }
 
-// Windows: re-read the persisted PATH and merge it in.
+// Windows: re-read the persisted PATH and append what this process is missing.
 //
 // `reg query` rather than PowerShell: two spawns of a few tens of milliseconds
 // against a shell that takes hundreds, and this runs before the window appears.
+//
 // Machine, then user, then whatever we already had — so it can only ever ADD an
 // entry.
 async function applyRegistryPath(): Promise<LoginPathOutcome> {
@@ -192,28 +166,26 @@ async function applyRegistryPath(): Promise<LoginPathOutcome> {
 
 // POSIX: ask the login shell what PATH it would have had.
 //
-// -l -i, not just -l. The obvious capture is a login shell and it is NOT
-// enough: an rc file sourced only for INTERACTIVE shells (.zshrc, .bashrc) is
-// where a version manager usually puts the agent CLI, and on the machine this
-// was measured on the CLI reached PATH through .zshrc alone, with no .zprofile
-// or .zshenv putting it there. A -l-only capture returns a PATH without the one
+// Captured entries go FIRST here, unlike the Windows branch, and the asymmetry
+// is deliberate: launchd's PATH is not a stale copy of the user's, it is four
+// system directories that were never the user's order at all. A version manager
+// shadowing a system binary has to keep shadowing it, so the shell's order
+// wins. Nothing is lost either way — mergePath is a union.
+//
+// -l -i, not just -l: an rc file sourced only for INTERACTIVE shells is where a
+// version manager usually puts the agent CLI, and on the machine this was
+// measured on it reached PATH through .zshrc alone, with no .zprofile or
+// .zshenv putting it there. A -l-only capture returns a PATH without the one
 // tool the bug is about, AND LOOKS LIKE IT WORKED.
 //
-// shell.ts picks WHICH shell — the same validated $SHELL the PTYs run, so a
-// fish or nu user's PATH is the one captured.
+// askShell owns the two traps that answer costs — rc-file chatter on stdout,
+// and a $SHELL that does not speak POSIX. See shell.ts.
 async function applyShellPath(): Promise<LoginPathOutcome> {
-  const shell = resolveShell()
-  if (!shell.ok) return { applied: false, reason: shell.message }
-
-  // Not shell.shell.args: those are the PTY's, which wants a session that stays
-  // open, where this wants an answer and a dead child.
-  const stdout = await capture(shell.shell.command, ['-l', '-i', '-c', loginPathCommand()])
-  if (stdout === null) {
-    return { applied: false, reason: `${shell.shell.command} could not be run` }
-  }
-  const resolved = parseLoginPath(stdout)
+  const answer = await askShell(pathQuery())
+  if (!answer.answered) return { applied: false, reason: answer.reason }
+  const resolved = answer.value
   if (resolved === null) {
-    return { applied: false, reason: `${shell.shell.command} printed no usable PATH` }
+    return { applied: false, reason: 'the login shell printed no usable PATH' }
   }
   const merged = mergePath(resolved, process.env['PATH'], delimiter)
   process.env['PATH'] = merged
