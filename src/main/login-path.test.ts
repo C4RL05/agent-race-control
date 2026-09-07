@@ -46,6 +46,22 @@ describe('mergePath', () => {
     expect(mergePath('/v/bin:/usr/bin', '/usr/bin:/v/bin', ':')).toBe('/v/bin:/usr/bin')
   })
 
+  // This is what makes the Windows branch safe: passing the inherited PATH
+  // first means every entry it already had keeps its position, so no bare
+  // command re-resolves. Reversing the arguments demotes the user's own
+  // override directory below the registry's copy of the system one — measured
+  // on a real 49-entry PATH, that changed which git.exe a bare `git` finds.
+  it('preserves the leading order of whichever list is passed first', () => {
+    const inherited = 'C:\\me\\bin;C:\\Windows'
+    const persisted = 'C:\\Windows;C:\\Windows\\System32;C:\\me\\bin'
+    expect(mergePath(inherited, persisted, ';')).toBe(
+      'C:\\me\\bin;C:\\Windows;C:\\Windows\\System32'
+    )
+    expect(mergePath(persisted, inherited, ';')).toBe(
+      'C:\\Windows;C:\\Windows\\System32;C:\\me\\bin'
+    )
+  })
+
   it('drops empty segments, which mean "the current directory" to some tools', () => {
     expect(mergePath('/usr/bin::/bin:', undefined, ':')).toBe('/usr/bin:/bin')
   })

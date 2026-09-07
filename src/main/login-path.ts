@@ -143,8 +143,20 @@ function capture(file: string, args: string[]): Promise<string | null> {
 // `reg query` rather than PowerShell: two spawns of a few tens of milliseconds
 // against a shell that takes hundreds, and this runs before the window appears.
 //
-// Machine, then user, then whatever we already had — so it can only ever ADD an
-// entry.
+// THE INHERITED PATH GOES FIRST, and that ordering is the whole safety of this
+// function rather than a detail. mergePath is a union either way, so no entry
+// is ever lost — but PATH ORDER IS RESOLUTION ORDER, and putting the registry
+// first silently re-resolves bare commands. Measured on a real 49-entry PATH:
+// registry-first moved every single entry, and changed which `git.exe` a bare
+// `git` finds (mingw64\bin -> cmd) — which is exactly what git.ts's
+// execFile('git', …) runs. It reaches the terminals too, because Git Bash
+// defaults MSYS2_PATH_TYPE to `inherit` and builds its PATH from this one, so
+// an activated venv, conda or fnm prefix the user deliberately prepended would
+// be demoted for every child of this app.
+//
+// Appending gives the same fix — a newly-installed CLI becomes resolvable —
+// with none of that: the stale block is a SUBSET of the persisted one, so what
+// is missing gets added and what was already there keeps its rank.
 async function applyRegistryPath(): Promise<LoginPathOutcome> {
   const read = async (key: string): Promise<string | null> => {
     const stdout = await capture('reg', ['query', key, '/v', 'Path'])
@@ -159,7 +171,7 @@ async function applyRegistryPath(): Promise<LoginPathOutcome> {
   }
 
   const persisted = [machine, user].filter((part): part is string => part !== null).join(delimiter)
-  const merged = mergePath(persisted, process.env['PATH'], delimiter)
+  const merged = mergePath(process.env['PATH'] ?? '', persisted, delimiter)
   process.env['PATH'] = merged
   return { applied: true, path: merged }
 }
