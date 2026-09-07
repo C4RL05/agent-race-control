@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { findGitBash } from './bash'
+import { resolveShell } from './shell'
 
 // Session status, QUERIED rather than inferred. `claude agents --json` is an
 // official command that prints every active session as a JSON array, each with
@@ -34,14 +34,30 @@ const POLL_MS = 1000
 
 // `claude` must not be PATH-resolved from Electron's environment — the app's
 // own PATH is not the user's login PATH (the same trap as bash.exe, see
-// bash.ts). Resolve the real binary ONCE through the Git Bash login shell that
+// bash.ts). Resolve the real binary ONCE through the same login shell that
 // spawned sessions use, then invoke that absolute path per tick: 273ms direct
-// vs 403ms through a login shell every time.
+// vs 403ms through a login shell every time. (A POSIX login shell measured
+// 0.43–0.52s across five runs, so the same argument holds there.)
 //
 // Async on purpose: the login shell costs ~400ms and this runs in the MAIN
 // process, where a sync spawn would stall the window (and it would land right
 // at startup). Resolution is attempted once; the result — including failure —
 // is cached, so a machine without claude pays for one lookup, not one per tick.
+
+// How to ask the shell where `claude` is, per host.
+//
+// `cygpath` is MSYS/Cygwin-only and exists to turn Git Bash's /c/… back into a
+// Windows path that execFile can spawn. On POSIX there is nothing to convert —
+// `command -v` already answers with a spawnable absolute path — and the call
+// would simply fail, caching `null` and leaving the poller silently off
+// forever (the failure path below is deliberately never fatal, which is what
+// would hide it).
+//
+// Pure and platform-injected, so both forms are asserted on either host.
+export function whichClaudeCommand(platform: NodeJS.Platform): string {
+  return platform === 'win32' ? 'cygpath -w "$(command -v claude)"' : 'command -v claude'
+}
+
 let claudePath: string | null | undefined
 let resolving: Promise<string | null> | null = null
 
@@ -49,16 +65,24 @@ function resolveClaude(): Promise<string | null> {
   if (claudePath !== undefined) return Promise.resolve(claudePath)
   if (resolving) return resolving
   resolving = new Promise<string | null>((done) => {
-    const bash = findGitBash()
-    if (!bash) {
+    const shell = resolveShell()
+    if (!shell.ok) {
       claudePath = null
       done(null)
       return
     }
     try {
+      // shell.shell.args rather than a literal ['--login'] — so this resolve
+      // asks the SAME shell, with the same rc files, that pty.ts spawns. That
+      // adds -i on Windows, which it did not have: an rc file sourced only for
+      // interactive shells (.bashrc) is exactly where a version manager puts
+      // `claude`, so the resolve could miss a binary the spawned session then
+      // found. Measured on Git Bash 2.x: `bash --login -i -c` exits 0 and
+      // prints the same path, with two job-control warnings on STDERR that this
+      // callback never reads.
       execFile(
-        bash,
-        ['--login', '-c', 'cygpath -w "$(command -v claude)"'],
+        shell.shell.command,
+        [...shell.shell.args, '-c', whichClaudeCommand(process.platform)],
         { encoding: 'utf8', timeout: 15000, windowsHide: true },
         (error, stdout) => {
           // claude not installed or not on the login PATH — polling stays off and
