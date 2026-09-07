@@ -23,23 +23,35 @@
 // file mode it finds in node_modules, so the chmod has to happen BEFORE
 // packaging or the .app ships with blank terminals for every user.
 //
-// Windows is a no-op by construction — the win32 prebuild spawns through
-// ConPTY and has no helper — so this is safe to leave in the shared script
-// chain.
+// WINDOWS EXITS EARLY, and that is not the same as "there is nothing there".
+// node-pty ships EVERY prebuild directory in one tarball on every host —
+// verified on a Windows install, where prebuilds/ holds darwin-arm64,
+// darwin-x64, win32-arm64 and win32-x64, and the darwin ones do carry
+// spawn-helper without its bit. Left to run, this would chmod two files Windows
+// never spawns, report "fixed 2 helpers", and make its own "nothing to do"
+// signal — the one that says node-pty has been bumped and the script can be
+// deleted — unreachable on the host most likely to run it. Windows chmod only
+// toggles the read-only attribute anyway; it cannot write a POSIX mode.
 
 import { chmodSync, existsSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+if (process.platform === 'win32') {
+  console.log('win32: the ConPTY prebuild has no spawn-helper. Nothing to do.')
+  process.exit(0)
+}
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PREBUILDS = join(HERE, '..', 'node_modules', 'node-pty', 'prebuilds')
 
-/** Only the POSIX prebuilds have a helper; the win32 ones spawn through ConPTY. */
+// The POSIX prebuilds that carry a helper. node-pty 1.1.0 ships no linux
+// directory at all, so those two are listed against a future release rather
+// than as something expected on disk — which is why an absent target is silent.
 const TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64']
 
 // A missing prebuilds dir means node-pty is not installed at all, which is the
-// one condition worth failing on. An individual target being absent is normal
-// and expected — npm installs this platform's prebuild and no other.
+// one condition worth failing on.
 if (!existsSync(PREBUILDS)) {
   console.error('No node-pty prebuilds found. Run `npm install` first.')
   process.exit(1)
