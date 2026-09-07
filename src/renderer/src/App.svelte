@@ -17,36 +17,51 @@
   // adjustable side is the stroke. Changing EITHER number alone unbalances the
   // pair; they are two halves of one measurement.
   const ICONS = {
-    // Lucide `bot` (ISC, lucide-static 1.33.0).
-    bot: {
+    // The Claude Code product mark, monochrome variant (thesvg.org, from
+    // glincker/thesvg `icons/claude-code/mono.svg`). A filled glyph, so it
+    // takes `evenodd` — the two notches are subpaths punched out of the body,
+    // and under the default nonzero rule they fill in and the mark goes solid.
+    // Replaces the generic Lucide `bot` that stood in before.
+    claude: {
       box: '0 0 24 24',
-      stroke: 2.25,
-      paths: ['M12 8V4H8', 'M2 14h2', 'M20 14h2', 'M15 13v2', 'M9 13v2'],
-      rects: [{ x: 4, y: 8, w: 16, h: 12, r: 2 }]
-    },
-    // Lucide `hexagon` (ISC, lucide-static 1.33.0) with a centred dot — the
-    // codex row's mark. Deliberately NOT a vendor logo: the tower's other two
-    // marks are generic shapes at the same optical weight, and a brand glyph
-    // among them would read as an advert rather than a row type. Same stroke
-    // as the bot so the icon column stays level.
-    hexagon: {
-      box: '0 0 24 24',
-      stroke: 2.25,
+      stroke: 0,
+      evenodd: true,
       paths: [
-        'M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4.05a2 2 0 0 0-2 0l-7 4.05a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4.05a2 2 0 0 0 2 0l7-4.05a2 2 0 0 0 1-1.73Z',
-        'M12 10.5v3'
-      ],
-      rects: []
+        'M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z'
+      ]
     },
-    // Phosphor `terminal-window`, BOLD weight (MIT, @phosphor-icons/core 2.1.1)
-    // — bold to sit level with the bot, see the weight arithmetic above.
+    // The OpenAI 2025 symbol (Wikimedia Commons, `OpenAI_logo_2025_(symbol).svg`)
+    // — the codex row's mark, the counterpart to the Claude mark above. A
+    // filled glyph like it, and like it a product mark used to name a row type.
+    //
+    // The source crops tight: the glyph fills its viewBox edge to edge, where
+    // the Claude mark occupies 62% of its box's height and the terminal 81% of
+    // its width. At a shared em size that made this one dominate the icon
+    // column. Padded to ~85% by growing the viewBox around the glyph's centre
+    // (10.005, 10.0) rather than by touching the path — the drawing is the
+    // vendor's and stays byte-for-byte. The figure is tuned by eye against the
+    // other two, not derived: it sits just above the terminal's 81%, which is
+    // where it stopped looking undersized beside the Claude mark.
+    openai: {
+      box: '0.211 0.294 19.588 19.412',
+      stroke: 0,
+      evenodd: false,
+      paths: [
+        'M11.248 18.25q-.825 0-1.568-.314a4.3 4.3 0 0 1-1.32-.874 4 4 0 0 1-1.304.214 4 4 0 0 1-2.046-.544 4.27 4.27 0 0 1-1.518-1.485 4 4 0 0 1-.56-2.095q0-.48.131-1.04A4.4 4.4 0 0 1 2.04 10.71a4.07 4.07 0 0 1 .017-3.4 4.2 4.2 0 0 1 1.056-1.418 3.8 3.8 0 0 1 1.6-.842 3.9 3.9 0 0 1 .76-1.683q.593-.759 1.451-1.188a4.04 4.04 0 0 1 1.832-.429q.825 0 1.567.313.742.314 1.32.875a4 4 0 0 1 1.304-.215q1.106 0 2.046.545a4.14 4.14 0 0 1 1.501 1.485q.578.941.578 2.095 0 .48-.132 1.04.66.61 1.023 1.419.363.792.363 1.666 0 .892-.38 1.717a4.3 4.3 0 0 1-1.072 1.435 3.8 3.8 0 0 1-1.584.825 3.8 3.8 0 0 1-.775 1.683 4.06 4.06 0 0 1-1.436 1.188 4.04 4.04 0 0 1-1.832.429m-4.076-2.062q.825 0 1.435-.347l3.103-1.782a.36.36 0 0 0 .164-.313v-1.42L7.881 14.62a.67.67 0 0 1-.726 0l-3.118-1.798a.5.5 0 0 1-.017.115v.198q0 .841.396 1.551.413.693 1.139 1.089a3.2 3.2 0 0 0 1.617.412m.165-2.69a.4.4 0 0 0 .181.05q.083 0 .165-.05l1.238-.71-3.977-2.31a.7.7 0 0 1-.363-.643v-3.58q-.825.362-1.32 1.122a2.9 2.9 0 0 0-.495 1.65q0 .809.413 1.55.412.743 1.072 1.123zm3.91 3.663q.875 0 1.585-.396a2.96 2.96 0 0 0 1.534-2.64v-3.564a.32.32 0 0 0-.165-.297l-1.254-.726v4.604a.7.7 0 0 1-.363.643l-3.119 1.799a3 3 0 0 0 1.783.577m.627-6.039V8.878L10.01 7.822 8.129 8.878v2.244l1.881 1.056zM7.057 5.859a.7.7 0 0 1 .363-.644l3.119-1.798a3 3 0 0 0-1.782-.578q-.874 0-1.584.396A2.96 2.96 0 0 0 6.05 4.324a3.07 3.07 0 0 0-.396 1.551v3.547q0 .199.165.314l1.237.726zm8.383 7.887q.825-.364 1.303-1.123.495-.758.495-1.65a3.15 3.15 0 0 0-.412-1.55q-.413-.743-1.073-1.123l-3.086-1.782q-.099-.065-.181-.049a.3.3 0 0 0-.165.05l-1.238.692 3.993 2.327a.6.6 0 0 1 .264.264.64.64 0 0 1 .1.363zm-3.317-8.382a.63.63 0 0 1 .726 0l3.135 1.831v-.297q0-.792-.396-1.501a2.86 2.86 0 0 0-1.105-1.155q-.71-.43-1.65-.43-.825 0-1.436.347L8.294 5.941a.36.36 0 0 0-.165.314v1.418z'
+      ]
+    },
+    // Phosphor `terminal-window`, REGULAR weight (MIT, @phosphor-icons/core
+    // 2.1.1). It was bold to sit level with the old outlined `bot`; the two
+    // agent marks either side of it are now solid product glyphs, so the
+    // shell no longer has to shout to keep up — regular is the family's own
+    // default and reads level against them.
     'terminal-window': {
       box: '0 0 256 256',
       stroke: 0,
+      evenodd: false,
       paths: [
-        'M72.5,150.63,100.79,128,72.5,105.37a12,12,0,1,1,15-18.74l40,32a12,12,0,0,1,0,18.74l-40,32a12,12,0,0,1-15-18.74ZM144,172h32a12,12,0,0,0,0-24H144a12,12,0,0,0,0,24ZM236,56V200a20,20,0,0,1-20,20H40a20,20,0,0,1-20-20V56A20,20,0,0,1,40,36H216A20,20,0,0,1,236,56Zm-24,4H44V196H212Z'
-      ],
-      rects: []
+        'M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z'
+      ]
     }
   }
 
@@ -592,6 +607,8 @@
     class="svg-icon {cls}"
     viewBox={i.box}
     fill={i.stroke ? 'none' : 'currentColor'}
+    fill-rule={i.evenodd ? 'evenodd' : null}
+    clip-rule={i.evenodd ? 'evenodd' : null}
     stroke={i.stroke ? 'currentColor' : null}
     stroke-width={i.stroke || null}
     stroke-linecap="round"
@@ -600,9 +617,6 @@
     aria-label={label ? label : undefined}
   >
     {#if label}<title>{label}</title>{/if}
-    {#each i.rects as r (r.x)}
-      <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.r} />
-    {/each}
     {#each i.paths as d (d)}
       <path {d} />
     {/each}
@@ -641,7 +655,7 @@
             )
           }}
         >
-          {@render icon('bot')}
+          {@render icon('claude')}
         </button>
         <button
           class="icon-btn"
@@ -655,7 +669,7 @@
             )
           }}
         >
-          {@render icon('hexagon')}
+          {@render icon('openai')}
         </button>
         <button
           class="icon-btn"
@@ -700,7 +714,7 @@
           }}
         >
           {#if filterClaude}
-            {@render icon('bot')}
+            {@render icon('claude')}
           {:else if filterShell}
             {@render icon('terminal-window')}
           {:else}
@@ -1118,7 +1132,7 @@
         void newSession('claude', dir)
       }}
     >
-      {@render icon('bot')}
+      {@render icon('claude')}
     </button>
     <button
       class="spawn-btn"
@@ -1129,7 +1143,7 @@
         void newSession('codex', dir)
       }}
     >
-      {@render icon('hexagon')}
+      {@render icon('openai')}
     </button>
     <button
       class="spawn-btn"
@@ -1325,7 +1339,7 @@
             menu = null
           }}
         >
-          {@render icon('bot')}Claude sessions
+          {@render icon('claude')}Claude sessions
         </button>
         <button
           class="menu-item"

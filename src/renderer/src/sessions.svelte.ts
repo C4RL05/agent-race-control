@@ -32,7 +32,7 @@ export interface AgentTraits {
 export const AGENTS: Record<AgentKind, AgentTraits> = {
   claude: {
     label: 'Claude',
-    icon: 'bot',
+    icon: 'claude',
     worktree: true,
     rename: true,
     color: true,
@@ -43,7 +43,7 @@ export const AGENTS: Record<AgentKind, AgentTraits> = {
   },
   codex: {
     label: 'Codex',
-    icon: 'hexagon',
+    icon: 'openai',
     worktree: false,
     rename: false,
     color: false,
