@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys, hasClaudeSessions } from './pty'
+import { applyLoginPath } from './login-path'
 import { startAgentPolling, stopAgentPolling } from './agents'
 import { startStatusServer } from './status'
 import { registerTranscriptHandlers, disposeAllTails } from './transcript'
@@ -192,6 +193,19 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
+    // FIRST, and awaited: repair this process's PATH before anything can spawn.
+    // A Finder-launched macOS app has launchd's PATH and a Windows app can have
+    // a stale environment block — login-path.ts carries both measurements. One
+    // repair here covers every later caller (git.ts, and the absolute `claude`
+    // agents.ts resolves), and it can only ever add entries, so a failure costs
+    // nothing.
+    const path = await applyLoginPath()
+    console.log(
+      path.applied
+        ? `[arc] PATH repaired: ${path.path}`
+        : `[arc] PATH left as inherited: ${path.reason}`
+    )
+
     // Two channels, deliberately unequal (see the kickoff doc): hooks carry the
     // TURN boundaries — instant and precise — while the poll is only a floor,
     // because `claude agents --json` reports `busy` for a finished turn that
