@@ -231,15 +231,23 @@ export function toggleArchive(groupKey: string): void {
 // glanced at, a transcript is read, the terminal is worked in — and one
 // window-wide size can only ever be a compromise between them.
 //
-// Levels, not factors: the same integer steps of ±20% the window zoom uses
-// (main/index.ts), over the same clamp, so a pane at level 1 is exactly the
-// size Ctrl+= would have made the whole window. That is also why Ctrl+=/−/0
-// RESETS every pane to 0 (see resetPaneZoom, driven by main): those keys mean
-// "size the app", and the panes going back into lockstep under them is what
-// makes the window zoom still legible as a single control. Persisted.
+// Steps, not factors, and a step is HALF a window-zoom level: the window's own
+// ±20% (main/index.ts) is the right size for a keypress and too coarse for a
+// wheel, where one notch of it overshoots what you were aiming at. Halving it
+// gives ~9.5% a notch — perceptible, but small enough to land on. The halves
+// are deliberate rather than some independent percentage: two notches are
+// exactly one window-zoom level, so every even step still lands precisely on a
+// size Ctrl+= could have produced, and the clamp is doubled to keep the
+// reachable extent identical to the window's.
+//
+// That shared scale is also why Ctrl+=/−/0 RESETS every pane to 0 (see
+// resetPaneZoom, driven by main): those keys mean "size the app", and the
+// panes going back into lockstep under them is what makes the window zoom
+// still legible as a single control. Persisted.
 export type ZoomPane = 'tower' | 'terminal' | 'preview' | 'info' | 'notes'
-const ZOOM_MIN = -3
-const ZOOM_MAX = 4
+const ZOOM_STEPS_PER_LEVEL = 2
+const ZOOM_MIN = -3 * ZOOM_STEPS_PER_LEVEL
+const ZOOM_MAX = 4 * ZOOM_STEPS_PER_LEVEL
 
 export const paneZoom = $state<Record<ZoomPane, number>>({
   tower: 0,
@@ -262,7 +270,7 @@ export function resetPaneZoom(): void {
 // to reflow the grid and resize the PTY, exactly as it does in Windows
 // Terminal — a scaled canvas would just be a bigger picture of the old grid.
 export function zoomFactor(pane: ZoomPane): number {
-  return 1.2 ** paneZoom[pane]
+  return 1.2 ** (paneZoom[pane] / ZOOM_STEPS_PER_LEVEL)
 }
 
 // Per-cwd branch/worktree info (issue #5), populated async from main. Absent =

@@ -31,9 +31,10 @@ interface PersistedState {
   // `collapsed` above, because an archive folds by default (see the store).
   // Additive/optional; a stale key is harmless.
   expandedArchives?: string[]
-  // Per-pane text zoom LEVELS (see the store's paneZoom) — the same ±20% steps
-  // as the window zoom. Additive/optional and written only for panes the user
-  // moved off 0; an unknown key is ignored on restore.
+  // Per-pane text zoom STEPS (see the store's paneZoom), each a half of a
+  // window-zoom level. Additive/optional and written only for panes the user
+  // moved off 0; an unknown key is ignored on restore, and the value is
+  // clamped there rather than trusted.
   paneZoom?: Record<string, number>
   recentDirs?: string[]
   sessions: Array<{

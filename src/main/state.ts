@@ -33,8 +33,8 @@ export interface AppState {
   previewFont?: string
   towerWidth?: number
   // Window zoom level (Ctrl+=/−/0), owned by main. The renderer's per-pane
-  // levels ride alongside it under `paneZoom` and are its offsets, reset to 0
-  // whenever one of those keys fires.
+  // offsets ride alongside it under `paneZoom`, in HALF levels, and are reset
+  // to 0 whenever one of those keys fires.
   zoomLevel?: number
   paneZoom?: Record<string, number>
   focusedIndex: number
