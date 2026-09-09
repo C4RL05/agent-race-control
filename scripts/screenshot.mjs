@@ -243,20 +243,38 @@ async function terminalText() {
   })
 }
 
+// The workspace-trust dialog, answered as a user would — but NOT with a bare
+// Enter. It is a vertical two-option list whose selector starts on the REFUSAL:
+//     ❯ No, exit
+//       Yes, I trust this folder
+//     Enter to confirm · Esc to cancel
+// (captured verbatim as BLOCKED_TRUST in src/renderer/src/screens.fixtures.ts).
+// So Enter answered "no" and claude exited with code 1 — which is how this
+// harness quietly stopped being able to regenerate ANY doc image, surfacing
+// 120s later as the unrelated-looking "claude never reached its prompt".
+// Escape is no better: it cancels, which also exits.
+//
+// Move the selector off the refusal first, and decide that from the SCREEN
+// rather than from an assumed position — if a later build reorders the options
+// or preselects the trusting one, the chevron test stops firing and the bare
+// Enter is correct again.
+async function answerTrustDialog() {
+  if (/❯ *No, exit/.test(await terminalText())) await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(1500)
+}
+
 // A claude row is ready when its composer chevron (❯) is on screen. The
 // bottom-bar hint text is NOT a marker — it varies by version and mode
 // ("? for shortcuts", "⏵⏵ auto mode on…"; verified empirically on v2.1.207).
 // A first run in a not-yet-trusted staging dir shows the trust dialog first,
-// whose option selector is also a chevron — so that check wins: Enter takes
-// the default ("Yes, proceed"), exactly what a user would type; at an idle
-// prompt the same Enter is a no-op.
+// whose option selector is also a chevron — so that check wins.
 async function waitForClaudePrompt(timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const text = await terminalText()
     if (/trust this folder|trust the files|safety check/i.test(text)) {
-      await page.keyboard.press('Enter')
-      await page.waitForTimeout(1500)
+      await answerTrustDialog()
     } else if (text.includes('❯')) {
       return
     }
