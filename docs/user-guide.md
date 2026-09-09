@@ -33,6 +33,8 @@ Status comes from Claude Code itself (its hook events, received over localhost �
 
 **Click a dot to flag it TODO** — a "come back to this one" marker. It's purely cosmetic and clears itself the next time the session's real status changes color.
 
+The dot carries one other overlay: an **archived** row draws it as a ring instead of a disc, same color, hollow (see [The archive](#the-archive)).
+
 ### Cards
 
 Sessions group into cards by where they run:
@@ -73,7 +75,23 @@ Double-click a row's name to rename it.
   <img alt="Right-clicking a session row" src="../images/arc-session-menu-light.png">
 </picture>
 
-Right-click a row: **Show in Explorer**, **Copy path**, **Duplicate session** (same type, same directory, fresh process — Windows Terminal's "duplicate tab"), **Rename**, **Apply folder color** (types `/color <name>` so Claude's agent view matches the tower stripe), **Close session**.
+Right-click a row:
+
+- **Show in Explorer** / **Copy path** — the directory the session runs in.
+- **Duplicate session** — same type, same directory, fresh process. Windows Terminal's "duplicate tab".
+- **Rename** — the same rename double-clicking the name does.
+- **Apply folder color** — types `/color <name>` so Claude's agent view matches the tower stripe.
+- **Relaunch session** — ends this session's process and brings the *same conversation* straight back up in a fresh one. For when the CLI has updated under you, or the TUI is wedged. The row keeps its place, its name, its TODO flag and its notes; only the process underneath is new. Agent rows only — a shell has no conversation to resume, and restarting one is a close and a new row.
+- **Archive session** — files the row into its card's archive, below. The session carries on running.
+- **Close session** — kills the process and removes the row.
+
+### The archive
+
+Archiving is the middle ground between leaving a session in your way and closing it. The row drops into a foldable list at the bottom of its card and everything else carries on: it keeps running, keeps its status, its TODO flag, its notes and its tabs, and clicking it still focuses its terminal. Nothing about the session itself changes — the CLI can't tell it has been archived.
+
+A card holding archived rows grows a hairline separator carrying the count. Click it to unfold, click again to fold — the same gesture a card's name uses, and it starts **folded**, because getting a row out of the way is the whole point. Archived dots keep their color but are drawn as a **ring** rather than a disc, so a glance still tells you what the session is doing.
+
+Two things archiving deliberately does *not* do. A collapsed card's roll-up dot still counts archived sessions, so filing one away can never hide that it's blocked on a permission prompt. And a filter that matches an archived row opens the archive to show it, whatever its fold state — a search that can't find a session you know exists would be a bug, not decluttering.
 
 ### Closing and resuming
 
@@ -167,6 +185,7 @@ The app deliberately adds *no* muscle memory on top of Windows Terminal, and sha
 | Right-click a row | context menu |
 | Click a status dot | toggle its TODO flag |
 | Click a card name | collapse / expand the card |
+| Click an archive separator | fold / unfold that card's archive |
 
 ## State
 
