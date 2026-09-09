@@ -103,6 +103,9 @@
     moveSession,
     setStatus,
     toggleTodo,
+    toggleArchived,
+    expandedArchives,
+    toggleArchive,
     gitInfo,
     groupCwds,
     refreshAllGitInfo,
@@ -433,6 +436,11 @@
     if ((b.ahead || b.behind) && b.base) bits.push(`vs ${b.base}`)
     return bits.length ? `${b.cwd}\n${bits.join(' · ')}` : b.cwd
   }
+  // `archived`/`archivedVisible` are the same pair as `sessions`/`visible`, for
+  // the card's archive section: every archived row in the group (a repo's span
+  // ALL its branches — the archive belongs to the card, not to a branch) and
+  // the subset the filter leaves. Archived rows are excluded from the branch
+  // and plain lists above, so a row appears in exactly one place.
   type GroupView =
     | {
         kind: 'plain'
@@ -441,27 +449,40 @@
         repCwd: string
         sessions: Session[]
         visible: Session[]
+        archived: Session[]
+        archivedVisible: Session[]
       }
-    | { kind: 'repo'; key: string; repoName: string; repCwd: string; branches: BranchView[] }
+    | {
+        kind: 'repo'
+        key: string
+        repoName: string
+        repCwd: string
+        branches: BranchView[]
+        archived: Session[]
+        archivedVisible: Session[]
+      }
 
   const tower = $derived.by<GroupView[]>(() =>
     groupCwds(dirOrder, gitInfo).map((group): GroupView => {
       if (group.kind === 'plain') {
-        const inDir = sessions.filter((s) => s.cwd === group.cwd)
+        const inDir = sessions.filter((s) => s.cwd === group.cwd && !s.archived)
+        const archived = sessions.filter((s) => s.cwd === group.cwd && s.archived)
         return {
           kind: 'plain',
           key: group.key,
           cwd: group.cwd,
           repCwd: group.cwd,
           sessions: inDir,
-          visible: inDir.filter(sessionMatches)
+          visible: inDir.filter(sessionMatches),
+          archived,
+          archivedVisible: archived.filter(sessionMatches)
         }
       }
       const branches: BranchView[] = group.cwds.map((cwd) => {
         const info = gitInfo[cwd]
         // Pending worktree spawns are pulled out of their spawn cwd's row —
         // they render on a synthetic destination row below instead.
-        const inDir = sessions.filter((s) => s.cwd === cwd && !s.spawnWorktree)
+        const inDir = sessions.filter((s) => s.cwd === cwd && !s.spawnWorktree && !s.archived)
         return {
           cwd,
           branch: info?.branch ?? '',
@@ -483,7 +504,7 @@
       // ('' — name unknown until Claude picks it) stay on their spawn row.
       const parked = new Map<string, Session[]>()
       for (const s of sessions) {
-        if (s.spawnWorktree && group.cwds.includes(s.cwd)) {
+        if (s.spawnWorktree && !s.archived && group.cwds.includes(s.cwd)) {
           parked.set(s.spawnWorktree, [...(parked.get(s.spawnWorktree) ?? []), s])
         }
       }
@@ -502,12 +523,15 @@
           visible: inWt.filter(sessionMatches)
         })
       }
+      const archived = sessions.filter((s) => group.cwds.includes(s.cwd) && s.archived)
       return {
         kind: 'repo',
         key: group.key,
         repoName: group.repoName,
         repCwd: group.cwds[0] ?? group.key,
-        branches
+        branches,
+        archived,
+        archivedVisible: archived.filter(sessionMatches)
       }
     })
   )
@@ -518,8 +542,14 @@
   // any other running (a live shell) › idle (your turn) › exited. Carries the
   // winning session's type so a lone running shell reads neutral (`plain`),
   // never red — the same per-type colours the rows use. null = no sessions.
+  //
+  // ARCHIVED ROWS COUNT HERE, deliberately. Excluding them is the tempting read
+  // of "out of the way", but it would turn a visual feature into a behavioural
+  // one: a folded card would stop telling you an archived session is blocked on
+  // a permission dialog. Archiving hides a row; it does not silence it.
   function rollupDot(group: GroupView): { status: Session['status']; plain: boolean } | null {
-    const all = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
+    const live = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
+    const all = [...live, ...group.archived]
     const pick =
       all.find((s) => s.status === 'waiting') ??
       all.find((s) => s.status === 'running' && s.type === 'claude') ??
@@ -736,7 +766,11 @@
     <div class="tower-body" data-dragging={dragging?.kind}>
       {#each tower as group (group.key)}
         {#if group.kind === 'plain'}
-          {#if group.sessions.length > 0 && (!filterActive || group.visible.length > 0)}
+          <!-- The card survives on its archive alone: a folder whose every
+               session is archived keeps its header (and its spawn buttons)
+               rather than vanishing from the tower. -->
+          {@const showArchive = group.archivedVisible.length > 0}
+          {#if (group.sessions.length > 0 && (!filterActive || group.visible.length > 0)) || showArchive}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
@@ -769,6 +803,7 @@
                 {#each group.visible as session (session.key)}
                   {@render sessionRow(session)}
                 {/each}
+                {#if showArchive}{@render archiveSection(group)}{/if}
               {/if}
             </div>
           {/if}
@@ -776,7 +811,8 @@
           {@const branches = group.branches.filter(
             (b) => b.sessions.length > 0 && (!filterActive || b.visible.length > 0)
           )}
-          {#if branches.length > 0}
+          {@const showArchive = group.archivedVisible.length > 0}
+          {#if branches.length > 0 || showArchive}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
@@ -879,6 +915,7 @@
                     {@render sessionRow(session)}
                   {/each}
                 {/each}
+                {#if showArchive}{@render archiveSection(group)}{/if}
               {/if}
             </div>
           {/if}
@@ -1169,6 +1206,39 @@
     </button>
   {/snippet}
 
+  <!-- The card's archive: rows pushed out of the way, which keep running all
+       the same. The separator IS the fold toggle, the same job the card's name
+       does for the card — and it folds by DEFAULT (expandedArchives stores the
+       open ones), because a section that opened itself on the first archive
+       would undo the feature. An active filter with a match down here opens it
+       regardless of that state, and without writing to it: a search that can't
+       find a session you know exists is a bug, not decluttering. -->
+  {#snippet archiveSection(group: GroupView)}
+    {@const rows = group.archivedVisible}
+    {@const open = !!expandedArchives[group.key] || filterActive}
+    <div
+      class="archive-sep"
+      role="button"
+      tabindex="0"
+      aria-expanded={open}
+      title={open ? 'Fold archived sessions' : 'Unfold archived sessions'}
+      onclick={() => toggleArchive(group.key)}
+      onkeydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          toggleArchive(group.key)
+        }
+      }}
+    >
+      <span class="archive-count">{rows.length} archived</span>
+    </div>
+    {#if open}
+      {#each rows as session (session.key)}
+        {@render sessionRow(session)}
+      {/each}
+    {/if}
+  {/snippet}
+
   <!-- One session row — same 12-column grid placement in every card (dot col 2,
        type icon col 3, name col 4+), so plain and repo cards share it. -->
   {#snippet sessionRow(session: Session)}
@@ -1199,7 +1269,7 @@
       onclick={() => focusSession(session.key)}
       oncontextmenu={(e) => {
         e.preventDefault()
-        openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 250)
+        openMenu({ kind: 'session', key: session.key, x: e.clientX, y: e.clientY }, 280)
       }}
       onkeydown={(e) => e.key === 'Enter' && focusSession(session.key)}
     >
@@ -1208,6 +1278,7 @@
           class="dot {session.status}"
           class:plain={session.type === 'shell'}
           class:todo={session.todo}
+          class:archived={session.archived}
           title={session.todo ? 'TODO — click to clear' : `${session.status} — click to flag`}
           aria-label={session.todo ? 'Clear TODO flag' : 'Flag TODO'}
           aria-pressed={session.todo}
@@ -1425,6 +1496,19 @@
               <span class="material-symbols-outlined">restart_alt</span>Relaunch session
             </button>
           {/if}
+          <button
+            class="menu-item"
+            onclick={() => {
+              toggleArchived(menuSession.key)
+              menu = null
+            }}
+          >
+            {#if menuSession.archived}
+              <span class="material-symbols-outlined">unarchive</span>Unarchive session
+            {:else}
+              <span class="material-symbols-outlined">archive</span>Archive session
+            {/if}
+          </button>
           <button
             class="menu-item"
             onclick={() => {
@@ -1875,6 +1959,47 @@
     background: var(--bg);
   }
 
+  /* The card's archive divider: a hairline carrying a muted count, and the fold
+     toggle for the rows under it. Not a grid child — it separates rows rather
+     than being one, so it spans the card's whole width and ignores the shared
+     track template. The lead rule is short and the trailing one takes the
+     remaining width, so the count reads as sitting ON the line. */
+  .archive-sep {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 1px;
+    padding: 2px 0;
+    color: var(--fg-muted);
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .archive-sep::before,
+  .archive-sep::after {
+    content: '';
+    height: 1px;
+    background: var(--border);
+  }
+
+  .archive-sep::before {
+    width: 12px;
+    flex: none;
+  }
+
+  .archive-sep::after {
+    flex: 1;
+  }
+
+  .archive-sep:hover {
+    color: var(--fg);
+  }
+
+  .archive-count {
+    flex: none;
+  }
+
   /* Grid comes from the shared .card-title/.branch-row/.row rule; here only the
      row's own chrome. A bit more vertical padding gives the focused/hover box
      more height and separates the rows. */
@@ -1897,6 +2022,7 @@
   /* A clickable control now (toggles the TODO flag) — reset the button chrome
      down to the 10px disc; the status classes still paint the fill. */
   .dot {
+    background: var(--dot-fill, transparent);
     width: 10px;
     height: 10px;
     flex-shrink: 0;
@@ -1974,18 +2100,18 @@
      come from --dot-* (see the `dots` derived): Primer semantic tokens with
      roles remapped by default, pure RGB when the Status RGB setting is on. */
   .dot.running {
-    background: var(--dot-running);
+    --dot-fill: var(--dot-running);
   }
 
   /* A live shell is not an agent state — neutral ink, a power LED.
      "running" only means the PTY is alive; it fades via .exited when it
      dies, and green stays exclusive to "a Claude awaits you". */
   .dot.plain.running {
-    background: var(--fg);
+    --dot-fill: var(--fg);
   }
 
   .dot.waiting {
-    background: var(--dot-waiting);
+    --dot-fill: var(--dot-waiting);
     animation: pulse 1.2s ease-in-out infinite;
   }
 
@@ -1993,15 +2119,15 @@
      as waiting — work is happening, you're not blocked — but STATIC. The pulse
      is reserved for "it wants you", the one state that should catch your eye. */
   .dot.delegating {
-    background: var(--dot-waiting);
+    --dot-fill: var(--dot-waiting);
   }
 
   .dot.idle {
-    background: var(--dot-idle);
+    --dot-fill: var(--dot-idle);
   }
 
   .dot.exited {
-    background: var(--fg-muted);
+    --dot-fill: var(--fg-muted);
     opacity: 0.5;
   }
 
@@ -2011,9 +2137,19 @@
      RGB (--dot-todo, see the `dots` derived). !important so it outranks the
      3-class .dot.plain.running fill; opacity resets the .exited dimming. */
   .dot.todo {
-    background: var(--dot-todo) !important;
+    --dot-fill: var(--dot-todo) !important;
     opacity: 1;
     animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  /* Archived (session archive): the SAME colour, drawn hollow. Every status
+     above sets --dot-fill rather than painting `background` itself, so this one
+     rule turns all of them inside out — the neutral shell tint and the blue
+     TODO pulse included — without knowing any of their colours. An inset shadow,
+     not a border: a border would eat into the 10px box and shrink the disc. */
+  .dot.archived {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--dot-fill);
   }
 
   /* The pulse animates element opacity, which drags the hover outline with it.

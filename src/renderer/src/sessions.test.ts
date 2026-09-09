@@ -11,6 +11,9 @@ import {
   applyHook,
   nudgeStatusFromKey,
   toggleTodo,
+  toggleArchived,
+  expandedArchives,
+  toggleArchive,
   dirOrder,
   gitInfo,
   groupCwds,
@@ -53,6 +56,7 @@ function fakeSession(overrides: Partial<Session>): Session {
     spawnWorktree: null,
     view: 'terminal',
     todo: false,
+    archived: false,
     notes: '',
     relaunching: false,
     ...overrides
@@ -64,6 +68,7 @@ beforeEach(() => {
   for (const key of Object.keys(previewItems)) delete previewItems[key]
   // Which technique owns the dot is module state, and the tests below flip it.
   ui.statusSource = 'hooks'
+  for (const key of Object.keys(expandedArchives)) delete expandedArchives[key]
 })
 
 describe('cleanTitle', () => {
@@ -621,6 +626,67 @@ describe('TODO flag', () => {
     applyHook('tok', 'sid', 'Stop')
     expect(sessions[0].status).toBe('idle')
     expect(sessions[0].todo).toBe(false)
+  })
+})
+
+// Session archive: a second cosmetic flag on the row, deliberately unlike TODO
+// in the one way that matters — nothing but the user clears it. TODO means
+// "tell me when this moves", so a status change spends it; archiving means
+// "I know, stop showing me", which a status change has no business undoing.
+describe('archive flag', () => {
+  it('toggles on and off', () => {
+    sessions.push(fakeSession({ key: 1, archived: false }))
+    toggleArchived(1)
+    expect(sessions[0].archived).toBe(true)
+    toggleArchived(1)
+    expect(sessions[0].archived).toBe(false)
+  })
+
+  it('toggles only the matching key; a missing key is a no-op, not a throw', () => {
+    sessions.push(
+      fakeSession({ key: 1, archived: false }),
+      fakeSession({ key: 2, archived: false })
+    )
+    toggleArchived(2)
+    expect(sessions.map((s) => s.archived)).toEqual([false, true]) // key 1 untouched
+    expect(() => toggleArchived(999)).not.toThrow()
+    expect(sessions.map((s) => s.archived)).toEqual([false, true])
+  })
+
+  it('survives a status change that clears the TODO flag', () => {
+    sessions.push(
+      fakeSession({ key: 1, claudeSessionId: 'sid', status: 'idle', todo: true, archived: true })
+    )
+    applyHook('tok', 'sid', 'UserPromptSubmit') // idle -> running, a colour change
+    expect(sessions[0].todo).toBe(false)
+    expect(sessions[0].archived).toBe(true)
+  })
+
+  it('leaves the row in place, so unarchiving puts it back where it was', () => {
+    sessions.push(fakeSession({ key: 1 }), fakeSession({ key: 2 }), fakeSession({ key: 3 }))
+    toggleArchived(2)
+    expect(sessions.map((s) => s.key)).toEqual([1, 2, 3])
+    toggleArchived(2)
+    expect(sessions.map((s) => s.key)).toEqual([1, 2, 3])
+  })
+})
+
+// The archive section's fold state, and the one thing about it that is easy to
+// get backwards: it stores the EXPANDED keys, so an absent key means folded —
+// the inverse of collapsedGroups, because an archive folds by default.
+describe('archive fold state', () => {
+  it('starts folded, and a key is present only while unfolded', () => {
+    expect(expandedArchives['D:\repo']).toBeUndefined()
+    toggleArchive('D:\repo')
+    expect(expandedArchives['D:\repo']).toBe(true)
+    toggleArchive('D:\repo')
+    expect('D:\repo' in expandedArchives).toBe(false)
+  })
+
+  it('keys are independent per card', () => {
+    toggleArchive('D:\a')
+    expect(expandedArchives['D:\a']).toBe(true)
+    expect(expandedArchives['D:\b']).toBeUndefined()
   })
 })
 
