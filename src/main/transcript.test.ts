@@ -104,9 +104,11 @@ describe('parseLine', () => {
     ])
   })
 
-  // The code Claude writes lives only in tool_use — render it as a filename-
-  // labeled fenced block (revised 2026-07-15). These document the shapes.
-  it('renders a Write as a labeled fenced block, language from the extension', () => {
+  // The code Claude writes lives only in tool_use — render it as a fenced block
+  // whose info string carries the file name as `title="..."` (revised
+  // 2026-09-09; it was a line of markdown above the fence until the preview
+  // started drawing it as a tab ON the block). These document the shapes.
+  it('renders a Write as a titled fenced block, language from the extension', () => {
     const content = [
       {
         type: 'tool_use',
@@ -115,11 +117,11 @@ describe('parseLine', () => {
       }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`a.ts`\n\n```ts\nconst x = 1\n```' }
+      { kind: 'assistant', text: '```ts title="a.ts"\nconst x = 1\n```' }
     ])
   })
 
-  it('renders an Edit as a labeled +/- diff block', () => {
+  it('renders an Edit as a titled +/- diff block', () => {
     const content = [
       {
         type: 'tool_use',
@@ -128,7 +130,7 @@ describe('parseLine', () => {
       }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`a.svelte`\n\n```diff\n- old\n+ new\n```' }
+      { kind: 'assistant', text: '```diff title="a.svelte"\n- old\n+ new\n```' }
     ])
   })
 
@@ -139,7 +141,7 @@ describe('parseLine', () => {
     ]
     const content = [{ type: 'tool_use', name: 'MultiEdit', input: { file_path: 'x.ts', edits } }]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`x.ts`\n\n```diff\n- a\n+ b\n\n- c\n+ d\n```' }
+      { kind: 'assistant', text: '```diff title="x.ts"\n- a\n+ b\n\n- c\n+ d\n```' }
     ])
   })
 
@@ -149,7 +151,7 @@ describe('parseLine', () => {
       { type: 'tool_use', name: 'Write', input: { file_path: 'f.md', content: 'a\n```\nb' } }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`f.md`\n\n````markdown\na\n```\nb\n````' }
+      { kind: 'assistant', text: '````markdown title="f.md"\na\n```\nb\n````' }
     ])
   })
 
@@ -190,7 +192,7 @@ describe('parseLine', () => {
       }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`a.ts`\n\n```diff\n+ z\n```' }
+      { kind: 'assistant', text: '```diff title="a.ts"\n+ z\n```' }
     ])
   })
 
@@ -203,7 +205,7 @@ describe('parseLine', () => {
       }
     ]
     expect(parseLine(line({ type: 'assistant', message: { content } }))).toEqual([
-      { kind: 'assistant', text: '`a.ts`\n\n```diff\n- a\n- b\n+ z\n```' }
+      { kind: 'assistant', text: '```diff title="a.ts"\n- a\n- b\n+ z\n```' }
     ])
   })
 })
@@ -252,19 +254,43 @@ describe('code fence language from the file extension', () => {
   ]
   it.each(cases)('.%s fences as ```%s', (ext, lang) => {
     expect(write(`f.${ext}`)).toEqual([
-      { kind: 'assistant', text: '`f.' + ext + '`\n\n```' + lang + '\ncode\n```' }
+      { kind: 'assistant', text: '```' + lang + ' title="f.' + ext + '"\ncode\n```' }
     ])
   })
 
   it('resolves by the last extension of a multi-dot name', () => {
     expect(write('comp.test.ts')).toEqual([
-      { kind: 'assistant', text: '`comp.test.ts`\n\n```ts\ncode\n```' }
+      { kind: 'assistant', text: '```ts title="comp.test.ts"\ncode\n```' }
     ])
   })
 
-  it('an unknown extension still gets a bare fence', () => {
+  it('an unknown extension gets no language, and the title still parses', () => {
     expect(write('notes.xyz')).toEqual([
-      { kind: 'assistant', text: '`notes.xyz`\n\n```\ncode\n```' }
+      { kind: 'assistant', text: '``` title="notes.xyz"\ncode\n```' }
     ])
+  })
+
+  // The title is quoted, so a name with spaces survives whole; the quote
+  // itself is dropped rather than escaped (no Windows path can contain one),
+  // which is what keeps the info string parseable by a plain [^"]* match.
+  it('keeps spaces in a name and drops a double quote from it', () => {
+    expect(write('my notes.md')).toEqual([
+      { kind: 'assistant', text: '```markdown title="my notes.md"\ncode\n```' }
+    ])
+    expect(write('od"d.ts')).toEqual([
+      { kind: 'assistant', text: '```ts title="odd.ts"\ncode\n```' }
+    ])
+  })
+
+  it('omits the title entirely when the tool call names no file', () => {
+    const items = parseLine(
+      line({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'Write', input: { content: 'code' } }]
+        }
+      })
+    )
+    expect(items).toEqual([{ kind: 'assistant', text: '```\ncode\n```' }])
   })
 })

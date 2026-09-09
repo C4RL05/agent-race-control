@@ -89,9 +89,11 @@ Right-click a row:
 
 Archiving is the middle ground between leaving a session in your way and closing it. The row drops into a foldable list at the bottom of its card and everything else carries on: it keeps running, keeps its status, its TODO flag, its notes and its tabs, and clicking it still focuses its terminal. Nothing about the session itself changes — the CLI can't tell it has been archived.
 
-A card holding archived rows grows a hairline separator carrying the count. Click it to unfold, click again to fold — the same gesture a card's name uses, and it starts **folded**, because getting a row out of the way is the whole point. Archived dots keep their color but are drawn as a **ring** rather than a disc, so a glance still tells you what the session is doing.
+A card holding archived rows grows a hairline separator, with an archive glyph and the count at its right end. Click it to unfold, click again to fold — the same gesture a card's name uses, and it starts **folded**, because getting a row out of the way is the whole point. Archived dots keep their color but are drawn as a **ring** rather than a disc, so a glance still tells you what the session is doing.
 
-Two things archiving deliberately does *not* do. A collapsed card's roll-up dot still counts archived sessions, so filing one away can never hide that it's blocked on a permission prompt. And a filter that matches an archived row opens the archive to show it, whatever its fold state — a search that can't find a session you know exists would be a bug, not decluttering.
+You can also **drag rows across the separator**. Drop one on a row in the other section to archive or unarchive it and place it exactly there; drop it on the separator itself to cross with no aiming, which is the only way that works when the far side is empty — so the separator appears on its own the moment you start dragging inside a card that has nothing archived yet. From the context menu there is no position to aim at, so *Archive session* files the row at the **top** of the archive and *Unarchive* returns it to the **bottom** of the live list.
+
+Two things archiving deliberately does *not* do. A collapsed card's roll-up dot still counts archived sessions, so filing one away can never hide that it's blocked on a permission prompt — and if the session it's reporting is an archived one, that roll-up dot is drawn hollow too, so you know where to look. And a filter that matches an archived row opens the archive to show it, whatever its fold state — a search that can't find a session you know exists would be a bug, not decluttering.
 
 ### Closing and resuming
 
@@ -154,6 +156,8 @@ The card's **history button** lists the repo's worktrees that currently have no 
 
 Every Claude session carries a second tab: a **read-only preview of the conversation**, rendered as markdown — headers, tables, bullets, code — straight from the transcript Claude Code itself writes. It follows the conversation live, drops tool noise but keeps the code Claude writes (file listings, `+/-` tinted diffs), and its text is selectable — reading a long answer here beats scrolling xterm.
 
+A file Claude wrote or edited arrives as a **tab carrying its name**, folded. Click the tab to unfold the code and click it again to put it away — so a long listing never buries the conversation around it, and you still see at a glance which file was touched.
+
 Pure observation: nothing is injected, the terminal byte stream is untouched, and flipping between Terminal and Preview is instant.
 
 ## Appearance
@@ -169,7 +173,7 @@ The ☰ button opens Settings:
 - **Status RGB** — swaps the status dots' Primer tones for pure traffic-light red/amber/green.
 - **Fonts** — the terminal's monospace face (Cascadia Mono, Consolas, JetBrains Mono, Fira Code, IBM Plex Mono) and the sans faces for the app chrome and the preview.
 
-**Zoom** is on the keyboard: `Ctrl+=` / `Ctrl+-` / `Ctrl+0`, Windows-Terminal style, whole-window.
+**Zoom** works two ways. `Ctrl+=` / `Ctrl+-` / `Ctrl+0` size the **whole window**, Windows-Terminal style. `Ctrl+wheel` over a pane sizes **just that pane** — the tower, the terminal, the Preview tab, the Session tab and the Notes tab each remember their own size, in the same steps, so you can read a transcript large while the tower stays small. The terminal's share is a real font-size change: the grid reflows and the session is resized, exactly as in Windows Terminal. Pressing one of the window-zoom keys puts every pane back in step with the window.
 
 ## Keyboard & mouse
 
@@ -180,12 +184,14 @@ The app deliberately adds *no* muscle memory on top of Windows Terminal, and sha
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste in the terminal |
 | Right-click in the terminal | copy selection, else paste |
 | Drop a file on the terminal | pastes the quoted path |
-| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | zoom in / out / reset |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | zoom the whole window in / out / reset (and resync the panes) |
+| `Ctrl+wheel` over a pane | zoom that pane alone |
 | Double-click a row name | rename |
 | Right-click a row | context menu |
 | Click a status dot | toggle its TODO flag |
 | Click a card name | collapse / expand the card |
 | Click an archive separator | fold / unfold that card's archive |
+| Drag a row across the separator | archive / unarchive it |
 
 ## State
 

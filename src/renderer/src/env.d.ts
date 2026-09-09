@@ -31,6 +31,10 @@ interface PersistedState {
   // `collapsed` above, because an archive folds by default (see the store).
   // Additive/optional; a stale key is harmless.
   expandedArchives?: string[]
+  // Per-pane text zoom LEVELS (see the store's paneZoom) — the same ±20% steps
+  // as the window zoom. Additive/optional and written only for panes the user
+  // moved off 0; an unknown key is ignored on restore.
+  paneZoom?: Record<string, number>
   recentDirs?: string[]
   sessions: Array<{
     type: 'shell' | 'claude' | 'codex'
@@ -215,6 +219,11 @@ interface Window {
           cwd: string
         ) => void
       ) => () => void
+    }
+    // Ctrl+=/−/0 fired in main, which owns the window zoom. The per-pane zoom
+    // levels are offsets on top of it, so this is the cue to reset them.
+    zoom: {
+      onSync: (callback: () => void) => () => void
     }
     // One tick of `claude agents --json` (src/main/agents.ts, hand-copied —
     // the renderer can't import from main): EVERY active session on the

@@ -1,12 +1,18 @@
 <script module lang="ts">
   import { marked } from 'marked'
 
-  // Diff coloring (issue #1). The reducer emits Edit/MultiEdit as ```diff
-  // blocks with `+ `/`- ` prefixes (transcript.ts) — this is the highlighter
-  // that was missing. A `diff`-language fence renders each line as a block
-  // span tinted by its leading marker; every other code block falls through to
-  // marked's default (return false), so full-file Write listings stay plain.
-  // Registered at module scope so it runs once, not per preview mount.
+  // The two things this file adds to marked's code fences, both registered at
+  // module scope so they run once rather than per preview mount.
+  //
+  // Diff coloring (issue #1): the reducer emits Edit/MultiEdit as ```diff
+  // blocks with `+ `/`- ` prefixes (transcript.ts), and a `diff`-language fence
+  // renders each line as a block span tinted by its leading marker. Write
+  // listings carry a real language and stay plain.
+  //
+  // The file NAME (2026-09-09): a block the session wrote arrives with its
+  // name in the fence info string, and is drawn as a tab welded to the top of
+  // the code that folds it. Anything else — a fence in Claude's own prose —
+  // falls through to marked's default (return false) untouched.
   function escapeHtml(s: string): string {
     return s
       .replace(/&/g, '&amp;')
@@ -35,11 +41,48 @@
     return `<pre class="diff"><code class="language-diff">${html}</code></pre>`
   }
 
+  // A code fence's info string, in the one shape the reducer emits:
+  // `<lang>` alone, or `<lang> title="<file name>"` when the block is a file
+  // the session wrote (transcript.ts). `\S*` may match empty, which is how an
+  // unknown extension — no language at all — still parses its title.
+  const INFO = /^(\S*)\s*title="([^"]*)"\s*$/
+
+  function splitInfo(info: string): { lang: string; title: string } {
+    const match = INFO.exec(info)
+    if (match) return { lang: match[1], title: match[2] }
+    return { lang: info.split(/\s+/)[0] ?? '', title: '' }
+  }
+
+  // marked's own default, reproduced because a titled block has to be wrapped
+  // and `return false` (fall through to the default) can't be wrapped.
+  function plainCode(text: string, lang: string): string {
+    const cls = lang ? ` class="language-${escapeHtml(lang)}"` : ''
+    return `<pre><code${cls}>${escapeHtml(text.replace(/\n$/, ''))}\n</code></pre>`
+  }
+
+  // The file name as a TAB on the code rather than a line of prose above it:
+  // one <details> whose <summary> is the tab, so the same thing that names the
+  // block folds it. Native disclosure — no script inside rendered content, and
+  // DOMPurify passes details/summary.
+  //
+  // FOLDED by default (no `open`). The preview is for reading the
+  // conversation, and a file listing is the one thing in it that can run to
+  // hundreds of lines — expanded, a single Write buries the prose either side
+  // of it. The tab keeps saying what was written, so nothing is hidden that
+  // the reader has to go looking for; the code is one click away when it is
+  // the code they actually came for.
+  function fileBlock(title: string, block: string): string {
+    return `<details class="file"><summary class="file-tab">${escapeHtml(title)}</summary>${block}</details>`
+  }
+
   marked.use({
     renderer: {
       code(token) {
-        if ((token.lang ?? '').split(/\s+/)[0] === 'diff') return renderDiff(token.text)
-        return false
+        const { lang, title } = splitInfo((token.lang ?? '').trim())
+        // Neither ours: let marked render it exactly as it always has.
+        if (lang !== 'diff' && !title) return false
+        const block = lang === 'diff' ? renderDiff(token.text) : plainCode(token.text, lang)
+        return title ? fileBlock(title, block) : block
       }
     }
   })
@@ -202,6 +245,78 @@
   .assistant :global(pre code) {
     background: none;
     padding: 0;
+  }
+
+  /* A file the session wrote: <details> whose <summary> is a tab welded to the
+     top-left of the block. The tab is where the name used to sit as a line of
+     prose — same information, but attached to the thing it names, and clicking
+     it folds the code. `display: flex` on the summary is what drops the native
+     disclosure triangle; the chevron below replaces it. */
+  .assistant :global(details.file) {
+    margin: 8px 0;
+  }
+
+  .assistant :global(details.file > summary) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: var(--bg-subtle);
+    color: var(--fg-muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .assistant :global(details.file > summary:hover) {
+    color: var(--fg);
+  }
+
+  /* Folded, the tab is all there is, so it closes itself into a whole pill. */
+  .assistant :global(details.file:not([open]) > summary) {
+    border-bottom: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  /* The app's own caret glyph, drawn from the Material Symbols ligature the
+     rest of the chrome uses — reachable here because the face is registered
+     app-wide, and this is rendered content that must not carry markup of its
+     own. Points down when open, right when folded. */
+  .assistant :global(details.file > summary::before) {
+    content: 'expand_more';
+    flex: none;
+    font-family: 'Material Symbols Outlined';
+    font-size: 14px;
+    font-weight: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    font-feature-settings: 'liga';
+    font-variation-settings: 'wght' 300;
+    transition: transform 0.12s;
+  }
+
+  .assistant :global(details.file:not([open]) > summary::before) {
+    transform: rotate(-90deg);
+  }
+
+  /* The block loses the corner the tab sits on, and the margin that would
+     otherwise open a gap between the two — the details owns the spacing. */
+  .assistant :global(details.file > pre) {
+    margin: 0;
+    border-top-left-radius: 0;
   }
 
   /* Diff blocks (issue #1) — faint per-line tint, green added / red deleted,

@@ -1,21 +1,24 @@
 <script lang="ts">
-  // The two session-type icons come from two different sets, both inlined as
-  // geometry rather than added as dependencies: a whole icon package (let alone
-  // two) alongside Material Symbols is not a trade two glyphs earn. Everything
-  // else in the app stays Material. They are shaped differently on purpose —
-  // Lucide draws STROKES on a 24 grid, Phosphor draws FILLS on a 256 one — so
-  // each carries its own viewBox and paint mode rather than assuming Phosphor's.
-  // `stroke` is the WIDTH (0 = a filled icon). Weight only compares as a
-  // FRACTION of the icon, never as a raw stroke-width, and the two sets are
-  // matched on that fraction — measured off the geometry, not eyeballed:
-  //   Phosphor terminal-window BOLD, border 20→44 of 256    = 0.09375
-  //   Lucide bot, stroke 2.25 of a 24 grid                   = 0.09375
-  // Exactly level, and that is why the Lucide side carries 2.25 rather than its
-  // default 2 (= 0.0833, a hair light against bold). Phosphor's weights are
-  // fixed steps — regular is 16/256 = 0.0625, a QUARTER lighter than the bot's
-  // default, which is what read as an obviously thinner icon beside it — so the
-  // adjustable side is the stroke. Changing EITHER number alone unbalances the
-  // pair; they are two halves of one measurement.
+  // The three session-type icons, inlined as geometry rather than added as
+  // dependencies: three icon packages alongside Material Symbols is not a
+  // trade three glyphs earn. Everything else in the app stays Material.
+  //
+  // Two of the three are PRODUCT MARKS — the Claude Code mark and the OpenAI
+  // symbol name their row type the way a logo does, and neither may be
+  // redrawn to match a house style. The shell keeps the one drawn icon
+  // (Phosphor terminal-window) and it is the piece that gives, which is why
+  // it sits at the family's own REGULAR weight: it no longer has to shout to
+  // hold its own beside an outlined robot, as it did when the Claude row was
+  // a Lucide `bot`.
+  //
+  // Each entry therefore carries its own viewBox and paint mode rather than
+  // assuming one grid: 24 for the Claude mark, a padded ~20 for OpenAI, 256
+  // for Phosphor. `stroke` is the WIDTH, 0 meaning a filled icon — all three
+  // are filled today, so nothing here is weight-matched; the sizes are
+  // levelled by the FRACTION of the viewBox each glyph fills instead (see the
+  // openai entry, the only one that needed padding to get there). `evenodd`
+  // is per-glyph too: a mark whose notches are punched-out subpaths goes
+  // solid under the default nonzero rule.
   const ICONS = {
     // The Claude Code product mark, monochrome variant (thesvg.org, from
     // glincker/thesvg `icons/claude-code/mono.svg`). A filled glyph, so it
@@ -103,19 +106,23 @@
     moveSession,
     setStatus,
     toggleTodo,
-    toggleArchived,
+    setArchived,
     expandedArchives,
     toggleArchive,
     gitInfo,
     groupCwds,
+    groupKeyOf,
     refreshAllGitInfo,
     collapsedGroups,
     toggleCollapsed,
     parkedWorktrees,
     worktreeSpawnName,
-    sessionTargetCwd
+    sessionTargetCwd,
+    bumpPaneZoom,
+    resetPaneZoom,
+    zoomFactor
   } from './sessions.svelte'
-  import type { Session, WorktreeEntry } from './sessions.svelte'
+  import type { Session, WorktreeEntry, ZoomPane } from './sessions.svelte'
   import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
   import arcIconPng from './assets/arc.png?inline'
 
@@ -153,6 +160,25 @@
     if (!draggingTower) return
     ui.towerWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
   }
+
+  // Ctrl+wheel sizes the ONE pane under the pointer (paneZoom in the store).
+  // Bound in the capture phase because the terminal and the scrolling panes
+  // already own the wheel: stopping it on the way down is what keeps a zoom
+  // gesture from also scrolling whatever it was aimed at. preventDefault stops
+  // Chromium's own ctrl+wheel page zoom, which would fight the window zoom
+  // main owns. A wheel with any other modifier is left entirely alone.
+  function zoomWheel(pane: ZoomPane, event: WheelEvent): void {
+    if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.deltaY !== 0) bumpPaneZoom(pane, event.deltaY < 0 ? 1 : -1)
+  }
+
+  // Ctrl+=/−/0 (main's window zoom) puts every pane back in lockstep with it.
+  $effect(() => {
+    const off = window.arc.zoom.onSync(resetPaneZoom)
+    return off
+  })
 
   const MODES: Mode[] = ['system', 'light', 'dark']
   const MODE_LABELS: Record<Mode, string> = {
@@ -547,7 +573,15 @@
   // of "out of the way", but it would turn a visual feature into a behavioural
   // one: a folded card would stop telling you an archived session is blocked on
   // a permission dialog. Archiving hides a row; it does not silence it.
-  function rollupDot(group: GroupView): { status: Session['status']; plain: boolean } | null {
+  //
+  // It does say so, though: the winner's own archived flag rides along and the
+  // dot is drawn hollow for it, exactly as that row's own dot would be. So a
+  // folded card still shouts amber for a blocked archived session, while the
+  // ring says where to look for it — otherwise you unfold the card and find
+  // every visible row calm.
+  function rollupDot(
+    group: GroupView
+  ): { status: Session['status']; plain: boolean; archived: boolean } | null {
     const live = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
     const all = [...live, ...group.archived]
     const pick =
@@ -557,7 +591,9 @@
       all.find((s) => s.status === 'running') ??
       all.find((s) => s.status === 'idle') ??
       all.find((s) => s.status === 'exited')
-    return pick ? { status: pick.status, plain: pick.type === 'shell' } : null
+    return pick
+      ? { status: pick.status, plain: pick.type === 'shell', archived: pick.archived }
+      : null
   }
 
   // --- drag & drop (same-window; component state, not dataTransfer) ---
@@ -567,11 +603,20 @@
   // their own cwd only (a session's directory is a fact); their row stops
   // dragstart from bubbling so a reorder doesn't become a card move. Branch
   // subfolders aren't independently draggable — they order by first appearance.
-  type Drag = { kind: 'session'; key: number; cwd: string } | { kind: 'group'; groupKey: string }
+  //
+  // A session drag also crosses the card's archive divider in both directions,
+  // which is the drag half of archiving: onto a row in the other section to
+  // choose the position, onto the divider itself to take that section's near
+  // end. The drag carries its group key and archived flag so both targets can
+  // judge a drop without going back to the store for the row.
+  type Drag =
+    | { kind: 'session'; key: number; cwd: string; groupKey: string; archived: boolean }
+    | { kind: 'group'; groupKey: string }
   let dragging = $state<Drag | null>(null)
   // The drop preview. Sessions: `session-<key>` (the row highlights). Groups: an
   // insertion line at a gap — `group-before-<key>` (line above that card) or
   // `group-after-<key>` (line below it), so you see where the card will land.
+  // Archive dividers: `archive-<group key>` — the divider itself lights up.
   let dropHint = $state<string | null>(null)
 
   function allowDrop(event: DragEvent, hint: string, accept: boolean): void {
@@ -589,6 +634,35 @@
   function dropOnSession(target: { key: number }): void {
     if (dragging?.kind === 'session') moveSession(dragging.key, target.key)
     endDrag()
+  }
+
+  // Whether a row being dragged may land on this one. Never itself, never
+  // another card. Beyond that the store's rule decides and this only mirrors
+  // it so the highlight never promises a move that won't happen: an ARCHIVED
+  // target takes any row of the card (the archive is one flat list), a live
+  // target only a row of its own directory (live rows are drawn per branch).
+  function acceptsRow(target: Session): boolean {
+    return (
+      dragging?.kind === 'session' &&
+      dragging.key !== target.key &&
+      dragging.groupKey === groupKeyOf(target.cwd) &&
+      (target.archived || dragging.cwd === target.cwd)
+    )
+  }
+
+  // The divider is the boundary, so dropping a row on it means "cross" —
+  // whichever side the row is on, it ends up on the other, at that section's
+  // near end (setArchived). It is the only target that works when the far side
+  // is empty, which is why the divider shows itself for the length of a drag
+  // inside a card that has no archive yet (see archiveOpenFor).
+  function dropOnArchive(): void {
+    if (dragging?.kind === 'session') setArchived(dragging.key, !dragging.archived)
+    endDrag()
+  }
+
+  // Reveal an empty card's divider while one of its own rows is in flight.
+  function archiveOpenFor(groupKey: string): boolean {
+    return dragging?.kind === 'session' && dragging.groupKey === groupKey
   }
 
   // Which gap the pointer is over a card: the top half means "insert before this
@@ -628,8 +702,8 @@
 </script>
 
 <!-- A snippet, not a component: an <svg> rendered by a child component would
-     not match this file's scoped `.tab .ph`-style rules, and sizing every call
-     site by hand is how the icon column stops lining up. Sized in em so the
+     not match this file's scoped `.tab .svg-icon`-style rules, and sizing every
+     call site by hand is how the icon column stops lining up. Sized in em so the
      existing font-size rules keep driving it, exactly like the font icons. -->
 {#snippet icon(name: keyof typeof ICONS, cls = '', label = '')}
   {@const i = ICONS[name]}
@@ -670,7 +744,17 @@
   style:--dot-todo={dots.todo}
   style:--dot-track={ui.statusDot ? '16px' : '0px'}
 >
-  <aside class="tower" style:width={`${ui.towerWidth}px`}>
+  <!-- CSS `zoom` scales the tower's text and every px in its chrome with it,
+       which is what makes one declaration enough for a pane whose sizes are
+       all in px. It scales the WIDTH too, so the width is pre-divided by it:
+       the splitter stores the width the user dragged to, in real screen px,
+       and it must not move when the text does. -->
+  <aside
+    class="tower"
+    style:width={`${ui.towerWidth / zoomFactor('tower')}px`}
+    style:zoom={zoomFactor('tower')}
+    onwheelcapture={(e) => zoomWheel('tower', e)}
+  >
     <div class="tower-filter">
       <div class="spawn-group">
         <button
@@ -769,11 +853,12 @@
           <!-- The card survives on its archive alone: a folder whose every
                session is archived keeps its header (and its spawn buttons)
                rather than vanishing from the tower. -->
-          {@const showArchive = group.archivedVisible.length > 0}
+          {@const showArchive = group.archivedVisible.length > 0 || archiveOpenFor(group.key)}
           {#if (group.sessions.length > 0 && (!filterActive || group.visible.length > 0)) || showArchive}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
+              class:collapsed={collapsedGroups[group.key]}
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
               data-group-key={group.key}
@@ -811,11 +896,12 @@
           {@const branches = group.branches.filter(
             (b) => b.sessions.length > 0 && (!filterActive || b.visible.length > 0)
           )}
-          {@const showArchive = group.archivedVisible.length > 0}
+          {@const showArchive = group.archivedVisible.length > 0 || archiveOpenFor(group.key)}
           {#if branches.length > 0 || showArchive}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
+              class:collapsed={collapsedGroups[group.key]}
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
               data-group-key={group.key}
@@ -991,8 +1077,16 @@
           </div>
         {/if}
         <!-- The terminal stays mounted while hidden — the PTY's lifetime is
-             the session. The preview mounts/unmounts with its tab. -->
-        <div class="view" style:display={session.view === 'terminal' ? 'block' : 'none'}>
+             the session. The preview mounts/unmounts with its tab.
+             Alone among the panes it takes a font SCALE rather than CSS zoom:
+             the size change has to re-measure the cell, reflow the grid and
+             resize the PTY, which is what Ctrl+wheel does in Windows Terminal.
+             Scaling the canvas instead would just enlarge the old grid. -->
+        <div
+          class="view"
+          style:display={session.view === 'terminal' ? 'block' : 'none'}
+          onwheelcapture={(e) => zoomWheel('terminal', e)}
+        >
           <Terminal
             type={session.type}
             cwd={session.cwd}
@@ -1002,6 +1096,7 @@
             {focusEpoch}
             theme={palette.xterm}
             fontFamily={monoFont}
+            fontScale={zoomFactor('terminal')}
             onSpawned={(ptyId, claudeSessionId, cwd) => {
               session.ptyId = ptyId
               // The pinned spawn id is the first join key against the agent
@@ -1038,7 +1133,12 @@
              and scroll, and there is nothing to disarm — the text lives in the
              store, not in a watcher. -->
         {#if paneTraits?.notes}
-          <div class="view" style:display={session.view === 'notes' ? 'block' : 'none'}>
+          <div
+            class="view"
+            style:display={session.view === 'notes' ? 'block' : 'none'}
+            style:zoom={zoomFactor('notes')}
+            onwheelcapture={(e) => zoomWheel('notes', e)}
+          >
             <Notes
               {session}
               codeFont={monoFont}
@@ -1047,7 +1147,11 @@
           </div>
         {/if}
         {#if session.view === 'info'}
-          <div class="view">
+          <div
+            class="view"
+            style:zoom={zoomFactor('info')}
+            onwheelcapture={(e) => zoomWheel('info', e)}
+          >
             <!-- Mounted for the focused session only, same as the preview: the
                  pull runs on an interval, so an unfocused tab must not keep
                  asking main for facts nobody is reading. -->
@@ -1059,7 +1163,11 @@
           </div>
         {/if}
         {#if session.view === 'preview'}
-          <div class="view">
+          <div
+            class="view"
+            style:zoom={zoomFactor('preview')}
+            onwheelcapture={(e) => zoomWheel('preview', e)}
+          >
             {#if session.claudeSessionId && ui.focused === session.key}
               <!-- mounted for the focused session only: unmounting disarms
                    the tail, and the store cache makes refocus instant -->
@@ -1148,7 +1256,8 @@
     >
       {#if collapsed && ui.statusDot}
         {@const r = rollupDot(group)}
-        {#if r}<span class="rollup dot {r.status}" class:plain={r.plain}></span>{/if}
+        {#if r}<span class="rollup dot {r.status}" class:plain={r.plain} class:archived={r.archived}
+          ></span>{/if}
       {/if}
       <span class="name-text">
         {group.kind === 'plain' ? dirLabel(group.cwd).base : group.repoName}
@@ -1212,17 +1321,24 @@
        open ones), because a section that opened itself on the first archive
        would undo the feature. An active filter with a match down here opens it
        regardless of that state, and without writing to it: a search that can't
-       find a session you know exists is a bug, not decluttering. -->
+       find a session you know exists is a bug, not decluttering.
+       It is also the drop target that crosses the divider in either direction
+       (dropOnArchive), which is why it renders while a row of this card is in
+       flight even with nothing archived yet. -->
   {#snippet archiveSection(group: GroupView)}
     {@const rows = group.archivedVisible}
     {@const open = !!expandedArchives[group.key] || filterActive}
     <div
       class="archive-sep"
+      class:over={dropHint === `archive-${group.key}`}
       role="button"
       tabindex="0"
       aria-expanded={open}
       title={open ? 'Fold archived sessions' : 'Unfold archived sessions'}
       onclick={() => toggleArchive(group.key)}
+      ondragover={(e) => allowDrop(e, `archive-${group.key}`, archiveOpenFor(group.key))}
+      ondragleave={() => (dropHint = null)}
+      ondrop={dropOnArchive}
       onkeydown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -1230,7 +1346,11 @@
         }
       }}
     >
-      <span class="archive-count">{rows.length} archived</span>
+      <!-- The glyph carries the meaning, so the count is just a number; both
+           sit at the RIGHT end of the rule, out of the rows' left margin. -->
+      <span class="archive-count">
+        <span class="material-symbols-outlined">archive</span>{rows.length}
+      </span>
     </div>
     {#if open}
       {#each rows as session (session.key)}
@@ -1253,17 +1373,16 @@
         // Don't let this bubble to the card's group-drag handler — otherwise it
         // overwrites `dragging` and a row reorder becomes a whole-card move.
         e.stopPropagation()
-        dragging = { kind: 'session', key: session.key, cwd: session.cwd }
+        dragging = {
+          kind: 'session',
+          key: session.key,
+          cwd: session.cwd,
+          groupKey: groupKeyOf(session.cwd),
+          archived: session.archived
+        }
       }}
       ondragend={endDrag}
-      ondragover={(e) =>
-        allowDrop(
-          e,
-          `session-${session.key}`,
-          dragging?.kind === 'session' &&
-            dragging.key !== session.key &&
-            dragging.cwd === session.cwd
-        )}
+      ondragover={(e) => allowDrop(e, `session-${session.key}`, acceptsRow(session))}
       ondragleave={() => (dropHint = null)}
       ondrop={() => dropOnSession(session)}
       onclick={() => focusSession(session.key)}
@@ -1499,7 +1618,7 @@
           <button
             class="menu-item"
             onclick={() => {
-              toggleArchived(menuSession.key)
+              setArchived(menuSession.key, !menuSession.archived)
               menu = null
             }}
           >
@@ -1593,9 +1712,18 @@
 />
 
 <style>
+  /* The app shell is exactly the window and is never itself a scrollable
+     document: every real scroll surface inside it (the tower body, the
+     preview, the Session tab, the menus, xterm's viewport) declares its own
+     overflow. Without this, anything that overshoots — a pane whose content
+     outgrows its box, a horizontal overflow whose scrollbar then steals the
+     last row of height — turns the whole window into a page you can scroll
+     off the bottom of, past the tower and the terminal into empty background.
+     There is nothing below .shell to reach, so clip it here. */
   :global(html, body, #app) {
     margin: 0;
     height: 100%;
+    overflow: hidden;
   }
 
   /* App-wide icon weight; the variation axis beats the package's
@@ -1679,21 +1807,37 @@
     cursor: grab;
   }
 
+  /* Folded to its title, the card is one line, so its padding has to read as
+     one box: the 10px bottom exists to separate the last session row from the
+     card edge, and with no rows it just looks bottom-heavy. Match the top
+     instead. The title also stops being a heading over anything — nothing is
+     under it — so it drops to the body weight and reads as the list item it
+     now is, leaving 600 to mean "this card is open". */
+  .card.collapsed {
+    padding-bottom: 4px;
+  }
+
+  .card.collapsed .card-title {
+    font-weight: 400;
+  }
+
   /* While a drag is in flight, collapse each drop target to a single hit
      surface: its inner content stops taking pointer events. Native DnD still
      fires :hover under the cursor and fires dragenter/dragleave as the pointer
      crosses child boundaries — that's what makes chrome light up and the drop
      hint flicker mid-drag. Killing pointer-events on the contents stops both.
      A group drag drops onto whole cards, so the entire card interior goes
-     inert; a session drag drops onto rows, so only the row stays live (its own
-     children go inert) while titles and branch rows freeze. */
+     inert; a session drag drops onto rows AND onto the archive divider, so
+     those two stay live (their own children go inert) while titles and branch
+     rows freeze. */
   .tower-body[data-dragging='group'] .card * {
     pointer-events: none;
   }
 
   .tower-body[data-dragging='session'] .card-title,
   .tower-body[data-dragging='session'] .branch-row,
-  .tower-body[data-dragging='session'] .row > * {
+  .tower-body[data-dragging='session'] .row > *,
+  .tower-body[data-dragging='session'] .archive-sep > * {
     pointer-events: none;
   }
 
@@ -1959,11 +2103,13 @@
     background: var(--bg);
   }
 
-  /* The card's archive divider: a hairline carrying a muted count, and the fold
-     toggle for the rows under it. Not a grid child — it separates rows rather
-     than being one, so it spans the card's whole width and ignores the shared
-     track template. The lead rule is short and the trailing one takes the
-     remaining width, so the count reads as sitting ON the line. */
+  /* The card's archive divider: a hairline carrying a glyph and a count, the
+     fold toggle for the rows under it, and the drop target that crosses it.
+     Not a grid child — it separates rows rather than being one, so it spans the
+     card's whole width and ignores the shared track template.
+     The label sits at the RIGHT end: the long rule leads and a short stub
+     closes, so the count reads as sitting ON the line while the card's left
+     margin stays clear for the dots and icons every row lines up on. */
   .archive-sep {
     display: flex;
     align-items: center;
@@ -1984,20 +2130,40 @@
   }
 
   .archive-sep::before {
-    width: 12px;
-    flex: none;
+    flex: 1;
   }
 
   .archive-sep::after {
-    flex: 1;
+    width: 12px;
+    flex: none;
   }
 
   .archive-sep:hover {
     color: var(--fg);
   }
 
+  /* Drop target (a row crossing the divider): the whole rule lights up rather
+     than the .drop-hint outline the rows use — this one is a line, and an
+     outline around a 1px hairline reads as a glitch. */
+  .archive-sep.over {
+    color: var(--accent);
+  }
+
+  .archive-sep.over::before,
+  .archive-sep.over::after {
+    background: var(--accent);
+  }
+
   .archive-count {
+    display: flex;
+    align-items: center;
+    /* tight: the glyph labels the number, it isn't a second item beside it */
+    gap: 2px;
     flex: none;
+  }
+
+  .archive-count .material-symbols-outlined {
+    font-size: 14px;
   }
 
   /* Grid comes from the shared .card-title/.branch-row/.row rule; here only the

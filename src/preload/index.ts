@@ -136,6 +136,18 @@ contextBridge.exposeInMainWorld('arc', {
       return () => ipcRenderer.removeListener('session:status', listener)
     }
   },
+  // Ctrl+=/−/0 fired (main owns the window zoom). The renderer's per-pane
+  // zoom levels are offsets on top of it, so this is the cue to drop them
+  // back to 0 and put every pane at the window's one size.
+  zoom: {
+    onSync: (callback: () => void): (() => void) => {
+      const listener = (): void => {
+        callback()
+      }
+      ipcRenderer.on('zoom:sync', listener)
+      return () => ipcRenderer.removeListener('zoom:sync', listener)
+    }
+  },
   // Each tick of `claude agents --json` (agents.ts): the FULL list of active
   // sessions, machine-wide. The renderer matches the ones it owns and ignores
   // the rest — but only ever to force green, since `busy` here includes a

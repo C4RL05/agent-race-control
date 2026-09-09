@@ -225,6 +225,46 @@ export function toggleArchive(groupKey: string): void {
   else expandedArchives[groupKey] = true
 }
 
+// Per-pane text zoom: Ctrl+wheel over the tower, the terminal, the preview,
+// the Session tab or the Notes tab sizes that one pane. The five are
+// independent because they are read at different distances — the tower is
+// glanced at, a transcript is read, the terminal is worked in — and one
+// window-wide size can only ever be a compromise between them.
+//
+// Levels, not factors: the same integer steps of ±20% the window zoom uses
+// (main/index.ts), over the same clamp, so a pane at level 1 is exactly the
+// size Ctrl+= would have made the whole window. That is also why Ctrl+=/−/0
+// RESETS every pane to 0 (see resetPaneZoom, driven by main): those keys mean
+// "size the app", and the panes going back into lockstep under them is what
+// makes the window zoom still legible as a single control. Persisted.
+export type ZoomPane = 'tower' | 'terminal' | 'preview' | 'info' | 'notes'
+const ZOOM_MIN = -3
+const ZOOM_MAX = 4
+
+export const paneZoom = $state<Record<ZoomPane, number>>({
+  tower: 0,
+  terminal: 0,
+  preview: 0,
+  info: 0,
+  notes: 0
+})
+
+export function bumpPaneZoom(pane: ZoomPane, delta: number): void {
+  paneZoom[pane] = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, paneZoom[pane] + delta))
+}
+
+export function resetPaneZoom(): void {
+  for (const pane of Object.keys(paneZoom) as ZoomPane[]) paneZoom[pane] = 0
+}
+
+// A pane's size multiplier. CSS `zoom` for the four chrome panes; the terminal
+// multiplies xterm's own fontSize instead, because there the size change has
+// to reflow the grid and resize the PTY, exactly as it does in Windows
+// Terminal — a scaled canvas would just be a bigger picture of the old grid.
+export function zoomFactor(pane: ZoomPane): number {
+  return 1.2 ** paneZoom[pane]
+}
+
 // Per-cwd branch/worktree info (issue #5), populated async from main. Absent =
 // not yet fetched (the cwd renders as a flat folder until it lands); a stored
 // `{ isRepo: false }` / null = not a git repo (a permanently flat folder).
@@ -489,14 +529,44 @@ export function toggleTodo(key: number): void {
   if (session) session.todo = !session.todo
 }
 
-// Archive / unarchive one row (its context menu). Deliberately not routed
-// through setStatus and never cleared by one: a status change is exactly what
-// TODO is about ("tell me when this moves") and exactly what archiving is not
-// ("I know, stop showing me"). The row keeps its place in the sessions array,
-// so unarchiving puts it back where it was rather than at the end.
-export function toggleArchived(key: number): void {
-  const session = sessions.find((s) => s.key === key)
-  if (session) session.archived = !session.archived
+// Archive / unarchive one row — the context menu, and the archive divider when
+// a row is dropped on it. Deliberately not routed through setStatus and never
+// cleared by one: a status change is exactly what TODO is about ("tell me when
+// this moves") and exactly what archiving is not ("I know, stop showing me").
+//
+// Flipping the flag alone would render the row in the right section but leave
+// it at its old index, so it would appear somewhere in the MIDDLE of the list
+// it just joined. Each direction therefore re-seats it at that list's near
+// end: archiving goes to the TOP of the card's archive (what you just filed is
+// what you might undo), unarchiving to the BOTTOM of the live list (a row
+// coming back is the oldest one, not ahead of sessions you have been driving).
+// A card's archive spans every cwd in its group (a repo's worktrees share
+// one), so the archive end is measured against the group; the live list a row
+// returns to is its own directory's, which is where it is drawn.
+export function setArchived(key: number, archived: boolean): void {
+  const from = sessions.findIndex((s) => s.key === key)
+  const session = sessions[from]
+  if (!session || session.archived === archived) return
+  session.archived = archived
+  sessions.splice(from, 1)
+  const at = archived ? topOfArchive(session) : bottomOfLive(session)
+  // No sibling on the far side: nothing to be at the near end OF, so the row
+  // stays where it sat rather than travelling to some other card's block.
+  sessions.splice(at ?? from, 0, session)
+}
+
+function topOfArchive(session: Session): number | null {
+  const groupKey = groupKeyOf(session.cwd)
+  const at = sessions.findIndex((s) => s.archived && groupKeyOf(s.cwd) === groupKey)
+  return at === -1 ? null : at
+}
+
+function bottomOfLive(session: Session): number | null {
+  let at = -1
+  sessions.forEach((s, index) => {
+    if (!s.archived && s.cwd === session.cwd) at = index
+  })
+  return at === -1 ? null : at + 1
 }
 
 // Windows paths compare case-insensitively and arrive with either separator
@@ -931,14 +1001,28 @@ export function moveGroup(fromKey: string, beforeKey: string): void {
   dirOrder.splice(0, dirOrder.length, ...rest)
 }
 
-// Reorder a session within its directory group (a session's directory is a
-// fact of the running process — it cannot be moved between groups).
+// Drop one session row on another. A session's DIRECTORY is a fact of the
+// running process and never changes here; what the drop can change is which of
+// the card's two sections the row is in — landing on a row across the archive
+// divider hands it the target's `archived` flag on the way past, which is how
+// a drag archives (setArchived is the same move from the context menu, minus
+// the chosen position).
+//
+// Hence the two guards. Both rows must belong to the same CARD, because that
+// is as far as a drag reaches. And a LIVE target must additionally share the
+// cwd: live rows are drawn per branch, so a row from another worktree would
+// vanish back into its own list at a position nobody chose. The archive is one
+// flat list per card, so any row of the card can land anywhere in it.
 export function moveSession(key: number, beforeKey: number): void {
   if (key === beforeKey) return
   const from = sessions.findIndex((s) => s.key === key)
   const to = sessions.findIndex((s) => s.key === beforeKey)
-  if (from === -1 || to === -1 || sessions[from].cwd !== sessions[to].cwd) return
+  if (from === -1 || to === -1) return
+  const target = sessions[to]
+  if (groupKeyOf(sessions[from].cwd) !== groupKeyOf(target.cwd)) return
+  if (!target.archived && sessions[from].cwd !== target.cwd) return
   const [session] = sessions.splice(from, 1)
+  session.archived = target.archived
   sessions.splice(
     sessions.findIndex((s) => s.key === beforeKey),
     0,
@@ -971,6 +1055,15 @@ export async function restoreState(): Promise<void> {
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
   if (saved.collapsed) for (const key of saved.collapsed) collapsedGroups[key] = true
   if (saved.expandedArchives) for (const key of saved.expandedArchives) expandedArchives[key] = true
+  // Clamped on the way in, not trusted: the state file is external data and a
+  // level from a hand-edited (or future) file must not size a pane off-screen.
+  if (saved.paneZoom) {
+    for (const [pane, level] of Object.entries(saved.paneZoom)) {
+      if (pane in paneZoom && Number.isFinite(level)) {
+        paneZoom[pane as ZoomPane] = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(level)))
+      }
+    }
+  }
   // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
   // external data and the one path that skips them otherwise.
   if (saved.recentDirs?.length) {
@@ -1044,6 +1137,9 @@ export function snapshotState(): PersistedState {
       (key) => expandedArchives[key] && alive.some((s) => groupKeyOf(s.cwd) === key)
     ),
     recentDirs: [...recentDirs],
+    // Only the panes the user actually resized — a file full of zeroes says
+    // nothing, and the default is zero anyway.
+    paneZoom: Object.fromEntries(Object.entries(paneZoom).filter(([, level]) => level !== 0)),
     sessions: alive.map((s) => ({
       type: s.type,
       name: s.name,

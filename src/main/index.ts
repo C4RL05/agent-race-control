@@ -40,6 +40,11 @@ if (!gotLock) {
   function applyZoom(delta: number | null): void {
     zoomLevel = delta === null ? 0 : Math.max(-3, Math.min(4, zoomLevel + delta))
     win?.webContents.setZoomLevel(zoomLevel)
+    // The renderer keeps its own per-pane zoom levels on top of this one, and
+    // these keys mean "size the app": tell it to drop them back to 0 so the
+    // whole window is once again at one size. Sent on every press, including a
+    // press that hits the clamp — the panes still have to come back into line.
+    win?.webContents.send('zoom:sync')
     if (lastState) saveState({ ...lastState, zoomLevel })
   }
 

@@ -32,7 +32,11 @@ export interface AppState {
   uiFont?: string
   previewFont?: string
   towerWidth?: number
+  // Window zoom level (Ctrl+=/−/0), owned by main. The renderer's per-pane
+  // levels ride alongside it under `paneZoom` and are its offsets, reset to 0
+  // whenever one of those keys fires.
   zoomLevel?: number
+  paneZoom?: Record<string, number>
   focusedIndex: number
   dirOrder?: string[]
   dirColors?: Record<string, string>

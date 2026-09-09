@@ -80,10 +80,18 @@ function fileName(filePath: string): string {
 // A fenced block whose fence outruns any backtick run inside the body: editing
 // a Markdown file can put ``` in the code, and a too-short fence would break
 // out of the block. Minimum fence length 3.
-function fenced(body: string, lang: string): string {
+//
+// The file name rides in the fence's INFO STRING as `title="..."`, the same
+// convention Docusaurus and Shiki use, rather than as a line of markdown above
+// the block: the preview draws it as a tab welded to the code (Preview.svelte),
+// and a separate paragraph is exactly what it stopped being. Quoted, so a name
+// with spaces survives; the quote itself is dropped, which costs nothing since
+// no Windows path can contain one.
+function fenced(body: string, lang: string, title = ''): string {
   const longest = Math.max(0, ...[...body.matchAll(/`+/g)].map((m) => m[0].length))
   const fence = '`'.repeat(Math.max(3, longest + 1))
-  return `${fence}${lang}\n${body}\n${fence}`
+  const info = title ? `${lang} title="${title.replace(/"/g, '')}"` : lang
+  return `${fence}${info}\n${body}\n${fence}`
 }
 
 // old → new as a +/- diff body. Not an LCS diff — the whole old block is
@@ -109,14 +117,14 @@ function codeItem(name: string | undefined, input: unknown): PreviewItem | null 
   if (!input || typeof input !== 'object') return null
   const inp = input as Record<string, unknown>
   const filePath = typeof inp['file_path'] === 'string' ? inp['file_path'] : ''
-  const label = filePath ? `\`${fileName(filePath)}\`\n\n` : ''
+  const title = filePath ? fileName(filePath) : ''
 
   if (name === 'Write' && typeof inp['content'] === 'string') {
-    return { kind: 'assistant', text: label + fenced(inp['content'], langOf(filePath)) }
+    return { kind: 'assistant', text: fenced(inp['content'], langOf(filePath), title) }
   }
   if (name === 'Edit' && typeof inp['new_string'] === 'string') {
     const old = typeof inp['old_string'] === 'string' ? inp['old_string'] : ''
-    return { kind: 'assistant', text: label + fenced(diffBody(old, inp['new_string']), 'diff') }
+    return { kind: 'assistant', text: fenced(diffBody(old, inp['new_string']), 'diff', title) }
   }
   if (name === 'MultiEdit' && Array.isArray(inp['edits'])) {
     const parts = inp['edits']
@@ -130,7 +138,7 @@ function codeItem(name: string | undefined, input: unknown): PreviewItem | null 
       )
       .filter(Boolean)
     if (parts.length === 0) return null
-    return { kind: 'assistant', text: label + fenced(parts.join('\n\n'), 'diff') }
+    return { kind: 'assistant', text: fenced(parts.join('\n\n'), 'diff', title) }
   }
   return null
 }

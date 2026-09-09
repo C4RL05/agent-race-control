@@ -16,6 +16,7 @@
     focusEpoch = 0,
     theme,
     fontFamily,
+    fontScale = 1,
     scanning = false,
     onSpawned,
     onExited,
@@ -36,6 +37,11 @@
     focusEpoch?: number
     theme: ITheme
     fontFamily: string
+    // Multiplier on the base cell size — the terminal's share of the per-pane
+    // Ctrl+wheel zoom (App's paneZoom). Not CSS zoom: changing the real font
+    // size re-measures the cell, reflows the grid and resizes the PTY, which
+    // is what a terminal's zoom means. 1 = the Git Bash default.
+    fontScale?: number
     // Whether the screen-scan status technique is the selected one. Off, the
     // buffer is never read at all — the alternate technique costs nothing
     // while it isn't the one driving the dot.
@@ -59,6 +65,9 @@
   let container: HTMLDivElement
   let term: Terminal | null = null
   let fit: FitAddon | null = null
+
+  // Matches the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
+  const BASE_FONT_SIZE = 12
 
   // The screen-scan technique (screen.ts). The buffer is read here because
   // this is the only place that owns the xterm instance — the classifier
@@ -140,11 +149,21 @@
     void document.fonts.load(`12px ${family}`).then(apply, apply)
   })
 
+  // Live cell resize (Ctrl+wheel over this pane). Setting fontSize re-measures
+  // the character cell, so the fit that follows recomputes cols/rows and the
+  // PTY is resized with them — the session genuinely gets a different sized
+  // terminal, not a magnified picture of the one it had.
+  $effect(() => {
+    const size = BASE_FONT_SIZE * fontScale
+    if (!term || term.options.fontSize === size) return
+    term.options.fontSize = size
+    safeFit()
+  })
+
   onMount(() => {
     const t = new Terminal({
       fontFamily,
-      // Match the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
-      fontSize: 12,
+      fontSize: BASE_FONT_SIZE * fontScale,
       theme,
       // xterm's default OSC-8 link activation opens a blank popup first, then
       // sets its location — a popup-blocker dodge that doesn't survive our

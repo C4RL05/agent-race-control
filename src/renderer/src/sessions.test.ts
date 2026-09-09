@@ -11,7 +11,7 @@ import {
   applyHook,
   nudgeStatusFromKey,
   toggleTodo,
-  toggleArchived,
+  setArchived,
   expandedArchives,
   toggleArchive,
   dirOrder,
@@ -19,6 +19,7 @@ import {
   groupCwds,
   groupKeyOf,
   moveGroup,
+  moveSession,
   sameDir,
   parkedWorktrees,
   worktreeSpawnName,
@@ -634,22 +635,22 @@ describe('TODO flag', () => {
 // "tell me when this moves", so a status change spends it; archiving means
 // "I know, stop showing me", which a status change has no business undoing.
 describe('archive flag', () => {
-  it('toggles on and off', () => {
+  it('sets the flag on and off', () => {
     sessions.push(fakeSession({ key: 1, archived: false }))
-    toggleArchived(1)
+    setArchived(1, true)
     expect(sessions[0].archived).toBe(true)
-    toggleArchived(1)
+    setArchived(1, false)
     expect(sessions[0].archived).toBe(false)
   })
 
-  it('toggles only the matching key; a missing key is a no-op, not a throw', () => {
+  it('moves only the matching key; a missing key is a no-op, not a throw', () => {
     sessions.push(
       fakeSession({ key: 1, archived: false }),
       fakeSession({ key: 2, archived: false })
     )
-    toggleArchived(2)
+    setArchived(2, true)
     expect(sessions.map((s) => s.archived)).toEqual([false, true]) // key 1 untouched
-    expect(() => toggleArchived(999)).not.toThrow()
+    expect(() => setArchived(999, true)).not.toThrow()
     expect(sessions.map((s) => s.archived)).toEqual([false, true])
   })
 
@@ -662,12 +663,112 @@ describe('archive flag', () => {
     expect(sessions[0].archived).toBe(true)
   })
 
-  it('leaves the row in place, so unarchiving puts it back where it was', () => {
+  // Placement, revised 2026-09-09: the flag alone left the row at its old
+  // index, which is somewhere in the MIDDLE of the list it just joined.
+  it('archives to the TOP of the card archive and unarchives to the BOTTOM of the live list', () => {
+    sessions.push(
+      fakeSession({ key: 1 }),
+      fakeSession({ key: 2 }),
+      fakeSession({ key: 3 }),
+      fakeSession({ key: 4, archived: true })
+    )
+    setArchived(2, true)
+    expect(sessions.map((s) => s.key)).toEqual([1, 3, 2, 4]) // ahead of the archived 4
+    setArchived(2, false)
+    expect(sessions.map((s) => s.key)).toEqual([1, 3, 2, 4]) // behind the live 3
+  })
+
+  it('leaves a row where it sits when its far side is empty', () => {
     sessions.push(fakeSession({ key: 1 }), fakeSession({ key: 2 }), fakeSession({ key: 3 }))
-    toggleArchived(2)
+    setArchived(2, true) // nothing archived yet — no near end to travel to
     expect(sessions.map((s) => s.key)).toEqual([1, 2, 3])
-    toggleArchived(2)
+    expect(sessions[1].archived).toBe(true)
+  })
+
+  it('setting the flag it already has changes nothing at all', () => {
+    sessions.push(fakeSession({ key: 1, archived: true }), fakeSession({ key: 2 }))
+    setArchived(1, true)
+    expect(sessions.map((s) => s.key)).toEqual([1, 2])
+  })
+
+  // A card's archive spans every cwd of its group (a repo's worktrees), while
+  // the live list a row returns to is its own directory's. Forward slashes so
+  // the paths stay readable; groupKeyOf reads gitInfo, not the separator.
+  it('measures the archive against the whole group, the live list against the cwd', () => {
+    gitInfo['D:/r/main'] = repo('D:/r', 'main')
+    gitInfo['D:/r/wt'] = repo('D:/r', 'wt')
+    sessions.push(
+      fakeSession({ key: 1, cwd: 'D:/r/main' }),
+      fakeSession({ key: 2, cwd: 'D:/r/main' }),
+      fakeSession({ key: 3, cwd: 'D:/r/wt' }),
+      fakeSession({ key: 4, cwd: 'D:/r/wt', archived: true })
+    )
+    // key 2 is a main-worktree row: it files ahead of key 4, an archived row of
+    // ANOTHER worktree, because the two share the card's one archive.
+    setArchived(2, true)
+    expect(sessions.map((s) => s.key)).toEqual([1, 3, 2, 4])
+    // key 4 comes back behind key 3 — the bottom of the wt live list — rather
+    // than behind key 2, which is a live row of the group but a different cwd.
+    setArchived(4, false)
+    expect(sessions.map((s) => s.key)).toEqual([1, 3, 4, 2])
+    delete gitInfo['D:/r/main']
+    delete gitInfo['D:/r/wt']
+  })
+})
+
+// Dropping one session row on another (the tower's session drag). Ordering is
+// the old job; crossing the card's archive divider is the new one — the row
+// takes the target's archived flag on the way past.
+describe('moveSession', () => {
+  it('reorders within one directory', () => {
+    sessions.push(fakeSession({ key: 1 }), fakeSession({ key: 2 }), fakeSession({ key: 3 }))
+    moveSession(3, 1)
+    expect(sessions.map((s) => s.key)).toEqual([3, 1, 2])
+  })
+
+  it('is a no-op on itself, on a missing key, and across cards', () => {
+    sessions.push(fakeSession({ key: 1 }), fakeSession({ key: 2, cwd: 'D:/other' }))
+    moveSession(1, 1)
+    moveSession(1, 999)
+    moveSession(2, 1) // different plain folder = different card
+    expect(sessions.map((s) => s.key)).toEqual([1, 2])
+  })
+
+  it('archives a row dropped on an archived one, keeping the chosen position', () => {
+    sessions.push(
+      fakeSession({ key: 1, archived: true }),
+      fakeSession({ key: 2, archived: true }),
+      fakeSession({ key: 3 })
+    )
+    moveSession(3, 2)
+    expect(sessions.map((s) => s.key)).toEqual([1, 3, 2])
+    expect(sessions.map((s) => s.archived)).toEqual([true, true, true])
+  })
+
+  it('unarchives a row dropped on a live one', () => {
+    sessions.push(fakeSession({ key: 1 }), fakeSession({ key: 2, archived: true }))
+    moveSession(2, 1)
+    expect(sessions.map((s) => s.key)).toEqual([2, 1])
+    expect(sessions[0].archived).toBe(false)
+  })
+
+  // The card's archive is one flat list over every worktree, so any row of the
+  // card can land in it; the live lists are per branch, so they can't mix.
+  it('takes any row of the card into the archive, but only its own into a live list', () => {
+    gitInfo['D:/r/main'] = repo('D:/r', 'main')
+    gitInfo['D:/r/wt'] = repo('D:/r', 'wt')
+    sessions.push(
+      fakeSession({ key: 1, cwd: 'D:/r/main' }),
+      fakeSession({ key: 2, cwd: 'D:/r/wt' }),
+      fakeSession({ key: 3, cwd: 'D:/r/wt', archived: true })
+    )
+    moveSession(1, 2) // live target, another worktree — refused
     expect(sessions.map((s) => s.key)).toEqual([1, 2, 3])
+    moveSession(1, 3) // archived target, another worktree — allowed
+    expect(sessions.map((s) => s.key)).toEqual([2, 1, 3])
+    expect(sessions[1].archived).toBe(true)
+    delete gitInfo['D:/r/main']
+    delete gitInfo['D:/r/wt']
   })
 })
 
