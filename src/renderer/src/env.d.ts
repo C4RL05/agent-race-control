@@ -27,6 +27,10 @@ interface PersistedState {
   // Group keys whose card is collapsed to its title (issue #5). Additive/
   // optional; a stale key (group gone) is harmless — it just never matches.
   collapsed?: string[]
+  // Group keys whose ARCHIVE section is unfolded — the inverse sense of
+  // `collapsed` above, because an archive folds by default (see the store).
+  // Additive/optional; a stale key is harmless.
+  expandedArchives?: string[]
   recentDirs?: string[]
   sessions: Array<{
     type: 'shell' | 'claude' | 'codex'
@@ -35,6 +39,9 @@ interface PersistedState {
     claudeSessionId: string | null
     // Cosmetic TODO flag (issue #3) — additive/optional, absent → false.
     todo?: boolean
+    // Cosmetic archive flag — additive/optional, and written only when true
+    // (absent → the row is not archived).
+    archived?: boolean
     // Pending --worktree spawn still awaiting its hook cwd-follow (named
     // only) — additive/optional; restore re-arms the flag.
     spawnWorktree?: string | null

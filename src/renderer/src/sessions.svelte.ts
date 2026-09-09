@@ -175,6 +175,12 @@ export interface Session {
   // Purely visual — no effect on sorting/focus/logic. Persisted so it survives
   // restart; auto-cleared when the underlying status changes color (setStatus).
   todo: boolean
+  // Cosmetic "out of the way" flag: the row drops into its card's foldable
+  // archive section and its dot is drawn as a ring rather than a disc. Purely
+  // visual, like todo — the session keeps running, keeps its status, its TODO
+  // flag and its notes, and is focused, renamed and closed exactly as before.
+  // Persisted, and unlike todo NOTHING clears it but the user.
+  archived: boolean
   // A relaunch is in flight: the kill has been sent and this row is waiting for
   // its own PTY's exit before the resumed spawn goes up (relaunchSession).
   // Transient by nature — it lives for the length of one process death.
@@ -205,6 +211,18 @@ export const collapsedGroups = $state<Record<string, boolean>>({})
 export function toggleCollapsed(groupKey: string): void {
   if (collapsedGroups[groupKey]) delete collapsedGroups[groupKey]
   else collapsedGroups[groupKey] = true
+}
+
+// Which cards have their archive section unfolded, keyed the same way. Note the
+// INVERTED sense against collapsedGroups above: that one stores collapsed keys
+// (absent = expanded), this one stores expanded keys (absent = FOLDED). The
+// point of archiving a row is to get it out of the way, so a section that
+// opened itself on the first archive would undo the feature. Persisted.
+export const expandedArchives = $state<Record<string, boolean>>({})
+
+export function toggleArchive(groupKey: string): void {
+  if (expandedArchives[groupKey]) delete expandedArchives[groupKey]
+  else expandedArchives[groupKey] = true
 }
 
 // Per-cwd branch/worktree info (issue #5), populated async from main. Absent =
@@ -396,6 +414,7 @@ function createSession(init: {
     spawnWorktree: init.worktree ?? null,
     view: 'terminal',
     todo: false,
+    archived: false,
     notes: '',
     relaunching: false
   }
@@ -468,6 +487,16 @@ export function applyScreen(key: number, state: ScreenState): void {
 export function toggleTodo(key: number): void {
   const session = sessions.find((s) => s.key === key)
   if (session) session.todo = !session.todo
+}
+
+// Archive / unarchive one row (its context menu). Deliberately not routed
+// through setStatus and never cleared by one: a status change is exactly what
+// TODO is about ("tell me when this moves") and exactly what archiving is not
+// ("I know, stop showing me"). The row keeps its place in the sessions array,
+// so unarchiving puts it back where it was rather than at the end.
+export function toggleArchived(key: number): void {
+  const session = sessions.find((s) => s.key === key)
+  if (session) session.archived = !session.archived
 }
 
 // Windows paths compare case-insensitively and arrive with either separator
@@ -941,6 +970,7 @@ export async function restoreState(): Promise<void> {
   if (saved.dirOrder?.length) dirOrder.push(...saved.dirOrder)
   if (saved.dirColors) Object.assign(dirColors, saved.dirColors)
   if (saved.collapsed) for (const key of saved.collapsed) collapsedGroups[key] = true
+  if (saved.expandedArchives) for (const key of saved.expandedArchives) expandedArchives[key] = true
   // Re-apply touchRecent's invariants (dedupe + cap) — the state file is
   // external data and the one path that skips them otherwise.
   if (saved.recentDirs?.length) {
@@ -967,6 +997,9 @@ export async function restoreState(): Promise<void> {
     // Restore the TODO flag directly (not via setStatus) — the spawn's status
     // defaults must not count as the color change that would clear it.
     restored.todo = s.todo ?? false
+    // Absent for every session written before the archive existed, and for
+    // every session that isn't archived (see snapshotState).
+    restored.archived = s.archived ?? false
     // Absent for every session written before the Notes tab existed, and for
     // every session whose notes are empty (see snapshotState).
     restored.notes = s.notes ?? ''
@@ -1005,6 +1038,11 @@ export function snapshotState(): PersistedState {
     collapsed: Object.keys(collapsedGroups).filter(
       (key) => collapsedGroups[key] && alive.some((s) => groupKeyOf(s.cwd) === key)
     ),
+    // Same rule for the archive sections' fold state — keys whose card is gone
+    // are dropped rather than accumulating in the file.
+    expandedArchives: Object.keys(expandedArchives).filter(
+      (key) => expandedArchives[key] && alive.some((s) => groupKeyOf(s.cwd) === key)
+    ),
     recentDirs: [...recentDirs],
     sessions: alive.map((s) => ({
       type: s.type,
@@ -1012,6 +1050,9 @@ export function snapshotState(): PersistedState {
       cwd: s.cwd,
       claudeSessionId: s.claudeSessionId,
       todo: s.todo,
+      // Written only when set — an unarchived row is the default, so the file
+      // doesn't grow an `"archived": false` per session.
+      archived: s.archived || undefined,
       // An empty editor is not state — only text anyone actually typed is
       // written, so the file doesn't grow a `"notes": ""` per session.
       notes: s.notes || undefined,
@@ -1101,6 +1142,7 @@ function swapInRelaunch(session: Session): void {
   // the fresh spawn's status defaults never count as the colour change that
   // clears the flag.
   next.todo = session.todo
+  next.archived = session.archived
   next.notes = session.notes
   next.view = session.view
   sessions.splice(index, 1, next)
