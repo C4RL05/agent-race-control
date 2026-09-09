@@ -1,0 +1,22 @@
+# Line endings, settled once.
+#
+# Without this file the repo pulled in two directions: `core.autocrlf=true`
+# checks every text file out as CRLF, while `npm run format` (Prettier, whose
+# `endOfLine` default is `lf`) rewrites every one of them back to LF. The
+# result was a `git status` listing fifty-odd files that `git diff` reported as
+# unchanged — the blobs were identical either way, so the noise was cosmetic,
+# but it buried the real diff and read as "my change touched everything".
+#
+# `text=auto` keeps git's own rule: detect text, store it LF in the index,
+# leave detected binaries alone. `eol=lf` is the half that was missing — it
+# pins the WORKING TREE to LF as well, on every platform and regardless of a
+# machine's autocrlf setting, so the checkout and Prettier finally agree.
+* text=auto eol=lf
+
+# The binaries, marked rather than sniffed. text=auto already detects these
+# correctly; saying so explicitly means a future file type can never be
+# mangled by a mis-detection.
+*.png binary
+*.ico binary
+*.woff2 binary
+*.mp4 binary
