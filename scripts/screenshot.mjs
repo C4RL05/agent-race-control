@@ -508,7 +508,7 @@ async function captureTheme(theme) {
   await shot(`arc-session-menu-${theme}.png`, border, await cropAround([rows.nth(0), menu]))
   await page.keyboard.press('Escape')
 
-  // 7 — the Settings modal (theme + status RGB + fonts).
+  // 7 — the Settings panel (Appearance / Status / Fonts).
   await page.locator('button[title="Settings"]').click()
   const modal = page.locator('.settings-modal')
   await modal.waitFor({ timeout: 5_000 })
@@ -520,11 +520,12 @@ async function captureTheme(theme) {
   await focusTerminal()
 }
 
-// Dark is the staged mode; flip to light through the real Settings modal
-// (the app's actual theme control) for the second pass.
+// Dark is the staged mode; flip to light through the real Settings panel
+// (the app's actual theme control) for the second pass. The theme control is
+// a segmented control as of 2026-09-10 — `.seg`, not the old `.menu-item` row.
 await captureTheme('dark')
 await page.locator('button[title="Settings"]').click()
-await page.locator('.settings-modal .menu-item', { hasText: 'Light' }).click()
+await page.locator('.settings-modal .seg', { hasText: 'Light' }).click()
 await page.keyboard.press('Escape')
 await captureTheme('light')
 

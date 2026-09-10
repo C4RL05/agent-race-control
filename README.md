@@ -46,7 +46,7 @@ Every agent row carries a **read-only conversation preview**, rendered as markdo
 
 ## Appearance
 
-Theme, fonts and the status controls live in one Settings modal: GitHub Light/Dark/System, independent font pickers for the interface, the terminal and the preview, whether the status dot is drawn at all, and which technique colours it on Claude rows.
+Theme, fonts and the status controls live in one Settings panel, grouped into Appearance, Status and Fonts: GitHub Light/Dark/System, whether the status dot is drawn at all and which technique colours it on Claude rows, and independent font pickers for the interface, the terminal and the preview — each showing every face in that face.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/arc-settings-dark.png">

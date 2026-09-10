@@ -186,6 +186,24 @@
     light: 'Light',
     dark: 'Dark'
   }
+  // Segment glyphs for the theme control. Names verified present in the
+  // shipped woff2, not just in the package's name list (see the CLAUDE.md
+  // gotcha — the two disagree in both directions).
+  const MODE_ICONS: Record<Mode, string> = {
+    system: 'brightness_auto',
+    light: 'light_mode',
+    dark: 'dark_mode'
+  }
+
+  // Which font row in Settings is unfolded, or null. One value, not a flag per
+  // row: opening one closes the others, so the panel keeps its height.
+  let openFont = $state<string | null>(null)
+
+  // Closing the panel folds whatever was open, so reopening it never starts
+  // mid-gesture on a list you left behind.
+  $effect(() => {
+    if (!settingsOpen) openFont = null
+  })
 
   // Which technique colours the status dot. One at a time — see screen.ts.
   const STATUS_SOURCES = [
@@ -1197,40 +1215,71 @@
     {/if}
   </main>
 
-  <!-- One settings checkbox — the boolean twin of fontGroup's radio rows,
-       same menu-item idiom, with the box glyph carrying the state. -->
-  {#snippet checkbox(label: string, checked: boolean, toggle: () => void)}
-    <button class="menu-item" role="menuitemcheckbox" aria-checked={checked} onclick={toggle}>
-      <span class="material-symbols-outlined"
-        >{checked ? 'check_box' : 'check_box_outline_blank'}</span
-      >{label}
+  <!-- An on/off setting looks like an on/off setting. A checkbox glyph in a
+       menu row read as "an item you can tick", which is what a menu does; a
+       switch reads as state, which is what these are. -->
+  {#snippet switchBtn(label: string, on: boolean, toggle: () => void)}
+    <button
+      class="switch"
+      class:on
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onclick={toggle}
+    >
+      <span class="knob"></span>
     </button>
   {/snippet}
 
-  <!-- One radio group per font setting. Each label previews itself in its own
-       family (the icon keeps its own font). font-family only — terminal/preview
-       size is the Ctrl+=/−/0 zoom. -->
-  {#snippet fontGroup(
+  <!-- One font setting: a picker showing the current face IN that face, which
+       unfolds in place to the whole list, each name likewise previewing itself.
+       In place rather than as a popup menu — the panel is already a dialog, and
+       a second layer over it would need its own backdrop and z-index. One open
+       at a time (openFont holds the row, not a boolean per row), so the panel
+       never grows by three lists at once. font-family only — the size of the
+       terminal and the preview is the zoom. -->
+  {#snippet fontRow(
     label: string,
+    key: string,
     list: typeof FONTS,
     selected: string,
     pick: (id: string) => void
   )}
-    <div class="menu-divider"></div>
-    <div class="menu-label">{label}</div>
-    {#each list as font (font.id)}
+    {@const current = list.find((f) => f.id === selected) ?? list[0]}
+    {@const open = openFont === key}
+    <div class="set-row">
+      <span class="set-label">{label}</span>
       <button
-        class="menu-item"
-        role="menuitemradio"
-        aria-checked={selected === font.id}
-        style:font-family={font.stack}
-        onclick={() => pick(font.id)}
+        class="picker"
+        class:open
+        aria-expanded={open}
+        aria-label={`${label} font: ${current.label}`}
+        style:font-family={current.stack}
+        onclick={() => (openFont = open ? null : key)}
       >
-        <span class="material-symbols-outlined"
-          >{selected === font.id ? 'radio_button_checked' : 'radio_button_unchecked'}</span
-        >{font.label}
+        <span class="picker-name">{current.label}</span>
+        <span class="material-symbols-outlined">expand_more</span>
       </button>
-    {/each}
+    </div>
+    {#if open}
+      <div class="options" role="radiogroup" aria-label={`${label} font`}>
+        {#each list as font (font.id)}
+          <button
+            class="option"
+            class:on={selected === font.id}
+            role="radio"
+            aria-checked={selected === font.id}
+            style:font-family={font.stack}
+            onclick={() => {
+              pick(font.id)
+              openFont = null
+            }}
+          >
+            {font.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/snippet}
 
   <!-- The card's name, which doubles as the collapse toggle (issue #5): click
@@ -1648,55 +1697,102 @@
       role="presentation"
       onclick={() => (settingsOpen = false)}
     ></div>
+    <!-- A settings PANEL, not a menu (2026-09-10). The controls are unchanged;
+         what changed is that they stopped being twenty-three identical rows in
+         one column. Each control now has the shape of the choice it makes — a
+         segmented control for "one of two or three", a switch for on/off, a
+         picker for "one of five" — and they sit in a label-left / control-right
+         grid under three section headings. -->
     <div class="settings-modal" role="dialog" aria-label="Settings" aria-modal="true">
       <div class="settings-header">
         <span class="material-symbols-outlined">settings</span>
         <span class="settings-title">Settings</span>
+        <button
+          class="settings-close"
+          aria-label="Close settings"
+          onclick={() => (settingsOpen = false)}
+        >
+          <span class="material-symbols-outlined">close</span>
+        </button>
       </div>
       <div class="settings-body">
-        <div class="menu-label">Theme</div>
-        {#each MODES as mode (mode)}
-          <button
-            class="menu-item"
-            role="menuitemradio"
-            aria-checked={ui.mode === mode}
-            onclick={() => (ui.mode = mode)}
-          >
-            <span class="material-symbols-outlined"
-              >{ui.mode === mode ? 'radio_button_checked' : 'radio_button_unchecked'}</span
-            >{MODE_LABELS[mode]}
-          </button>
-        {/each}
+        <section class="set-group">
+          <h2>Appearance</h2>
+          <div class="set-row">
+            <span class="set-label">Theme</span>
+            <div class="segmented" role="radiogroup" aria-label="Theme">
+              {#each MODES as mode (mode)}
+                <button
+                  class="seg"
+                  class:on={ui.mode === mode}
+                  role="radio"
+                  aria-checked={ui.mode === mode}
+                  onclick={() => (ui.mode = mode)}
+                >
+                  <span class="material-symbols-outlined">{MODE_ICONS[mode]}</span>{MODE_LABELS[
+                    mode
+                  ]}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <div class="set-row">
+            <span class="set-label">Color title glyph</span>
+            {@render switchBtn(
+              'Color title glyph',
+              ui.glyphColor,
+              () => (ui.glyphColor = !ui.glyphColor)
+            )}
+          </div>
+        </section>
 
-        <div class="menu-divider"></div>
-        {@render checkbox('Status RGB', ui.statusRgb, () => (ui.statusRgb = !ui.statusRgb))}
-        {@render checkbox('Status dot', ui.statusDot, () => (ui.statusDot = !ui.statusDot))}
-        {@render checkbox(
-          'Color title glyph',
-          ui.glyphColor,
-          () => (ui.glyphColor = !ui.glyphColor)
-        )}
-        <div class="menu-divider"></div>
-        <div class="menu-label">Status detection</div>
-        {#each STATUS_SOURCES as source (source.id)}
-          <button
-            class="menu-item"
-            role="menuitemradio"
-            aria-checked={ui.statusSource === source.id}
-            title={source.hint}
-            onclick={() => (ui.statusSource = source.id)}
-          >
-            <span class="material-symbols-outlined"
-              >{ui.statusSource === source.id
-                ? 'radio_button_checked'
-                : 'radio_button_unchecked'}</span
-            >{source.label}
-          </button>
-        {/each}
+        <section class="set-group">
+          <h2>Status</h2>
+          <div class="set-row">
+            <span class="set-label">Status dot</span>
+            {@render switchBtn('Status dot', ui.statusDot, () => (ui.statusDot = !ui.statusDot))}
+          </div>
+          <div class="set-row">
+            <span class="set-label">Status RGB</span>
+            {@render switchBtn('Status RGB', ui.statusRgb, () => (ui.statusRgb = !ui.statusRgb))}
+          </div>
+          <div class="set-row">
+            <span class="set-label">Detection</span>
+            <div class="segmented" role="radiogroup" aria-label="Status detection">
+              {#each STATUS_SOURCES as source (source.id)}
+                <button
+                  class="seg"
+                  class:on={ui.statusSource === source.id}
+                  role="radio"
+                  aria-checked={ui.statusSource === source.id}
+                  onclick={() => (ui.statusSource = source.id)}
+                >
+                  {source.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <!-- The hint the old rows hid in a title attribute. It changes with
+               the choice, so it explains what is selected rather than making
+               you hover both to find out. -->
+          <p class="set-hint">
+            {STATUS_SOURCES.find((s) => s.id === ui.statusSource)?.hint} Claude rows only — a Codex row
+            always reads its screen.
+          </p>
+        </section>
 
-        {@render fontGroup('Terminal', FONTS, ui.font, (id) => (ui.font = id))}
-        {@render fontGroup('Interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
-        {@render fontGroup('Preview', UI_FONTS, ui.previewFont, (id) => (ui.previewFont = id))}
+        <section class="set-group">
+          <h2>Fonts</h2>
+          {@render fontRow('Terminal', 'terminal', FONTS, ui.font, (id) => (ui.font = id))}
+          {@render fontRow('Interface', 'interface', UI_FONTS, ui.uiFont, (id) => (ui.uiFont = id))}
+          {@render fontRow(
+            'Preview',
+            'preview',
+            UI_FONTS,
+            ui.previewFont,
+            (id) => (ui.previewFont = id)
+          )}
+        </section>
       </div>
     </div>
   {/if}
@@ -1705,7 +1801,11 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === 'Escape') {
-      if (settingsOpen) settingsOpen = false
+      // An open font picker is the innermost thing Escape can mean, so it goes
+      // first — one Escape shouldn't close the panel out from under a list you
+      // were still reading.
+      if (openFont) openFont = null
+      else if (settingsOpen) settingsOpen = false
       else if (menu) menu = null
     }
   }}
@@ -2640,8 +2740,12 @@
     color: var(--fg-muted);
   }
 
-  /* Centered dialog (not positioned like the context menus) — same surface
-     language (.menu-item/.menu-label/.menu-divider) as the popup menus. */
+  /* Centered dialog (not positioned like the context menus). It deliberately
+     STOPS sharing the popup menus' row language: a menu is a list of things to
+     do, a settings panel is a set of states to read, and dressing the second as
+     the first is what made twenty-three near-identical rows. Wide enough for a
+     label-left / control-right grid, and tall enough that nothing scrolls at a
+     normal window size. */
   .settings-modal {
     position: fixed;
     z-index: 11;
@@ -2650,37 +2754,253 @@
     transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
-    width: 260px;
+    width: 400px;
+    max-width: calc(100vw - 32px);
     max-height: calc(100vh - 64px);
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
 
   .settings-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     flex-shrink: 0;
-    padding: 8px 8px 8px 12px;
+    padding: 9px 9px 9px 14px;
     border-bottom: 1px solid var(--border);
   }
 
   .settings-header .material-symbols-outlined:first-child {
-    font-size: 15px;
+    font-size: 16px;
     color: var(--fg-muted);
   }
 
   .settings-title {
     flex: 1;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
+  }
+
+  /* Escape and a backdrop click already close the panel; this gives the
+     gesture something to aim at, which a dimmed modal is expected to have. */
+  .settings-close {
+    display: flex;
+    flex: none;
+    padding: 3px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+
+  .settings-close:hover {
+    background: var(--bg-subtle);
+    color: var(--fg);
+  }
+
+  .settings-close .material-symbols-outlined {
+    font-size: 17px;
   }
 
   .settings-body {
     overflow-y: auto;
-    padding: 4px;
+    padding: 12px 14px 14px;
+  }
+
+  /* One section per thing you'd come here to change. The heading is the Session
+     tab's, deliberately — the app already has a "group of labelled facts" idiom
+     and this is the same shape. */
+  .set-group + .set-group {
+    margin-top: 16px;
+  }
+
+  .set-group h2 {
+    margin: 0 0 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+  }
+
+  /* Label left, control right, on one track pair — so every control in the
+     panel starts at the same x and the eye runs down one column, not twenty. */
+  .set-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 32px;
+  }
+
+  .set-label {
+    font-size: 12px;
+  }
+
+  .set-hint {
+    margin: 2px 0 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: var(--fg-muted);
+  }
+
+  /* Segmented control: for a choice of two or three, where showing the options
+     costs less than hiding them behind a menu and the set reads as one control. */
+  .segmented {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+  }
+
+  .seg {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 4px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .seg:hover {
+    color: var(--fg);
+  }
+
+  /* The selected segment lifts onto the panel's own surface — the inverse of
+     the track it sits in, which is what makes it read as pressed. */
+  .seg.on {
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  }
+
+  .seg .material-symbols-outlined {
+    font-size: 14px;
+  }
+
+  /* Switch: the shape of an on/off state. The knob is a child rather than a
+     pseudo-element so the transition is on a real box. */
+  .switch {
+    position: relative;
+    flex: none;
+    width: 32px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    cursor: pointer;
+    transition:
+      background-color 0.15s,
+      border-color 0.15s;
+  }
+
+  .switch.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--fg-muted);
+    transition:
+      transform 0.15s,
+      background-color 0.15s;
+  }
+
+  .switch.on .knob {
+    transform: translateX(14px);
+    /* on the accent fill, not on the page — a palette token would vanish */
+    background: #ffffff;
+  }
+
+  /* Font picker: the current face, set in that face. A font name in the app's
+     own font tells you nothing about the font. */
+  .picker {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 210px;
+    padding: 3px 5px 3px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+    color: var(--fg);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .picker:hover,
+  .picker.open {
+    border-color: var(--fg-muted);
+  }
+
+  .picker-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .picker .material-symbols-outlined {
+    flex: none;
+    font-size: 16px;
+    color: var(--fg-muted);
+    transition: transform 0.12s;
+  }
+
+  .picker.open .material-symbols-outlined {
+    transform: rotate(180deg);
+  }
+
+  /* The unfolded list: chips rather than rows, because five short names read
+     faster wrapped than stacked, and each one is its own specimen. */
+  .options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 4px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+  }
+
+  .option {
+    padding: 3px 8px 4px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg-muted);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
+  .option:hover {
+    color: var(--fg);
+  }
+
+  .option.on {
+    border-color: var(--accent);
+    color: var(--fg);
   }
 
   .dir-parent {

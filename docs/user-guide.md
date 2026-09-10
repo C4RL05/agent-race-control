@@ -212,14 +212,22 @@ The text is a field on the session, which decides both of its behaviours: notes 
   <img alt="The Settings modal" src="../images/arc-settings-light.png">
 </picture>
 
-The ☰ button opens Settings:
+The ☰ button opens Settings — one panel, three sections, closed with the ×, a click outside, or Escape.
+
+**Appearance**
 
 - **Theme** — GitHub Light / Dark / System, the exact Primer palettes. This themes the app's chrome and terminal colors; Claude Code's own rendering passes through untouched.
-- **Status RGB** — swaps the status dots' Primer tones for pure traffic-light red/amber/green.
-- **Status dot** — draws the dots at all. Off, the tower is names only and the column they sat in closes up.
 - **Color title glyph** — paints the leading emoji or symbol of a row's name by which glyph it is, so sessions you've named with one are pickable out of the list by colour.
-- **Status detection** — which technique colours the dot. **Hooks + poll** is the default and the better of the two: Claude Code's own turn-boundary events decide red and amber, with the agent poll as a green floor. **Screen** instead reads the session's own screen — its spinner, its prompt box, an open dialog. The setting governs **Claude rows only**, because they are the ones with a choice; Codex rows always read the screen, since their terminal title reports all three states on its own.
-- **Fonts** — the terminal's monospace face (Cascadia Mono, Consolas, JetBrains Mono, Fira Code, IBM Plex Mono) and the sans faces for the app chrome and the preview.
+
+**Status**
+
+- **Status dot** — draws the dots at all. Off, the tower is names only and the column they sat in closes up.
+- **Status RGB** — swaps the status dots' Primer tones for pure traffic-light red/amber/green.
+- **Detection** — which technique colours the dot. **Hooks + poll** is the default and the better of the two: Claude Code's own turn-boundary events decide red and amber, with the agent poll as a green floor. **Screen** instead reads the session's own screen — its spinner, its prompt box, an open dialog. The line under it spells out whichever you've picked. The setting governs **Claude rows only**, because they are the ones with a choice; Codex rows always read the screen, since their terminal title reports all three states on its own.
+
+**Fonts**
+
+Three pickers — the terminal's monospace face (Cascadia Mono, Consolas, JetBrains Mono, Fira Code, IBM Plex Mono) and the sans faces for the app chrome and the preview. Each picker shows the face **in that face**, and unfolds to the whole list with every name likewise set in itself, so you're choosing by how it reads rather than by its name. Only one list is open at a time.
 
 **Zoom** works two ways. `Ctrl+=` / `Ctrl+-` / `Ctrl+0` size the **whole window**, Windows-Terminal style. `Ctrl+wheel` over a pane sizes **just that pane** — the tower, the terminal, the Preview tab, the Session tab and the Notes tab each remember their own size, so you can read a transcript large while the tower stays small. The wheel moves in finer steps than the keys, two notches to each keypress, and reaches just as far either way. The terminal's share is a real font-size change: the grid reflows and the session is resized, exactly as in Windows Terminal. Pressing one of the window-zoom keys puts every pane back in step with the window.
 
