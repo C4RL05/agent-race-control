@@ -266,7 +266,7 @@
   // Windows may ask for — with smoothing OFF, so nearest neighbour keeps the
   // pixels crisp squares. scripts/make-icon.mjs bakes the SAME file into
   // build/icon.ico — one source, zero drift. The sprite is deliberately
-  // opaque (solid #999999 ground). A data URL never taints the canvas
+  // opaque (solid #ff9747 ground). A data URL never taints the canvas
   // (a file:// asset in the packaged build would) — which is why the CSP
   // carries `img-src data:`.
   $effect(() => {

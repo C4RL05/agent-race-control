@@ -17,6 +17,7 @@
 # correctly; saying so explicitly means a future file type can never be
 # mangled by a mis-detection.
 *.png binary
+*.af binary
 *.ico binary
 *.woff2 binary
 *.mp4 binary

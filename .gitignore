@@ -6,3 +6,4 @@ dist/
 .claude/worktrees/
 reports/
 .stryker-tmp/
+*.af~lock~
