@@ -24,12 +24,17 @@ Every row leads with a status dot — traffic lights from *your* point of view:
 | Dot | Meaning |
 |---|---|
 | 🔴 running | the agent is busy — nothing for you to do |
-| 🟠 waiting (pulses) | Claude wants you: a permission prompt or a question |
+| 🟠 waiting (pulses) | the agent wants you: a permission prompt or a question |
+| 🟠 delegating (steady) | the main turn is over, but its subagents are still working (Claude rows) |
 | 🟢 idle | at the prompt — your turn |
 | ⚪ shell | a live shell session (shells only run or exit) |
 | faded | the process exited |
 
-Status comes from Claude Code itself (its hook events, received over localhost — pure observation, every hook is answered "carry on"). The app also reads the keystrokes you type for the transitions hooks are blind to — dismissing a dialog with Esc, interrupting with Ctrl+C — so the dot tracks reality either way.
+Amber twice, and the difference is the pulse: **pulsing means you are the blocker**, steady means work is still happening without you. The pulse is reserved for the one state that should catch your eye across the room.
+
+Where the dot comes from depends on the agent. A **Claude** row runs on two channels: Claude Code's own hook events, received over localhost, decide red and amber, while a once-a-second `claude agents --json` poll acts as a green floor so a session that quietly finished can't sit red. Both are pure observation — every hook is answered "carry on", and the poll never touches the terminal. A **Codex** row needs neither: its terminal title carries all three states on its own, so the app reads the screen instead (see [Status detection](#appearance) if you want Claude rows on that too).
+
+One transition no channel reports is an interrupt, so the app also watches for **Ctrl+C** and greens the dot itself. Esc is deliberately *not* read: it dismisses a dialog, but it also closes Claude's `/btw` menu, and a keystroke that means two things can't be trusted with your status.
 
 **Click a dot to flag it TODO** — a "come back to this one" marker. It's purely cosmetic and clears itself the next time the session's real status changes color.
 
@@ -44,7 +49,7 @@ Sessions group into cards by where they run:
 
 Each card has a colored team stripe. Colors come from Claude Code's own `/color` vocabulary and are auto-assigned per directory; right-click a card title to change one. Click a card's name to **collapse** it to a single title row — a roll-up dot keeps showing the most urgent status inside; click again to expand.
 
-Hovering a card title (or a branch row) reveals its spawn cluster: **new Claude session here**, **new shell here**, **show in Explorer**.
+Hovering a card title (or a branch row) reveals its spawn cluster: **new Claude session here**, **new Codex session here**, **new shell here**, **show in Explorer**.
 
 ### Reordering
 
@@ -52,14 +57,26 @@ Everything drags. Drag a card to reorder the groups; drag a row to reorder sessi
 
 ### The filter bar
 
-The bar above the tower filters as you type — matching session names, conversation titles, and paths. The chip next to it filters by type (Claude sessions / shells / all). Esc clears the text. The two buttons on the left spawn sessions: each opens a menu of recent directories plus **Browse…**.
+The bar above the tower filters as you type — matching session names, conversation titles, and paths. The chip next to it filters by type (Claude sessions / shells / all types). Esc clears the text. The three buttons on the left spawn sessions — Claude, Codex, shell — each opening a menu of recent directories plus **Browse…**.
 
 ## Sessions
 
-### Two types
+### Three types
 
 - **Claude sessions** — the unmodified `claude` CLI in a real ConPTY (spawned as `bash --login -i -c 'exec claude'`). Everything the terminal has works by construction: rewind, `/btw`, agent view, plan mode, MCP, resume, hooks.
+- **Codex sessions** — the unmodified `codex` CLI, in the same tower, the same folders, with the same dots, drag-and-drop and TODO flags. Its spawn line is shorter than Claude's, not longer: plain `codex`, or `codex resume <id>` when the app restores it, and nothing else. What it doesn't get is listed under [Where Codex differs](#where-codex-differs).
 - **Shell sessions** — first-class Git Bash shells for dev servers, builds, git. Same tower, same rows, white dot.
+
+### Where Codex differs
+
+Everything about the app that isn't the CLI is shared. Four things are not, and each is a capability Codex genuinely lacks rather than a feature left out:
+
+- **No fresh worktree at spawn.** Codex has no `--worktree` flag, and the app will not run git itself, so a repo card's new-worktree button stays Claude's.
+- **No rename into the session, and no folder colour.** Both work by typing a slash command at the prompt, which Codex's composer wouldn't understand. A Codex row's name is a plain local label instead, seeded from Codex's own thread name once it picks one.
+- **No Session tab.** That tab reads Claude's own session file and folds a Claude transcript for its numbers; none of it exists here, and a mostly-empty instrument panel is worse than no tab.
+- **Its conversation id is discovered, not pinned.** Codex mints its own, so for the first second or so a new row is a working terminal with no preview yet. It arrives on its own.
+
+It does get Terminal, Preview and Notes, the status dot, TODO, folders, drag-and-drop, duplicate, archive, close and **Relaunch**.
 
 ### Naming
 
@@ -67,6 +84,7 @@ Double-click a row's name to rename it.
 
 - A **shell's** name is a plain local label ("dev server").
 - A **Claude session's** name *is its conversation's name*: the rename types `/rename <name>` into the session for you, so the tower and Claude's own UI stay in sync. This only happens at an idle prompt — never while Claude is busy or a dialog is open. Untouched Claude sessions display their conversation title, live from the terminal title.
+- A **Codex session's** name is local to the tower. Codex titles its window with the working directory, so every Codex row in one folder would otherwise read the same word; the app takes the thread name Codex writes to its own session index instead, and renaming replaces it here only.
 
 ### The context menu
 
@@ -80,7 +98,7 @@ Right-click a row:
 - **Show in Explorer** / **Copy path** — the directory the session runs in.
 - **Duplicate session** — same type, same directory, fresh process. Windows Terminal's "duplicate tab".
 - **Rename** — the same rename double-clicking the name does.
-- **Apply folder color** — types `/color <name>` so Claude's agent view matches the tower stripe.
+- **Apply folder color** — types `/color <name>` so Claude's agent view matches the tower stripe. Claude rows only.
 - **Relaunch session** — ends this session's process and brings the *same conversation* straight back up in a fresh one. For when the CLI has updated under you, or the TUI is wedged. The row keeps its place, its name, its TODO flag and its notes; only the process underneath is new. Agent rows only — a shell has no conversation to resume, and restarting one is a close and a new row.
 - **Archive session** — files the row into its card's archive, below. The session carries on running.
 - **Close session** — kills the process and removes the row.
@@ -97,9 +115,9 @@ Two things archiving deliberately does *not* do. A collapsed card's roll-up dot 
 
 ### Closing and resuming
 
-The **×** on a row closes the session the way closing a terminal window would — the process is killed, the row disappears. It does *not* type `/exit`, so Claude Code's graceful-exit behaviors (like worktree cleanup) don't run; the conversation file stays in Claude's own history.
+The **×** on a row closes the session the way closing a terminal window would — the process is killed, the row disappears. It does *not* type `/exit`, so the CLI's graceful-exit behaviors (like Claude Code's worktree cleanup) don't run; the conversation file stays in the agent's own history.
 
-**Restarting the app restores the tower.** Claude sessions reopen *into their conversations* (`--resume` with pinned session ids); shells reopen fresh in their directory. Sessions that exited before the restart are gone — a session that ended is gone.
+**Restarting the app restores the tower.** Agent rows reopen *into their conversations* — Claude with `--resume` against the id the app pinned at spawn, Codex with `codex resume` against the id it minted itself. Shells reopen fresh in their directory. Sessions that exited before the restart are gone — a session that ended is gone.
 
 ## Repo cards & worktrees
 
@@ -147,18 +165,45 @@ The card's **history button** lists the repo's worktrees that currently have no 
 - a worktree is a bare checkout — make `npm install` your first prompt, or automate it with a personal `WorktreeCreate` hook
 - run plain `claude` once in a new repo first (worktrees need the trust dialog accepted)
 
-## The conversation preview
+## The pane tabs
+
+A shell row is just a terminal. An agent row carries tabs above it:
+
+| Tab | Claude | Codex |
+|---|---|---|
+| **Terminal** | ✅ | ✅ |
+| **Preview** — the conversation, rendered | ✅ | ✅ |
+| **Session** — the instrument panel | ✅ | — |
+| **Notes** — a scratchpad | ✅ | ✅ |
+
+All three of the non-terminal tabs are **read-only about the session**: none of them can write to it, and the terminal keeps running while you're on any of them. Each also remembers its own text size (see [Zoom](#appearance)).
+
+### Preview
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/arc-preview-dark.png">
   <img alt="The read-only conversation preview" src="../images/arc-preview-light.png">
 </picture>
 
-Every Claude session carries a second tab: a **read-only preview of the conversation**, rendered as markdown — headers, tables, bullets, code — straight from the transcript Claude Code itself writes. It follows the conversation live, drops tool noise but keeps the code Claude writes (file listings, `+/-` tinted diffs), and its text is selectable — reading a long answer here beats scrolling xterm.
+A **read-only preview of the conversation**, rendered as markdown — headers, tables, bullets, code — straight from the transcript the CLI itself writes. It follows the conversation live, drops tool noise but keeps the code the agent writes (file listings, `+/-` tinted diffs), and its text is selectable — reading a long answer here beats scrolling xterm.
 
-A file Claude wrote or edited arrives as a **tab carrying its name**, folded. Click the tab to unfold the code and click it again to put it away — so a long listing never buries the conversation around it, and you still see at a glance which file was touched.
+A file that was written or edited arrives as a **tab carrying its name**, folded. Click the tab to unfold the code and click it again to put it away — so a long listing never buries the conversation around it, and you still see at a glance which file was touched.
 
 Pure observation: nothing is injected, the terminal byte stream is untouched, and flipping between Terminal and Preview is instant.
+
+### Session
+
+Everything the app knows about a running Claude session, as read-only labelled text: pid and working directory, the model and effort driving it, context and output tokens, turns and how long the last one took, compactions, queued prompts, subagents and background shells it started, which hooks ran and how slow they were, and Claude's own written summary of where it got to.
+
+It exists because the status dot used to be **unverifiable by eye**. This tab puts the app's computed dot next to the poll's raw reading, and the hook-counted subagents next to the transcript-counted ones, so a disagreement is something you can watch rather than something you argue about. Counts here are labelled **open**, not running — a task whose completion was never written stays counted, and the poll line is the authority on whether anything is actually happening.
+
+One control, and it only writes to the clipboard: **Copy all** puts the whole panel into a bug report as plain text, so the reading you paste is the reading you were looking at. It refreshes every couple of seconds and only while you're looking at it.
+
+### Notes
+
+A plain-text scratchpad per session — the original Notepad, not an editor. No markdown, no toolbar, no formatting, no export.
+
+The text is a field on the session, which decides both of its behaviours: notes **survive a restart** with the row, and they **die when the row is closed**. A note is about *this* session, not about the directory. It stays loaded while you're on another tab, so your undo history and scroll position are still there when you come back.
 
 ## Appearance
 
@@ -171,6 +216,9 @@ The ☰ button opens Settings:
 
 - **Theme** — GitHub Light / Dark / System, the exact Primer palettes. This themes the app's chrome and terminal colors; Claude Code's own rendering passes through untouched.
 - **Status RGB** — swaps the status dots' Primer tones for pure traffic-light red/amber/green.
+- **Status dot** — draws the dots at all. Off, the tower is names only and the column they sat in closes up.
+- **Color title glyph** — paints the leading emoji or symbol of a row's name by which glyph it is, so sessions you've named with one are pickable out of the list by colour.
+- **Status detection** — which technique colours the dot. **Hooks + poll** is the default and the better of the two: Claude Code's own turn-boundary events decide red and amber, with the agent poll as a green floor. **Screen** instead reads the session's own screen — its spinner, its prompt box, an open dialog. The setting governs **Claude rows only**, because they are the ones with a choice; Codex rows always read the screen, since their terminal title reports all three states on its own.
 - **Fonts** — the terminal's monospace face (Cascadia Mono, Consolas, JetBrains Mono, Fira Code, IBM Plex Mono) and the sans faces for the app chrome and the preview.
 
 **Zoom** works two ways. `Ctrl+=` / `Ctrl+-` / `Ctrl+0` size the **whole window**, Windows-Terminal style. `Ctrl+wheel` over a pane sizes **just that pane** — the tower, the terminal, the Preview tab, the Session tab and the Notes tab each remember their own size, so you can read a transcript large while the tower stays small. The wheel moves in finer steps than the keys, two notches to each keypress, and reaches just as far either way. The terminal's share is a real font-size change: the grid reflows and the session is resized, exactly as in Windows Terminal. Pressing one of the window-zoom keys puts every pane back in step with the window.

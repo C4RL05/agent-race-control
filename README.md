@@ -5,7 +5,7 @@
   <img alt="agent race control" src="images/arc-logo-light.svg" width="540">
 </picture>
 
-A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every Claude Code session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
+A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every coding-agent session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
 
 Inspired by the **F1 timing tower**: a column of colored entries, each with a name and a live status, telling you the state of the whole race at a glance — then you click one to go on board.
 
@@ -16,25 +16,28 @@ Inspired by the **F1 timing tower**: a column of colored entries, each with a na
 
 **[The user guide](docs/user-guide.md)** walks every feature with screenshots (which, like the ones here, follow your light/dark theme).
 
-Built on a hard rule: the **unmodified `claude` CLI in a real pseudo-terminal** (ConPTY via node-pty). No SDK, no wrapper, no reimplementation — so everything the terminal has works by construction: rewind, `/btw`, agent view, remote control, resume, plan mode, MCP, hooks. If it works in Windows Terminal, it works here.
+Built on a hard rule: the **unmodified CLI in a real pseudo-terminal** (ConPTY via node-pty). No SDK, no wrapper, no reimplementation — so everything the terminal has works by construction: rewind, `/btw`, agent view, remote control, resume, plan mode, MCP, hooks. If it works in Windows Terminal, it works here. [Codex](https://developers.openai.com/codex/cli) runs on the same rule and an even shorter spawn line.
 
 ## Features
 
 - **Timing tower** — every session with an editable name, live conversation title, and status
-- **Live status** from Claude Code itself — traffic lights from *your* point of view: 🔴 running (agent busy) · 🟠 waiting for you (pulses) · 🟢 idle at the prompt, your turn · ⚪ live shell · exited fades out
-- **Two session types** — Claude sessions (`bash --login -i -c 'exec claude'`) and first-class Git Bash shells for dev servers, builds, git
-- **Resume across restarts** — sessions reopen with their conversations (`--resume`, deterministic session ids)
+- **Three session types** — Claude (`bash --login -i -c 'exec claude'`), **Codex**, and first-class Git Bash shells for dev servers, builds, git
+- **Live status** from the agent itself — traffic lights from *your* point of view: 🔴 running (agent busy) · 🟠 waiting for you (pulses) · 🟠 delegating, subagents still working (steady) · 🟢 idle at the prompt, your turn · ⚪ live shell · exited fades out. Claude rows run on its own hook events with an agent-poll green floor; Codex rows read the screen, whose title reports all three states.
+- **Four pane tabs on an agent row** — Terminal, a **conversation Preview**, a **Session** instrument panel (the numbers behind the dot, copyable into a bug report), and a plain-text **Notes** scratchpad that lives and dies with the row
+- **The archive** — file a session out of the way instead of closing it: still running, still reporting, dot drawn as a ring; drag rows across the divider either way
+- **Relaunch** — same conversation, fresh process, row keeps its place; for when the CLI updated under you or the TUI wedged
+- **Resume across restarts** — sessions reopen with their conversations (`--resume` on a pinned id; `codex resume` on the one Codex minted)
 - **Directory groups** — sessions group by their working directory (the group *is* the dir), each with an F1-style team-stripe color; drag & drop reorders groups, and sessions within their group
 - **Repo cards & worktrees** — a git repo's worktrees gather under one card, one branch row each; the card spawns a Claude straight into a **fresh worktree** (`claude --worktree`) for parallel features — Claude Code creates it, installs nothing, and cleans it up on exit; the app never touches git
 - **Filter bar** — text search over name/title/path, plus Claude/shell type chips
 - **Directory colors** pushed *into* Claude Code on demand: "Apply folder color" types `/color <name>` for you, so agent view matches the tower
-- **GitHub Light/Dark/System** theming (exact Primer palettes) plus interface, terminal, and preview font pickers, together in one Settings modal — the app's chrome only; Claude Code renders untouched
-- **Windows Terminal conventions** — Ctrl+Shift+C/V copy/paste, right-click copy/paste, file drop pastes the quoted path, Ctrl+=/−/0 window zoom. Zero new muscle memory, nothing shadowed.
-- **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, apply folder color, close
+- **GitHub Light/Dark/System** theming (exact Primer palettes), interface/terminal/preview font pickers, and the status-dot toggles, together in one Settings modal — the app's chrome only; the CLI renders untouched
+- **Windows Terminal conventions** — Ctrl+Shift+C/V copy/paste, right-click copy/paste, file drop pastes the quoted path, Ctrl+=/−/0 window zoom plus Ctrl+wheel to zoom one pane. Zero new muscle memory, nothing shadowed.
+- **Right-click context menu** — Show in Explorer, copy path, duplicate session, rename, apply folder color, relaunch, archive, close
 
 ## Preview
 
-Every Claude session carries a second tab: a **read-only conversation preview**, rendered as markdown — headers, bullets, tables, code — straight from the transcript Claude Code itself writes. Pure observation: nothing is injected and the terminal byte stream is untouched. It follows the conversation live, collapses tool calls to one-liners, and flips back and forth from the terminal instantly.
+Every agent row carries a **read-only conversation preview**, rendered as markdown — headers, bullets, tables, code — straight from the transcript the CLI itself writes. Pure observation: nothing is injected and the terminal byte stream is untouched. It follows the conversation live, drops tool noise but keeps the code the agent writes, and flips back and forth from the terminal instantly. A file that was written or edited arrives as a folded tab carrying its name — click to unfold the listing or the tinted `+/-` diff.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/arc-preview-dark.png">
@@ -43,7 +46,7 @@ Every Claude session carries a second tab: a **read-only conversation preview**,
 
 ## Appearance
 
-Theme and fonts live in one Settings modal: GitHub Light/Dark/System, and independent font pickers for the interface, the terminal, and the preview.
+Theme, fonts and the status controls live in one Settings modal: GitHub Light/Dark/System, independent font pickers for the interface, the terminal and the preview, whether the status dot is drawn at all, and which technique colours it on Claude rows.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/arc-settings-dark.png">
@@ -63,7 +66,7 @@ Both are unsigned — expect a SmartScreen warning on first run (More info → R
 
 - Windows 10 1809+ (ConPTY)
 - [Git for Windows](https://gitforwindows.org/) (Git Bash — auto-discovered)
-- [Claude Code](https://code.claude.com/docs/en/quickstart) on your PATH
+- [Claude Code](https://code.claude.com/docs/en/quickstart) on your PATH — and [Codex](https://developers.openai.com/codex/cli) too if you want Codex rows
 
 ## Build from source
 

@@ -250,6 +250,8 @@ A **third spawn button beside Claude and shell** — `codex` rows in the same to
 
 Rule #2 is *"Full-fidelity **Claude Code**"*. Its **substance is unchanged and now applies to both**: the unmodified CLI runs in a real ConPTY, and the app never intercepts, rewrites, or steers the byte stream. What needs generalising is the wording, and one specific: the blessed-deviation list is Claude's (`--session-id`/`--settings`, `--worktree`, `/color` and `/rename` injection). **Codex's list is shorter, not longer** — `codex` or `codex resume <id>`, and nothing else. No flags of ours, no settings file, no injected typing. If anything the second agent is the *stricter* citizen.
 
+**Signed off and rewritten 2026-09-10.** `CLAUDE.md`'s rule #2 now reads *"Full-fidelity agent CLI"*, carries the two deviation lists separately (Claude's, then Codex's shorter one), names `src/main/cli/` as the single home of every spawn line, and separates the app-wide keys and the out-of-band observation channels — the poll, the rollout and session index, the transcripts, the title and the screen buffer — from anything that touches a spawn line, which none of them do.
+
 ### Where the two differ, and what each difference cost
 
 | | Claude Code | Codex 0.153.4 |
