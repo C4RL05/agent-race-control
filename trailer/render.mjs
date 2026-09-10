@@ -74,6 +74,7 @@ try {
     await Promise.all([
       document.fonts.load('300 100px "Material Symbols Outlined"'),
       document.fonts.load('400 100px Inter'),
+      document.fonts.load('600 100px Inter'),
       document.fonts.load('700 100px Inter'),
       document.fonts.load('400 100px "JetBrains Mono"'),
       document.fonts.load('700 100px "JetBrains Mono"'),
@@ -122,6 +123,7 @@ try {
   }
 
   const final = join(outputDir, 'agent-race-control-trailer.mp4')
+  let landed = join(outputDir, mp4)
   if (mp4 !== 'agent-race-control-trailer.mp4') {
     // ffmpeg can hold its handle for a beat after the UI reports done —
     // retry the rename briefly instead of dying on Windows' EPERM.
@@ -129,14 +131,22 @@ try {
       try {
         rmSync(final, { force: true })
         renameSync(join(outputDir, mp4), final)
+        landed = final
         break
       } catch (error) {
-        if (attempt >= 10) throw error
+        // A media player sitting on the PREVIOUS render holds that file for
+        // longer than any retry will outlast. Give up on the NAME, never on
+        // the render: the export beside it is finished and correct, and
+        // throwing here would discard several minutes of work over a lock.
+        if (attempt >= 10) {
+          console.warn(`could not replace ${final} (${error.code ?? error.message})`)
+          break
+        }
         await new Promise((r) => setTimeout(r, 1_000))
       }
     }
   }
-  console.log('done:', final, `(${(statSync(final).size / 1e6).toFixed(1)} MB)`)
+  console.log('done:', landed, `(${(statSync(landed).size / 1e6).toFixed(1)} MB)`)
 } finally {
   await browser?.close()
   server.kill()

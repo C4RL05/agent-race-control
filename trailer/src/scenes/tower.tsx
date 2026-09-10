@@ -1,91 +1,96 @@
-import { Circle, Img, makeScene2D, Txt } from '@motion-canvas/2d'
+import { makeScene2D, Node, Txt } from '@motion-canvas/2d'
 import {
   all,
   createRef,
   delay,
-  easeInCubic,
-  easeOutBack,
-  easeOutExpo,
+  easeOutQuint,
   fadeTransition,
   sequence,
   waitFor
 } from '@motion-canvas/core'
-import { BG, FG, IDLE, MUTED, RUNNING, SANS, WAITING, rise } from '../lib'
-import hero from '../../../images/arc-hero-light.png'
+import { BG, FG, MUTED, SANS, SHOTS, body, eyebrow, frame, headline, mark, reveal } from '../lib'
 
-// Beat 2 (0:04–0:10) — the timing tower: the hero shot plus the three
-// traffic lights, animated natively so the status idea moves.
+// Beat 2 — the tower itself. The hero shot arrives on the right; the left
+// column names the three kinds of row it can hold, each with the mark the
+// app draws for it.
+const TYPES = [
+  { kind: 'claude' as const, name: 'Claude Code', note: 'hooked, resumable' },
+  { kind: 'codex' as const, name: 'Codex', note: 'resumed by rollout id' },
+  { kind: 'shell' as const, name: 'Git Bash', note: 'just a shell' }
+]
+
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
-  const img = createRef<Img>()
-  const head = rise(
-    { text: 'Every session.\nOne glance.', fontSize: 76, fontWeight: 700, lineHeight: 92 },
-    { width: 760, height: 210, x: -510, y: -250, align: 'left' }
+  const COL = -900
+  // x is set by the margin the frame must keep at the far edge once the
+  // push below has grown it, not by centring it in the space left over.
+  const shot = frame(SHOTS.hero, 0.8, 468, 30)
+  const brow = eyebrow('THE TIMING TOWER', COL, -322)
+  const head = headline('Every session.\nOne glance.', COL, -212)
+  const sub = body(
+    'One window, one terminal, and a list of\neverything you have running.',
+    COL,
+    -62
   )
 
-  const dots = [
-    { color: RUNNING, label: 'running — the agent is busy' },
-    { color: WAITING, label: 'waiting for you' },
-    { color: IDLE, label: 'idle — your turn' }
-  ].map((d, i) => {
-    const dot = createRef<Circle>()
-    const txt = createRef<Txt>()
+  const rows = TYPES.map((type, i) => {
+    const row = createRef<Node>()
+    const glyph = mark(type.kind, 34, FG)
+    glyph.position([-882, 0])
     view.add(
-      <>
-        <Circle ref={dot} size={26} fill={d.color} x={-850} y={-40 + i * 88} scale={0} />
+      <Node ref={row} y={42 + i * 62}>
+        {glyph}
         <Txt
-          ref={txt}
-          text={d.label}
+          text={type.name}
           fontFamily={SANS}
-          fontSize={34}
-          fill={i === 1 ? FG : MUTED}
+          fontSize={31}
+          fontWeight={600}
+          fill={FG}
           offset={[-1, 0]}
-          x={-800}
-          y={-40 + i * 88}
-          opacity={0}
+          x={-838}
         />
-      </>
+        <Txt
+          text={type.note}
+          fontFamily={SANS}
+          fontSize={26}
+          fill={MUTED}
+          offset={[-1, 0]}
+          x={-588}
+        />
+      </Node>
     )
-    return { dot, txt }
+    return row() as Node
   })
 
-  view.add(head.node)
-  view.add(
-    <Img
-      ref={img}
-      src={hero}
-      scale={0.92}
-      x={470}
-      y={40}
-      radius={14}
-      clip
-      opacity={0}
-      shadowColor={'rgba(0, 0, 0, 0.65)'}
-      shadowBlur={70}
-      shadowOffsetY={24}
-    />
-  )
+  view.add(shot)
+  view.add(brow)
+  view.add(head)
+  view.add(sub)
 
-  yield* fadeTransition(0.35)
+  const inBrow = reveal(brow, 20)
+  const inHead = reveal(head, 28)
+  const inSub = reveal(sub, 22)
+  const inRows = rows.map((row) => reveal(row, 20))
+  shot.opacity(0).x(514).scale(0.99)
+
+  yield* fadeTransition(0.3)
   yield* all(
-    head.in(0.6),
-    delay(0.1, img().opacity(1, 0.6)),
-    delay(0.1, img().x(390, 0.75, easeOutExpo))
+    inBrow.in(0.5),
+    delay(0.1, inHead.in(0.78)),
+    delay(0.05, shot.opacity(1, 0.6)),
+    delay(0.05, shot.x(468, 0.9, easeOutQuint)),
+    delay(0.05, shot.scale(1, 0.9, easeOutQuint))
   )
-  yield* sequence(
-    0.22,
-    ...dots.map(({ dot, txt }) => all(dot().scale(1, 0.5, easeOutBack), txt().opacity(1, 0.4)))
-  )
-  // The amber dot pulses — the same "wants you" signal the app animates.
+  yield* sequence(0.18, inSub.in(0.55), ...inRows.map((row) => row.in(0.55)))
+  // A slow push on the shot — enough drift that the frame is never static,
+  // not enough to read as a move.
+  yield* all(shot.scale(1.025, 5.25), waitFor(5.15))
   yield* all(
-    dots[1].dot().scale(1.25, 0.4).to(1, 0.4).wait(0.3).to(1.25, 0.4).to(1, 0.4),
-    img().y(20, 1.9)
-  )
-  yield* waitFor(0.95)
-  yield* all(
-    head.out(0.4),
-    img().opacity(0, 0.45, easeInCubic),
-    ...dots.flatMap(({ dot, txt }) => [dot().scale(0, 0.35), txt().opacity(0, 0.3)])
+    inBrow.out(0.32),
+    inHead.out(0.35),
+    inSub.out(0.3),
+    ...inRows.map((row) => row.out(0.3)),
+    shot.opacity(0, 0.4)
   )
 })

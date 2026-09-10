@@ -15,11 +15,16 @@ import 'material-symbols/outlined.css'
 
 import intro from './scenes/intro?scene'
 import tower from './scenes/tower?scene'
+import status from './scenes/status?scene'
 import fidelity from './scenes/fidelity?scene'
+import panes from './scenes/panes?scene'
 import worktrees from './scenes/worktrees?scene'
-import preview from './scenes/preview?scene'
+import control from './scenes/control?scene'
 import outro from './scenes/outro?scene'
 
+// Eight beats in thirty seconds: the name, the tower, the status dot, the
+// fidelity rule, the four panes, the worktree workflow, the settings, and
+// what survives a restart.
 export default makeProject({
-  scenes: [intro, tower, fidelity, worktrees, preview, outro]
+  scenes: [intro, tower, status, fidelity, panes, worktrees, control, outro]
 })

@@ -1,65 +1,74 @@
-import { makeScene2D, Rect, Txt } from '@motion-canvas/2d'
+import { Layout, makeScene2D, Txt } from '@motion-canvas/2d'
 import {
   all,
   createRef,
   delay,
-  easeOutBack,
-  easeOutExpo,
+  easeOutQuint,
   fadeTransition,
+  sequence,
   waitFor
 } from '@motion-canvas/core'
-import { ACCENT, BG, DISPLAY, MUTED, MONO, appIcon, rise } from '../lib'
+import { BG, DISPLAY, FG, MONO, MUTED, SANS, appIcon, rise } from '../lib'
 
-// Beat 6 (0:24–0:30) — three kinetic words, then the card: name, line, repo.
+// Beat 8 — what survives a restart, then the card. The three words sit in a
+// flex row so the browser measures them, not me; they arrive one at a time
+// on opacity alone, which is as much motion as three words need.
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
-  const words = ['Close.', 'Reopen.', 'Resume.'].map((w) =>
-    rise({ text: w, fontSize: 120, fontWeight: 700 }, { width: 900, height: 160 })
+  const words = ['Close.', 'Reopen.', 'Resume.'].map(
+    (text) =>
+      (
+        <Txt
+          text={text}
+          fontFamily={SANS}
+          fontSize={88}
+          fontWeight={600}
+          letterSpacing={-1.5}
+          fill={FG}
+          opacity={0}
+        />
+      ) as Txt
   )
+  view.add(
+    <Layout layout direction={'row'} gap={46} y={-16}>
+      {words}
+    </Layout>
+  )
+
   const title = rise(
     { text: 'agent race control', fontFamily: DISPLAY, fontSize: 88, fontWeight: 700 },
-    { width: 1300, height: 130, y: -10 }
+    { width: 1300, height: 130, y: 50 }
   )
-  const line = createRef<Rect>()
   const url = createRef<Txt>()
   const icon = appIcon(192)
-  icon.position([0, -210])
-  icon.scale(0.6)
+  icon.position([0, -155])
+  icon.scale(0.82)
   icon.opacity(0)
 
-  for (const w of words) view.add(w.node)
   view.add(icon)
   view.add(title.node)
-  view.add(<Rect ref={line} width={0} height={4} y={75} fill={ACCENT} radius={2} />)
   view.add(
     <Txt
       ref={url}
       text={'github.com/C4RL05/agent-race-control  ·  MIT'}
       fontFamily={MONO}
-      fontSize={30}
+      fontSize={29}
       fill={MUTED}
-      y={145}
+      y={164}
       opacity={0}
     />
   )
 
   yield* fadeTransition(0.3)
-  yield* words[0].in(0.4)
-  yield* waitFor(0.35)
-  yield* words[0].out(0.28)
-  yield* words[1].in(0.4)
-  yield* waitFor(0.35)
-  yield* words[1].out(0.28)
-  yield* words[2].in(0.4)
-  yield* waitFor(0.4)
-  yield* words[2].out(0.3)
+  yield* sequence(0.2, ...words.map((word) => word.opacity(1, 0.45)))
+  yield* waitFor(0.75)
+  yield* all(...words.map((word) => word.opacity(0, 0.35)))
   yield* all(
-    title.in(0.6),
-    icon.opacity(1, 0.45),
-    icon.scale(1, 0.6, easeOutBack),
-    delay(0.1, line().width(560, 0.5, easeOutExpo)),
-    delay(0.35, url().opacity(1, 0.45))
+    title.in(0.7),
+    icon.opacity(1, 0.55),
+    icon.scale(1, 0.65, easeOutQuint),
+    delay(0.4, url().opacity(1, 0.5))
   )
-  yield* waitFor(2.3)
+  yield* waitFor(1.65)
 })

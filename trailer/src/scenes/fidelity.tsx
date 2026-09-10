@@ -1,38 +1,50 @@
 import { makeScene2D, Txt } from '@motion-canvas/2d'
-import { all, createRef, fadeTransition, linear, waitFor } from '@motion-canvas/core'
-import { BG, MUTED, MONO, SANS, rise } from '../lib'
+import { all, createRef, delay, fadeTransition, linear, waitFor } from '@motion-canvas/core'
+import { BG, MONO, MUTED, body, headline, reveal } from '../lib'
 
-// Beat 3 (0:10–0:13.5) — the ethos, stated plainly on an empty canvas.
+// Beat 4 — the ethos, centred and alone. No screenshot: the claim is about
+// what ISN'T there, and a picture of an unmodified terminal looks like a
+// picture of a terminal.
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
-  const head = rise(
-    { text: 'Full-fidelity Claude Code.', fontSize: 72, fontWeight: 700 },
-    { width: 1200, height: 100, y: -90 }
-  )
+  const brow = createRef<Txt>()
   const mono = createRef<Txt>()
-  const sub = createRef<Txt>()
 
-  view.add(head.node)
-  view.add(<Txt ref={mono} text={''} fontFamily={MONO} fontSize={34} fill={MUTED} y={10} />)
   view.add(
     <Txt
-      ref={sub}
-      text={'If it works in Windows Terminal, it works here.'}
-      fontFamily={SANS}
-      fontSize={36}
+      ref={brow}
+      text={'FULL FIDELITY'}
+      fontFamily={MONO}
+      fontSize={21}
+      fontWeight={700}
+      letterSpacing={5}
       fill={MUTED}
-      y={110}
-      opacity={0}
+      y={-161}
     />
   )
+  const head = headline('The real CLI.\nIn a real ConPTY.', 0, -55, {
+    textAlign: 'center',
+    offset: [0, 0]
+  })
+  view.add(head)
+  view.add(<Txt ref={mono} text={''} fontFamily={MONO} fontSize={30} fill={MUTED} y={77} />)
+  const sub = body('If it works in Windows Terminal, it works here.', 0, 149, {
+    textAlign: 'center',
+    offset: [0, 0]
+  })
+  view.add(sub)
 
-  yield* fadeTransition(0.35)
-  yield* head.in(0.55)
+  const inBrow = reveal(brow(), 16)
+  const inHead = reveal(head, 26)
+  const inSub = reveal(sub, 18)
+
+  yield* fadeTransition(0.3)
+  yield* all(inBrow.in(0.5), delay(0.1, inHead.in(0.7)))
   yield* all(
-    mono().text('no wrapper · no SDK · the real CLI in a real ConPTY', 1.0, linear),
-    sub().opacity(1, 0.5)
+    mono().text('no wrapper  ·  no SDK  ·  no rewritten bytes', 1.15, linear),
+    delay(0.5, inSub.in(0.55))
   )
-  yield* waitFor(1.2)
-  yield* all(head.out(0.4), mono().opacity(0, 0.35), sub().opacity(0, 0.35))
+  yield* waitFor(2.75)
+  yield* all(inBrow.out(0.3), inHead.out(0.35), inSub.out(0.3), mono().opacity(0, 0.3))
 })

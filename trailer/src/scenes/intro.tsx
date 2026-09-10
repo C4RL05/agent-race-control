@@ -1,16 +1,11 @@
-import { makeScene2D, Rect, Txt } from '@motion-canvas/2d'
-import {
-  all,
-  createRef,
-  delay,
-  easeInCubic,
-  easeOutBack,
-  easeOutExpo,
-  waitFor
-} from '@motion-canvas/core'
-import { ACCENT, BG, DISPLAY, MUTED, MONO, appIcon, rise } from '../lib'
+import { makeScene2D, Txt } from '@motion-canvas/2d'
+import { all, createRef, delay, easeOutExpo, easeOutQuint, waitFor } from '@motion-canvas/core'
+import { BG, DISPLAY, MONO, MUTED, appIcon, rise } from '../lib'
 
-// Beat 1 (0:00–0:04) — the name, a speed line, the one-line pitch.
+// Beat 1 — the name. The icon settles, the wordmark climbs out of its mask
+// with its tracking closing behind it, and the line under it says what it
+// is. No rule between the two: the wordmark is the graphic here, and a bar
+// across the middle of a title card is furniture, not hierarchy.
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
@@ -22,44 +17,35 @@ export default makeScene2D(function* (view) {
       fontWeight: 700,
       letterSpacing: 14
     },
-    { width: 1520, height: 150, y: -20 }
+    { width: 1520, height: 150, y: 50 }
   )
-  const line = createRef<Rect>()
   const sub = createRef<Txt>()
   const icon = appIcon(208)
-  icon.position([0, -240])
-  icon.scale(0.6)
+  icon.position([0, -180])
+  icon.scale(0.82)
   icon.opacity(0)
 
   view.add(icon)
   view.add(title.node)
-  view.add(<Rect ref={line} width={0} height={4} y={80} fill={ACCENT} radius={2} />)
   view.add(
     <Txt
       ref={sub}
-      text={'a terminal cockpit for Claude Code on native Windows'}
+      text={'One window for every coding-agent session on Windows'}
       fontFamily={MONO}
-      fontSize={34}
+      fontSize={32}
       fill={MUTED}
-      y={160}
+      y={180}
       opacity={0}
     />
   )
 
-  yield* waitFor(0.2)
   yield* all(
-    icon.opacity(1, 0.45),
-    icon.scale(1, 0.6, easeOutBack),
-    line().width(620, 0.6, easeOutExpo),
-    delay(0.15, title.in(0.7)),
-    delay(0.15, title.txt().letterSpacing(2, 0.9, easeOutExpo)),
-    delay(0.5, sub().opacity(1, 0.5))
+    icon.opacity(1, 0.5),
+    icon.scale(1, 0.7, easeOutQuint),
+    delay(0.15, title.in(0.85)),
+    delay(0.15, title.txt().letterSpacing(2, 1.1, easeOutExpo)),
+    delay(0.6, sub().opacity(1, 0.6))
   )
-  yield* waitFor(2.3)
-  yield* all(
-    title.out(0.4),
-    icon.opacity(0, 0.4),
-    line().width(0, 0.45, easeInCubic),
-    sub().opacity(0, 0.35)
-  )
+  yield* waitFor(1.7)
+  yield* all(title.out(0.4), icon.opacity(0, 0.4), sub().opacity(0, 0.35))
 })

@@ -1,47 +1,47 @@
-import { Img, makeScene2D, Rect, Txt } from '@motion-canvas/2d'
+import { makeScene2D, Rect, Txt } from '@motion-canvas/2d'
+import { all, createRef, delay, fadeTransition, linear, waitFor } from '@motion-canvas/core'
 import {
-  all,
-  createRef,
-  delay,
-  easeInCubic,
-  easeOutExpo,
-  fadeTransition,
-  linear,
-  waitFor
-} from '@motion-canvas/core'
-import { BG, CHIP_BG, CHIP_BORDER, FG, IDLE, MUTED, MONO, rise } from '../lib'
-import worktreesShot from '../../../images/arc-worktrees-light.png'
-import reopenShot from '../../../images/arc-reopen-light.png'
+  BG,
+  BORDER,
+  IDLE,
+  MONO,
+  SHOTS,
+  SURFACE,
+  body,
+  eyebrow,
+  frame,
+  headline,
+  reveal
+} from '../lib'
 
-// Beat 4 (0:13.5–0:20) — the worktree workflow: one command, real branch
-// rows with state markers, then the reopen menu.
+// Beat 6 — the worktree workflow, in the order you meet it: name one, watch
+// the row appear under the repo card, come back to a parked one later. All
+// three shots share ONE slot and crossfade in place, so the cuts read as the
+// same card changing rather than as three different pictures — which is what
+// they are: every one of them is the pitwall card.
 export default makeScene2D(function* (view) {
   view.fill(BG)
 
-  const head = rise(
-    { text: 'One worktree\nper feature.', fontSize: 76, fontWeight: 700, lineHeight: 92 },
-    { width: 760, height: 210, x: -510, y: -250, align: 'left' }
-  )
+  const COL = -900
+  const SLOT = { x: 520, y: -30 }
   const chip = createRef<Rect>()
   const cmd = createRef<Txt>()
-  const cap = createRef<Txt>()
-  const legend = createRef<Txt>()
-  const card1 = createRef<Img>()
-  const card2 = createRef<Img>()
 
-  view.add(head.node)
+  const brow = eyebrow('ONE WORKTREE PER FEATURE', COL, -322)
+  const head = headline('Branch off without\nleaving the tower.', COL, -212)
+  view.add(brow)
+  view.add(head)
   view.add(
     <Rect
       ref={chip}
       width={620}
-      height={68}
-      x={-540}
-      y={-60}
-      fill={CHIP_BG}
-      stroke={CHIP_BORDER}
+      height={64}
+      x={COL + 310}
+      y={-56}
+      fill={SURFACE}
+      stroke={BORDER}
       lineWidth={1.5}
       radius={12}
-      opacity={0}
     >
       <Txt
         ref={cmd}
@@ -50,96 +50,72 @@ export default makeScene2D(function* (view) {
         fontSize={30}
         fill={IDLE}
         offset={[-1, 0]}
-        x={-282}
+        x={-280}
       />
     </Rect>
   )
-  view.add(
-    <Txt
-      ref={cap}
-      text={'Claude Code creates it — and cleans it up on /exit.'}
-      fontFamily={MONO}
-      fontSize={27}
-      fill={MUTED}
-      offset={[-1, 0]}
-      x={-850}
-      y={40}
-      opacity={0}
-    />
-  )
-  view.add(
-    <Img
-      ref={card1}
-      src={worktreesShot}
-      scale={1.55}
-      x={480}
-      y={-60}
-      radius={12}
-      clip
-      opacity={0}
-      shadowColor={'rgba(0, 0, 0, 0.65)'}
-      shadowBlur={60}
-      shadowOffsetY={20}
-    />
-  )
-  view.add(
-    <Txt
-      ref={legend}
-      text={'●  uncommitted      ↑ ahead      ↓ behind'}
-      fontFamily={MONO}
-      fontSize={26}
-      fill={MUTED}
-      x={480}
-      y={190}
-      opacity={0}
-    />
-  )
-  view.add(
-    <Img
-      ref={card2}
-      src={reopenShot}
-      scale={1.45}
-      x={480}
-      y={0}
-      radius={12}
-      clip
-      opacity={0}
-      shadowColor={'rgba(0, 0, 0, 0.65)'}
-      shadowBlur={60}
-      shadowOffsetY={20}
-    />
-  )
 
-  yield* fadeTransition(0.35)
-  yield* all(head.in(0.6), delay(0.15, chip().opacity(1, 0.4)))
-  yield* cmd().text('> claude --worktree login-form', 1.1, linear)
-  yield* all(
-    card1().opacity(1, 0.6),
-    card1().x(430, 0.7, easeOutExpo),
-    delay(0.3, legend().opacity(1, 0.4)),
-    delay(0.2, cap().opacity(1, 0.45))
+  const note = body(
+    'Claude Code creates it and cleans it up\non /exit. The app never runs git.',
+    COL,
+    64,
+    { fontSize: 28, lineHeight: 42 }
   )
-  yield* waitFor(1.05)
-  // The second act: parked worktrees come back through the history menu.
+  const legend = body('● uncommitted    ↑ ahead    ↓ behind', COL, 156, {
+    fontFamily: MONO,
+    fontSize: 26
+  })
+  view.add(note)
+  view.add(legend)
+
+  const naming = frame(SHOTS.worktreeNew, 1.5, SLOT.x, SLOT.y)
+  const rows = frame(SHOTS.worktrees, 1.5, SLOT.x, SLOT.y)
+  const reopen = frame(SHOTS.reopen, 1.3, SLOT.x, SLOT.y)
+  const caption = body('reopen a parked worktree', SLOT.x, 212, {
+    fontFamily: MONO,
+    fontSize: 25,
+    textAlign: 'center',
+    offset: [0, 0]
+  })
+  view.add(naming)
+  view.add(rows)
+  view.add(reopen)
+  view.add(caption)
+
+  const inBrow = reveal(brow, 20)
+  const inHead = reveal(head, 28)
+  const inChip = reveal(chip(), 18)
+  const inNote = reveal(note, 20)
+  const inLegend = reveal(legend, 18)
+  const inNaming = reveal(naming, 26)
+  const inCaption = reveal(caption, 16)
+  rows.opacity(0)
+  reopen.opacity(0)
+
+  yield* fadeTransition(0.3)
+  yield* all(inBrow.in(0.5), delay(0.1, inHead.in(0.78)), delay(0.3, inChip.in(0.5)))
+  yield* cmd().text('claude --worktree login-form', 1.15, linear)
+  yield* all(inNaming.in(0.6), delay(0.15, inNote.in(0.55)))
+  yield* waitFor(0.8)
+  // The name is typed; the row it produced takes its place.
+  yield* all(naming.opacity(0, 0.45), rows.opacity(1, 0.45), delay(0.25, inLegend.in(0.5)))
+  yield* waitFor(1.0)
+  // The same card again, with its history menu open — but this shot frames it
+  // wider, so the two are CUT rather than dissolved: overlapping them ghosts
+  // the pitwall card against a shifted copy of itself.
   yield* all(
-    card1().opacity(0, 0.5, easeInCubic),
-    legend().opacity(0, 0.3),
-    cap().opacity(0, 0.3),
-    delay(0.15, card2().opacity(1, 0.6)),
-    delay(0.15, card2().x(430, 0.65, easeOutExpo)),
-    delay(
-      0.35,
-      (function* () {
-        cap().text('Reopen parked worktrees anytime.')
-        yield* cap().opacity(1, 0.45)
-      })()
-    )
+    rows.opacity(0, 0.22),
+    delay(0.16, reopen.opacity(1, 0.45)),
+    delay(0.3, inCaption.in(0.45))
   )
-  yield* waitFor(1.3)
+  yield* waitFor(1.85)
   yield* all(
-    head.out(0.4),
-    chip().opacity(0, 0.35),
-    cap().opacity(0, 0.3),
-    card2().opacity(0, 0.45, easeInCubic)
+    inBrow.out(0.32),
+    inHead.out(0.35),
+    inChip.out(0.3),
+    inNote.out(0.3),
+    inLegend.out(0.3),
+    reopen.opacity(0, 0.4),
+    inCaption.out(0.3)
   )
 })
