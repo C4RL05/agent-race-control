@@ -2355,9 +2355,13 @@
      so hover and clicks go to the title underneath it. It sits in the title's
      right cell, which on a folded card is its alone: the spawn cluster that
      shares that cell doesn't come out while the card is folded (see below), so
-     the dot never yields it and never flickers on hover. */
-  .rollup {
+     the dot never yields it and never flickers on hover. No ground ring: that
+     separation is for a dot sitting on a card wash among its siblings, and the
+     roll-up sits alone on the folded title. `--dot-inner` stays, so an archived
+     roll-up keeps its hollow ring. */
+  .rollup.dot {
     pointer-events: none;
+    box-shadow: var(--dot-inner, 0 0 transparent);
   }
 
   /* Right (auto) track: the worktree annotation, swapping to the spawn cluster
@@ -2500,6 +2504,15 @@
   .row .type-icon {
     grid-column: 3;
     justify-self: start;
+  }
+
+  /* 2px of air between the status dot and the type icon. The icon is 12px in
+     an 18px track, so the shift spends the track's own slack: the glyph moves,
+     the label track does not. Gated on the row actually having a dot — with
+     the status dot off its track collapses to 0 and there is nothing to
+     separate the icon from. */
+  .row:has(.dot) .type-icon {
+    margin-left: 2px;
   }
 
   .row .name,
@@ -2649,11 +2662,12 @@
     padding: 0;
     appearance: none;
     cursor: pointer;
-    /* A 2px ring of the page ground, so the traffic light reads as its own
-       colour instead of as a colour mixed into whatever card wash it is
-       sitting on. A box-shadow rather than a border: it draws OUTSIDE the
-       10px disc, follows the radius, and costs no layout, so the dot's track
-       and the hover ring's 4px offset are untouched. It fades with the dot
+    /* A 1px ring of the page ground at half opacity, so the traffic light
+       reads as its own colour instead of as a colour mixed into whatever card
+       wash it is sitting on — a separation, not a hard outline. A box-shadow
+       rather than a border: it draws OUTSIDE the 10px disc, follows the
+       radius, and costs no layout, so the dot's track and the hover ring's
+       4px offset are untouched. It fades with the dot
        under the waiting pulse and the exited fade, both of which are opacity
        on the whole element — which is right, the ring belongs to the dot.
        `--dot-inner` is the same indirection --dot-fill uses: box-shadow is one
@@ -2661,7 +2675,7 @@
        below) contributes it as a variable instead of replacing this one and
        silently dropping the ground ring with it. */
     box-shadow:
-      0 0 0 2px var(--bg),
+      0 0 0 1px color-mix(in srgb, var(--bg) 50%, transparent),
       var(--dot-inner, 0 0 transparent);
   }
 
