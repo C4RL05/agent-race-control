@@ -6,25 +6,25 @@
 interface PersistedState {
   version: 2
   mode: 'system' | 'light' | 'dark'
-  // Optional/additive — absent means false, so it needs no version bump
-  // (the no-compat policy governs breaking changes, not compatible ones).
+  // Optional/additive — absent reads as the default below, so a new one needs
+  // no version bump (the no-compat policy governs breaking changes only).
+  // Absent → true.
   statusRgb?: boolean
-  // Draw the status dot at all. The one toggle whose default is ON, so absent
-  // must read as true (see restoreState).
+  // Draw the status dot at all. Absent → true (see restoreState).
   statusDot?: boolean
   // Paint a row title's leading glyph by which glyph it is.
   glyphColor?: boolean
-  // Which technique colours the status dot. Absent → 'hooks', the default.
+  // Which technique colours the status dot. Absent → 'screen', the default.
   statusSource?: 'hooks' | 'screen'
   // How the tower's cards paint: how much colour the selected card's wash
   // carries, how much the rest carry, and which colour edge they wear. Absent →
-  // 0.5 / 0.1 / 'tab'. All three are validated on restore rather than trusted —
+  // 1 / 0 / 'none'. All three are validated on restore rather than trusted —
   // the washes feed color-mix.
   cardWash?: 0.1 | 0.5 | 1
   cardWashRest?: 0 | 0.1 | 0.5 | 1
   cardEdge?: 'tab' | 'outline' | 'none'
   // Light mode only: paint the selected card with the DARK palette's ground and
-  // text. Absent → false.
+  // text. Absent → true.
   cardDark?: boolean
   // Selected font ids (see theme.ts FONTS/UI_FONTS). Absent → the default.
   font?: string

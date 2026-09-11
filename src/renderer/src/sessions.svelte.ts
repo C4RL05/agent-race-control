@@ -344,7 +344,8 @@ export const ui = $state<{
   towerWidth: number
   // Settings toggle: recolor the status dots to pure traffic-light RGB
   // (red/green/amber) instead of the Primer semantic tones, in both themes.
-  // Off by default — the Primer tones are the documented default.
+  // On by default — the traffic light is the point of the tower; the Primer
+  // tones are the option.
   statusRgb: boolean
   // Settings toggle: draw the status dot at all. On by default — turning it
   // off leaves the rows text-only (and takes the TODO toggle with it, the
@@ -354,11 +355,11 @@ export const ui = $state<{
   // it is (see glyphLead) — nothing to do with the dot's status colors.
   // Off by default.
   glyphColor: boolean
-  // WHICH TECHNIQUE COLOURS THE DOT. 'hooks' is the default and the documented
-  // one: turn-boundary hooks with the agent poll as a green floor. 'screen'
-  // hands the dot to the screen scan instead (screen.ts) — one technique at a
-  // time, deliberately, so a disagreement between them can never be something
-  // the user has to untangle by eye.
+  // WHICH TECHNIQUE COLOURS THE DOT. 'screen' is the default: the screen scan
+  // (screen.ts), the same technique Codex rows have no choice but to use.
+  // 'hooks' is the other one — turn-boundary hooks with the agent poll as a
+  // green floor. One technique at a time, deliberately, so a disagreement
+  // between them can never be something the user has to untangle by eye.
   statusSource: 'hooks' | 'screen'
   // HOW THE CARDS PAINT (2026-09-11), three independent knobs, all in Settings
   // because the right answer depends on the monitor and the number of cards on
@@ -381,7 +382,7 @@ export const ui = $state<{
   // ground that colour is mixed over, which is the other half of whether a
   // strong colour is readable at all. In dark mode it is a no-op by
   // construction (the borrowed palette IS the current one), so the flag is only
-  // consulted while the effective theme is light. Off by default.
+  // consulted while the effective theme is light. On by default.
   cardDark: boolean
   // Selected font ids: terminal (mono, theme.ts FONTS), interface/app chrome
   // and preview prose (both sans, theme.ts UI_FONTS).
@@ -390,16 +391,16 @@ export const ui = $state<{
   previewFont: string
 }>({
   focused: null,
-  mode: 'system',
+  mode: 'dark',
   towerWidth: 240,
-  statusRgb: false,
+  statusRgb: true,
   statusDot: true,
   glyphColor: false,
-  statusSource: 'hooks',
-  cardWash: 0.5,
-  cardWashRest: 0.1,
-  cardEdge: 'tab',
-  cardDark: false,
+  statusSource: 'screen',
+  cardWash: 1,
+  cardWashRest: 0,
+  cardEdge: 'none',
+  cardDark: true,
   font: DEFAULT_FONT_ID,
   uiFont: DEFAULT_UI_FONT_ID,
   previewFont: DEFAULT_UI_FONT_ID
@@ -1085,19 +1086,19 @@ export async function restoreState(): Promise<void> {
   const saved = await window.arc.state.load()
   if (!saved) return
   ui.mode = saved.mode
-  ui.statusRgb = saved.statusRgb ?? false
+  ui.statusRgb = saved.statusRgb ?? true
   // Absent → the default, which for the dot is ON (unlike the other two).
   ui.statusDot = saved.statusDot ?? true
   ui.glyphColor = saved.glyphColor ?? false
-  ui.statusSource = saved.statusSource ?? 'hooks'
+  ui.statusSource = saved.statusSource ?? 'screen'
   // Clamped to the offered steps, not trusted: the state file is external data
   // and an arbitrary number would reach color-mix as-is. Each line names the
   // whole legal set — the chains this replaced named every value EXCEPT the
   // default, so none of them read as the list it was validating against.
-  ui.cardWash = oneOf(saved.cardWash, [0.1, 0.5, 1], 0.5)
-  ui.cardWashRest = oneOf(saved.cardWashRest, [0, 0.1, 0.5, 1], 0.1)
-  ui.cardEdge = oneOf(saved.cardEdge, ['outline', 'none', 'tab'], 'tab')
-  ui.cardDark = saved.cardDark ?? false
+  ui.cardWash = oneOf(saved.cardWash, [0.1, 0.5, 1], 1)
+  ui.cardWashRest = oneOf(saved.cardWashRest, [0, 0.1, 0.5, 1], 0)
+  ui.cardEdge = oneOf(saved.cardEdge, ['outline', 'none', 'tab'], 'none')
+  ui.cardDark = saved.cardDark ?? true
   ui.font = saved.font ?? DEFAULT_FONT_ID
   ui.uiFont = saved.uiFont ?? DEFAULT_UI_FONT_ID
   ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID

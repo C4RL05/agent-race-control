@@ -19,11 +19,12 @@ export interface AppState {
   // this and loadState discards older files — factory reset, no migrations.
   version: 2
   mode: 'system' | 'light' | 'dark'
-  // Optional/additive — absent means false, so it needs no version bump
-  // (the no-compat policy governs breaking changes, not compatible ones).
+  // Optional/additive — absent reads as the renderer's default, so a new one
+  // needs no version bump (the no-compat policy governs breaking changes only).
+  // Absent → true.
   statusRgb?: boolean
-  // Draw the status dot at all. The one toggle whose default is ON, so absent
-  // must read as true (see restoreState).
+  // Draw the status dot at all. Absent → true. The defaults live in one place,
+  // the renderer's `ui` and restoreState — main only stores what it is sent.
   statusDot?: boolean
   // Paint a row title's leading glyph by which glyph it is.
   glyphColor?: boolean
