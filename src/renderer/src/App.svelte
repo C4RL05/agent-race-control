@@ -2021,7 +2021,11 @@
      The pseudo-elements don't inherit the way `scrollbar-color` did, so this
      one :global descendant rule stands in for it: it reaches every scroll
      container inside .shell (the tower, the Preview/Session/Notes tabs, the
-     menus, xterm's viewport), which is also where the palette vars resolve.
+     menus), which is also where the palette vars resolve. NOT the terminal —
+     xterm 6 scrolls through the VS Code scrollable element and draws its
+     scrollbar as ordinary DOM (`.xterm-scrollable-element > .scrollbar`, see
+     its own CSS), so no ::-webkit-scrollbar rule has ever applied to it. It
+     takes its colours from the `scrollbarSlider*` theme options instead.
      The thumb is the same line colour every divider in the app already uses;
      the track stays transparent so it takes whichever surface it sits on. */
   :global(.shell ::-webkit-scrollbar) {
@@ -2123,8 +2127,11 @@
        between cards; the colour tab rounds its own left corners to match. */
     overflow: visible;
     margin-top: 4px;
-    /* left padding clears the 2px edge tab (2 + 11) */
-    padding: 4px 8px 10px 13px;
+    /* Equal sides. The 13px is the left's, where it clears the 2px edge tab
+       (2 + 11); the right simply matches it rather than keeping the 8px it
+       inherited from the tower's own gutter, which made every card's contents
+       sit visibly off-centre in their own box. */
+    padding: 4px 13px 10px;
     border-radius: 2px;
     /* The card wash: the group's colour mixed over the tower ground. Was a
        constant (8% over Primer's #161b22, then 16% once the canvas went
