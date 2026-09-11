@@ -165,6 +165,14 @@
       fontFamily,
       fontSize: BASE_FONT_SIZE * fontScale,
       theme,
+      // Windows Terminal's `historySize` default, verified against the shipped
+      // docs (and against this machine, whose settings.json doesn't override
+      // it). xterm's own default is 1000, which is a ninth of that — and a
+      // Claude session reaches 1000 lines in one long turn, so scrolling back
+      // to where the turn began stopped working here while it kept working in
+      // a real terminal. Fidelity means matching the terminal we claim parity
+      // with, not xterm's default.
+      scrollback: 9001,
       // xterm's default OSC-8 link activation opens a blank popup first, then
       // sets its location — a popup-blocker dodge that doesn't survive our
       // setWindowOpenHandler (main/index.ts), which only sees the blank URL
@@ -266,8 +274,26 @@
       }
     })
 
+    // THE GRID IS XTERM'S, AND THE PTY MUST NEVER DISAGREE WITH IT. Subscribed
+    // here, before the spawn, and guarded on `ptyId` rather than registered
+    // inside the .then — a resize that lands in the gap between asking for the
+    // process and being handed it used to be dropped on the floor, leaving the
+    // PTY on the size we spawned at for the rest of the session. That gap is
+    // not theoretical: the font effect refits the moment a bundled webfont
+    // resolves (a new cell means new cols/rows), and the ResizeObserver below
+    // fires once as soon as it starts observing. An agent then draws for a grid
+    // the screen doesn't have — which is how the first lines of a session end
+    // up overwritten and out of reach while the same agent in Windows Terminal
+    // is fine.
+    t.onResize(({ cols, rows }) => {
+      if (ptyId) window.arc.pty.resize(ptyId, cols, rows)
+    })
+
+    const spawnCols = t.cols
+    const spawnRows = t.rows
+
     void window.arc.pty
-      .spawn({ cols: t.cols, rows: t.rows, type, cwd, resume, worktree })
+      .spawn({ cols: spawnCols, rows: spawnRows, type, cwd, resume, worktree })
       .then((result) => {
         if (disposed) return
         if ('error' in result) {
@@ -276,12 +302,16 @@
           return
         }
         ptyId = result.id
+        // Catch up on anything that moved while the spawn was in flight —
+        // the subscription above had no id to send it to yet.
+        if (t.cols !== spawnCols || t.rows !== spawnRows) {
+          window.arc.pty.resize(result.id, t.cols, t.rows)
+        }
         onSpawned?.(result.id, result.claudeSessionId, result.cwd)
         t.onData((data) => {
           onInput?.(data)
           window.arc.pty.write(result.id, data)
         })
-        t.onResize(({ cols, rows }) => window.arc.pty.resize(result.id, cols, rows))
         if (active) t.focus()
       })
 

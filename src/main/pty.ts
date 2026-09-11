@@ -158,7 +158,20 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         cols: Math.max(1, Math.floor(opts.cols)),
         rows: Math.max(1, Math.floor(opts.rows)),
         cwd,
-        env
+        env,
+        // Windows Terminal does not use the ConPTY built into Windows — it
+        // ships its own, and node-pty ships the same pair (conpty.dll +
+        // OpenConsole.exe, in prebuilds/win32-x64/conpty/). The built-in one is
+        // whatever that Windows build shipped with, and its reflow on resize is
+        // years behind: resize a session here and the agent's header came back
+        // duplicated, line by line, while the identical session in Windows
+        // Terminal was clean. Parity with Windows Terminal means running the
+        // console host Windows Terminal runs, so we ask for the shipped one.
+        // node-pty marks the flag experimental; it falls back to the built-in
+        // ConPTY if the DLL can't be loaded. The dll and exe reach a packaged
+        // build through the existing `asarUnpack: node_modules/node-pty/**`
+        // (electron-builder.yml) — the same rule the .node prebuilds need.
+        useConptyDll: true
       })
 
       const id = String(nextId++)
