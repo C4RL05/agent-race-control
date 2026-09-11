@@ -74,6 +74,30 @@ export function fontStack(id: string, list: FontOption[] = FONTS): string {
   return (list.find((f) => f.id === id) ?? list[0]).stack
 }
 
+// Every chrome token the app's CSS reads, serialised as custom properties for
+// one element to own. Written ONCE and used twice: the live palette on `.shell`
+// and — under a `dark-` prefix, for the "Dark selected card" setting — the dark
+// palette beside it, which the selected card re-points its own tokens at. The
+// dots come in already resolved so Status RGB (which replaces them wholesale)
+// reaches both sets through the same path. One list, so a token added here
+// reaches both scopes instead of half of one.
+export function chromeVars(chrome: Chrome, dots: Record<string, string>, prefix = ''): string {
+  const vars: Record<string, string> = {
+    bg: chrome.bg,
+    'bg-subtle': chrome.bgSubtle,
+    fg: chrome.fg,
+    'fg-muted': chrome.fgMuted,
+    border: chrome.border,
+    accent: chrome.accent,
+    danger: chrome.danger,
+    success: chrome.success
+  }
+  for (const [role, hex] of Object.entries(dots)) vars[`dot-${role}`] = hex
+  return Object.entries(vars)
+    .map(([name, value]) => `--${prefix}${name}:${value}`)
+    .join(';')
+}
+
 export type Mode = 'system' | 'light' | 'dark'
 
 export interface Chrome {
@@ -99,7 +123,15 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       bg: '#ffffff',
       bgSubtle: '#f6f8fa',
       fg: '#1f2328',
-      fgMuted: '#656d76',
+      // Deliberate deviation from Primer (#656d76), the same one dark makes:
+      // muted ink is the theme's OWN ink at half strength, black here and white
+      // there, rather than a grey picked per palette. It is a colour that
+      // composites instead of a colour that is mixed once, which is what the
+      // "Dark selected card" setting needs — a card that borrows the dark
+      // tokens gets muted text that lands correctly on ITS ground, not on the
+      // app's. Measured, it barely moves the rest: #808080 on white against
+      // Primer's #656d76, and on dark it is #808080 against #848484.
+      fgMuted: 'rgba(0, 0, 0, 0.5)',
       border: '#d0d7de',
       accent: '#0969da',
       // Status dots read from success/attention/danger. On white the Primer
@@ -119,11 +151,16 @@ export const palettes: Record<'light' | 'dark', Palette> = {
       selectionBackground: 'rgba(84, 174, 255, 0.4)',
       // xterm 6 draws its own scrollbar (the VS Code scrollable element, not a
       // native one), and left alone it derives the slider from the FOREGROUND
-      // at 20/40/50% opacity — which on the dark palette is #e6edf3, i.e. a
+      // at 20/40/50% opacity — which on the dark palette is near-white, i.e. a
       // white bar, the brightest thing on the screen. Painting it from the
       // chrome tokens instead makes every scrollbar in the app the same border
-      // color (the app-chrome ones come from `scrollbar-color` in App.svelte),
+      // color (the app-chrome ones come from the ::-webkit-scrollbar rules in
+      // App.svelte),
       // brightening through the two existing text tones on hover and drag.
+      // The hover tone stays the OPAQUE hex `fgMuted` held before it went
+      // half-strength ink: this one is a canvas colour, not a CSS value, so it
+      // cannot composite over the terminal ground the way the chrome token now
+      // does. The two land within a couple of tones of each other anyway.
       scrollbarSliderBackground: '#d0d7de',
       scrollbarSliderHoverBackground: '#656d76',
       scrollbarSliderActiveBackground: '#1f2328',
@@ -147,29 +184,51 @@ export const palettes: Record<'light' | 'dark', Palette> = {
   },
   dark: {
     chrome: {
-      bg: '#0d1117',
-      bgSubtle: '#161b22',
-      fg: '#e6edf3',
-      fgMuted: '#7d8590',
-      border: '#30363d',
+      // Deliberate deviation from Primer, in two steps. (1) Dark has ONE
+      // surface and it is true black — bg and bgSubtle are the same #000000,
+      // not GitHub dark's #0d1117/#161b22. There is no raised plate: surfaces
+      // are told apart by their BORDER, never by a fill, which is why the
+      // menu/settings hovers below fill with `border` like every other hover
+      // in App.svelte (a subtle fill is invisible when bgSubtle === bg).
+      // (2) The greys that remain are TRUE greys: Primer's dark neutrals are
+      // all blue-shifted (#30363d, #7d8590, #e6edf3), which tinted the whole
+      // chrome, so each is its Primer hex re-derived at the SAME relative
+      // luminance with R=G=B — the value structure stays Primer's and only
+      // the cast is gone. Colour in dark is earned, never ambient: the accent,
+      // the status tones and the per-directory card tint (--dir-color mixed
+      // over bgSubtle in App.svelte, at whatever the card wash controls are
+      // set to) are
+      // the only things that lift off the canvas at all.
+      bg: '#000000',
+      bgSubtle: '#000000',
+      fg: '#ececec',
+      // Half-strength white — see the light palette's note. The true-grey
+      // #848484 this replaces was itself Primer's #7d8590 re-derived, and 50%
+      // white on this true-black ground lands on #808080, so the de-tinted
+      // value structure survives the change.
+      fgMuted: 'rgba(255, 255, 255, 0.5)',
+      border: '#353535',
       accent: '#2f81f7',
       success: '#3fb950',
       attention: '#d29922',
       danger: '#f85149'
     },
     xterm: {
-      background: '#0d1117',
-      foreground: '#e6edf3',
+      background: '#000000',
+      foreground: '#ececec',
       cursor: '#2f81f7',
-      cursorAccent: '#0d1117',
+      cursorAccent: '#000000',
       selectionBackground: 'rgba(56, 139, 253, 0.4)',
       // The dark half of the scrollbar note in the light palette above: border,
-      // then fgMuted on hover, then fg while dragging.
-      scrollbarSliderBackground: '#30363d',
-      scrollbarSliderHoverBackground: '#7d8590',
-      scrollbarSliderActiveBackground: '#e6edf3',
-      // primer 7.10 ships black/#0d1117 and brightBlack/#161b22 — invisible on
-      // the #0d1117 background (a defect GitHub later fixed). Legible grays:
+      // then the pre-half-strength fgMuted hex on hover, then fg while dragging.
+      scrollbarSliderBackground: '#353535',
+      scrollbarSliderHoverBackground: '#848484',
+      scrollbarSliderActiveBackground: '#ececec',
+      // The 16 ANSI slots stay GitHub Dark — they're the CLI's colors, not the
+      // chrome's, so the de-tinting above deliberately stops here. Exception,
+      // as before: primer 7.10 ships black/#0d1117 and brightBlack/#161b22,
+      // near invisible on this background (a defect GitHub later fixed) and
+      // worse on true black. Legible grays:
       black: '#484f58',
       red: '#ff7b72',
       green: '#3fb950',
@@ -190,16 +249,30 @@ export const palettes: Record<'light' | 'dark', Palette> = {
   }
 }
 
-// Session identity dots — the same 8-color vocabulary as Claude Code's
-// /color command, in GitHub mid-tones legible on both palettes. The name is
-// what gets typed as `/color <name>` when the user sets a color from the tower.
+// Session identity colors — the card washes and edges, and the swatch menu on a
+// card title. The VOCABULARY is fixed by Claude Code's /color command and must
+// stay these eight names: the name is typed verbatim as `/color <name>` when
+// the user pushes a folder's color into a session, so a name off this list
+// would be a command Claude rejects.
+//
+// The HEXES are the Macintosh default 16-color palette (2026-09-11), replacing
+// the GitHub mid-tones that shipped before it — exact values off the Mac OS
+// 9.0.4 System file's clut resource (lospec.com/palette-list/macintosh-default-
+// 16-color), not eyeballed, same rule as the Primer hexes above. Eight of our
+// names land on eight of its sixteen entries one-for-one; `pink` takes Mac's
+// magenta, the nearest thing the palette has, and the six the app has no name
+// for (white, dark green, brown, tan, and the three greys, plus black) are
+// simply unused — this is a re-point of the colors we already offer, not a
+// bigger menu. They are far more saturated than the tones they replace, which
+// is the point: at a 10% wash they are still unmistakably a hue, and at 100%
+// the card is the raw palette entry.
 export const DOT_COLORS: { name: string; hex: string }[] = [
-  { name: 'blue', hex: '#388bfd' },
-  { name: 'green', hex: '#3fb950' },
-  { name: 'purple', hex: '#a371f7' },
-  { name: 'pink', hex: '#db61a2' },
-  { name: 'orange', hex: '#db6d28' },
-  { name: 'cyan', hex: '#39c5cf' },
-  { name: 'yellow', hex: '#d29922' },
-  { name: 'red', hex: '#f85149' }
+  { name: 'blue', hex: '#0000d4' },
+  { name: 'green', hex: '#1fb714' },
+  { name: 'purple', hex: '#4600a5' },
+  { name: 'pink', hex: '#f20884' },
+  { name: 'orange', hex: '#ff6402' },
+  { name: 'cyan', hex: '#02abea' },
+  { name: 'yellow', hex: '#fcf305' },
+  { name: 'red', hex: '#dd0806' }
 ]

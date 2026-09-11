@@ -398,7 +398,7 @@ mkdirSync(imagesDir, { recursive: true })
 // README markdown, so a border can't live there. Drawn on a canvas inside
 // the already-running page (no image dependencies, same trick as
 // make-icon.mjs), in the theme's own Primer border color: without it the
-// dark shot's #0d1117 dissolves into GitHub dark's identical background.
+// dark shot's black canvas dissolves into GitHub dark's background.
 async function shot(name, border, clip) {
   const path = join(imagesDir, name)
   // animations disabled: the waiting dot's pulse rests at full opacity

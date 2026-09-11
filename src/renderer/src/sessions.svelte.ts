@@ -360,6 +360,29 @@ export const ui = $state<{
   // time, deliberately, so a disagreement between them can never be something
   // the user has to untangle by eye.
   statusSource: 'hooks' | 'screen'
+  // HOW THE CARDS PAINT (2026-09-11), three independent knobs, all in Settings
+  // because the right answer depends on the monitor and the number of cards on
+  // it. `cardWash`/`cardWashRest` are how much of the group's colour
+  // a card's background carries — the SELECTED card (the one owning the focused
+  // session) and all the rest: two independent numbers off the same steps, the
+  // rest with one extra, 0, which is no background at all rather than a 0% mix
+  // (over light's #f6f8fa those differ: one is transparent, the other a plate).
+  // `cardEdge` is the card's colour EDGE and nothing else — 'tab' is the 2px
+  // tab welded to its left edge, 'outline' a 1px line around the whole card,
+  // 'none' neither. Strictly independent of the two washes: the edge never
+  // touches the background, so "outline only" is `outline` + a 10% rest wash
+  // and "fill only" is `none`, rather than either being one baked-in look.
+  cardWash: 0.1 | 0.5 | 1
+  cardWashRest: 0 | 0.1 | 0.5 | 1
+  cardEdge: 'tab' | 'outline' | 'none'
+  // LIGHT MODE ONLY: the selected card borrows the dark palette — dark ground
+  // under its wash, white text over it — while the rest of the app stays light.
+  // The wash controls say how much colour a card carries; this one says which
+  // ground that colour is mixed over, which is the other half of whether a
+  // strong colour is readable at all. In dark mode it is a no-op by
+  // construction (the borrowed palette IS the current one), so the flag is only
+  // consulted while the effective theme is light. Off by default.
+  cardDark: boolean
   // Selected font ids: terminal (mono, theme.ts FONTS), interface/app chrome
   // and preview prose (both sans, theme.ts UI_FONTS).
   font: string
@@ -373,6 +396,10 @@ export const ui = $state<{
   statusDot: true,
   glyphColor: false,
   statusSource: 'hooks',
+  cardWash: 0.5,
+  cardWashRest: 0.1,
+  cardEdge: 'tab',
+  cardDark: false,
   font: DEFAULT_FONT_ID,
   uiFont: DEFAULT_UI_FONT_ID,
   previewFont: DEFAULT_UI_FONT_ID
@@ -1042,6 +1069,13 @@ export function moveSession(key: number, beforeKey: number): void {
 
 let booted = false
 
+// A persisted value is only as good as the set it is allowed to be in: anything
+// else (a hand-edited file, a setting from a future version) becomes the
+// default rather than reaching CSS or a spawn line as-is.
+function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback
+}
+
 export async function restoreState(): Promise<void> {
   // HMR re-mounts App, which re-runs the boot effect — restore must happen
   // once per page load and never into a non-empty list (it would append
@@ -1056,6 +1090,14 @@ export async function restoreState(): Promise<void> {
   ui.statusDot = saved.statusDot ?? true
   ui.glyphColor = saved.glyphColor ?? false
   ui.statusSource = saved.statusSource ?? 'hooks'
+  // Clamped to the offered steps, not trusted: the state file is external data
+  // and an arbitrary number would reach color-mix as-is. Each line names the
+  // whole legal set — the chains this replaced named every value EXCEPT the
+  // default, so none of them read as the list it was validating against.
+  ui.cardWash = oneOf(saved.cardWash, [0.1, 0.5, 1], 0.5)
+  ui.cardWashRest = oneOf(saved.cardWashRest, [0, 0.1, 0.5, 1], 0.1)
+  ui.cardEdge = oneOf(saved.cardEdge, ['outline', 'none', 'tab'], 'tab')
+  ui.cardDark = saved.cardDark ?? false
   ui.font = saved.font ?? DEFAULT_FONT_ID
   ui.uiFont = saved.uiFont ?? DEFAULT_UI_FONT_ID
   ui.previewFont = saved.previewFont ?? DEFAULT_UI_FONT_ID
@@ -1125,6 +1167,10 @@ export function snapshotState(): PersistedState {
     statusDot: ui.statusDot,
     glyphColor: ui.glyphColor,
     statusSource: ui.statusSource,
+    cardWash: ui.cardWash,
+    cardWashRest: ui.cardWashRest,
+    cardEdge: ui.cardEdge,
+    cardDark: ui.cardDark,
     font: ui.font,
     uiFont: ui.uiFont,
     previewFont: ui.previewFont,

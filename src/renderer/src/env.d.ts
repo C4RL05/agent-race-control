@@ -16,6 +16,16 @@ interface PersistedState {
   glyphColor?: boolean
   // Which technique colours the status dot. Absent → 'hooks', the default.
   statusSource?: 'hooks' | 'screen'
+  // How the tower's cards paint: how much colour the selected card's wash
+  // carries, how much the rest carry, and which colour edge they wear. Absent →
+  // 0.5 / 0.1 / 'tab'. All three are validated on restore rather than trusted —
+  // the washes feed color-mix.
+  cardWash?: 0.1 | 0.5 | 1
+  cardWashRest?: 0 | 0.1 | 0.5 | 1
+  cardEdge?: 'tab' | 'outline' | 'none'
+  // Light mode only: paint the selected card with the DARK palette's ground and
+  // text. Absent → false.
+  cardDark?: boolean
   // Selected font ids (see theme.ts FONTS/UI_FONTS). Absent → the default.
   font?: string
   uiFont?: string

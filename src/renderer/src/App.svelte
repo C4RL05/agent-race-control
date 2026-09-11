@@ -73,7 +73,7 @@
   import Info from './Info.svelte'
   import Notes from './Notes.svelte'
   import { palettes } from './theme'
-  import type { Mode } from './theme'
+  import type { Chrome, Mode } from './theme'
   import {
     sessions,
     dirOrder,
@@ -123,7 +123,7 @@
     zoomFactor
   } from './sessions.svelte'
   import type { Session, WorktreeEntry, ZoomPane } from './sessions.svelte'
-  import { DOT_COLORS, FONTS, UI_FONTS, fontStack } from './theme'
+  import { DOT_COLORS, FONTS, UI_FONTS, chromeVars, fontStack } from './theme'
   import arcIconPng from './assets/arc.png?inline'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
@@ -195,15 +195,80 @@
     dark: 'dark_mode'
   }
 
+  // The three card controls (2026-09-11). Two washes — how much of the group's
+  // colour the selected card carries, and how much the rest do — off one list
+  // of steps, plus the edge that marks an unselected card.
+  // `id`, not `value`, so these read as the same kind of list as CARD_EDGES and
+  // STATUS_SOURCES and the one segRow snippet can render all four.
+  const CARD_WASHES: { id: 0.1 | 0.5 | 1; label: string }[] = [
+    { id: 0.1, label: '10%' },
+    { id: 0.5, label: '50%' },
+    { id: 1, label: '100%' }
+  ]
+  // The unselected cards get one step the selected card doesn't: no background
+  // at all. `background: none` and a 0% mix are not the same thing on light,
+  // where bgSubtle is a shade off the canvas — this is the transparent one.
+  const CARD_WASHES_REST: { id: 0 | 0.1 | 0.5 | 1; label: string }[] = [
+    { id: 0, label: 'None' },
+    ...CARD_WASHES
+  ]
+  const CARD_EDGES: { id: 'tab' | 'outline' | 'none'; label: string }[] = [
+    { id: 'tab', label: 'Tab' },
+    { id: 'outline', label: 'Outline' },
+    { id: 'none', label: 'None' }
+  ]
+
   // Which font row in Settings is unfolded, or null. One value, not a flag per
   // row: opening one closes the others, so the panel keeps its height.
   let openFont = $state<string | null>(null)
 
+  // Where the panel has been dragged to, in viewport px, or null for "centred".
+  // Deliberately NOT persisted and reset on every close: the panel opens in the
+  // middle of the window every time, so it can never be hunted for in a corner
+  // you left it in, and moving it is a gesture for right now — get it off the
+  // row you're watching — rather than a preference.
+  let settingsPos = $state<{ x: number; y: number } | null>(null)
+
   // Closing the panel folds whatever was open, so reopening it never starts
-  // mid-gesture on a list you left behind.
+  // mid-gesture on a list you left behind — and drops it back to centre.
   $effect(() => {
-    if (!settingsOpen) openFont = null
+    if (!settingsOpen) {
+      openFont = null
+      settingsPos = null
+    }
   })
+
+  // Drag the panel by its header. Window listeners rather than pointer capture:
+  // the pointer leaves the header constantly during a drag, and capture on a
+  // div that also holds the close button is more to unpick than it's worth.
+  function dragSettings(e: PointerEvent): void {
+    if (e.button !== 0) return
+    const header = e.currentTarget as HTMLElement
+    // The close button is in the header; a click on it is not a drag.
+    if ((e.target as HTMLElement).closest('button')) return
+    const panel = header.parentElement as HTMLElement
+    const rect = panel.getBoundingClientRect()
+    const dx = e.clientX - rect.left
+    const dy = e.clientY - rect.top
+    // Clamped to the window: a header dragged past the edge is a panel you can
+    // no longer grab (or close by hand). Both bounds are read ONCE here with
+    // the rect — `innerWidth`/`innerHeight` force a layout flush, and inside
+    // the move handler that is one per frame for the length of the drag.
+    const maxX = window.innerWidth - rect.width
+    const maxY = window.innerHeight - rect.height
+    const move = (m: PointerEvent): void => {
+      settingsPos = {
+        x: Math.min(Math.max(m.clientX - dx, 0), maxX),
+        y: Math.min(Math.max(m.clientY - dy, 0), maxY)
+      }
+    }
+    const up = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
 
   // Which technique colours the status dot. One at a time — see screen.ts.
   const STATUS_SOURCES = [
@@ -329,15 +394,28 @@
   // Scoped to the dots only — the close/clear hovers keep reading --danger.
   // `todo` is the TODO-overlay blue (issue #3): the theme accent normally, pure
   // #0000FF under Status RGB (matching the pure-RGB traffic lights).
-  const dots = $derived(
+  const dotsFor = (chrome: Chrome): Record<string, string> =>
     ui.statusRgb
       ? { running: '#ff0000', waiting: '#ffaa00', idle: '#00ff00', todo: '#0000ff' }
       : {
-          running: palette.chrome.danger,
-          waiting: palette.chrome.attention,
-          idle: palette.chrome.success,
-          todo: palette.chrome.accent
+          running: chrome.danger,
+          waiting: chrome.attention,
+          idle: chrome.success,
+          todo: chrome.accent
         }
+
+  const dots = $derived(dotsFor(palette.chrome))
+
+  // Every chrome token the shell owns, from the one serialiser in theme.ts.
+  // The live palette always; the DARK palette beside it under a `dark-` prefix
+  // only while "Dark selected card" can actually apply, since that is the only
+  // thing that reads it (the selected card re-points its own tokens at the
+  // second set — see the .card.active override in the CSS) and in dark mode the
+  // two sets are the same palette twice.
+  const shellVars = $derived(
+    ui.cardDark && effective === 'light'
+      ? `${chromeVars(palette.chrome, dots)};${chromeVars(palettes.dark.chrome, dotsFor(palettes.dark.chrome), 'dark-')}`
+      : chromeVars(palette.chrome, dots)
   )
 
   let renaming = $state<number | null>(null)
@@ -597,11 +675,27 @@
   // folded card still shouts amber for a blocked archived session, while the
   // ring says where to look for it — otherwise you unfold the card and find
   // every visible row calm.
+  // Every row a card shows, live and archived, in one list — the two shapes a
+  // group comes in (a plain folder's flat list, a repo's branches) reconciled
+  // in ONE place. Both readers below want exactly this, and a third group kind
+  // would otherwise have to be remembered in each of them.
+  function groupSessions(group: GroupView): Session[] {
+    const live = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
+    return [...live, ...group.archived]
+  }
+
+  // The card holding the focused session (2026-09-11): one card at a time wears
+  // its colour at `--card-wash` while the rest sit at `--card-wash-rest`, so
+  // "which repo am I in" reads from across the room. Archived rows count, as
+  // above — the focused row can be an archived one.
+  function hasFocused(group: GroupView): boolean {
+    return groupSessions(group).some((s) => s.key === ui.focused)
+  }
+
   function rollupDot(
     group: GroupView
   ): { status: Session['status']; plain: boolean; archived: boolean } | null {
-    const live = group.kind === 'plain' ? group.sessions : group.branches.flatMap((b) => b.sessions)
-    const all = [...live, ...group.archived]
+    const all = groupSessions(group)
     const pick =
       all.find((s) => s.status === 'waiting') ??
       all.find((s) => s.status === 'running' && s.type === 'claude') ??
@@ -745,22 +839,20 @@
   </svg>
 {/snippet}
 
+<!-- The shell owns the palette and every app-wide card setting: the tokens as
+     one serialised string, the three that are a LOOK rather than a value as
+     data attributes the card rules descend from. None of them varies per card,
+     so none of them belongs on a card — only `--dir-color` does. -->
 <div
   class="shell"
+  style={shellVars}
   style:--ui-font={chromeFont}
-  style:--bg={palette.chrome.bg}
-  style:--bg-subtle={palette.chrome.bgSubtle}
-  style:--fg={palette.chrome.fg}
-  style:--fg-muted={palette.chrome.fgMuted}
-  style:--border={palette.chrome.border}
-  style:--accent={palette.chrome.accent}
-  style:--danger={palette.chrome.danger}
-  style:--success={palette.chrome.success}
-  style:--dot-running={dots.running}
-  style:--dot-waiting={dots.waiting}
-  style:--dot-idle={dots.idle}
-  style:--dot-todo={dots.todo}
   style:--dot-track={ui.statusDot ? '16px' : '0px'}
+  style:--card-wash={`${Math.round(ui.cardWash * 100)}%`}
+  style:--card-wash-rest={`${Math.round(ui.cardWashRest * 100)}%`}
+  data-card-dark={ui.cardDark && effective === 'light' ? 'on' : null}
+  data-edge={ui.cardEdge}
+  data-fill={ui.cardWashRest === 0 ? 'none' : null}
 >
   <!-- CSS `zoom` scales the tower's text and every px in its chrome with it,
        which is what makes one declaration enough for a pane whose sizes are
@@ -876,6 +968,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
+              class:active={hasFocused(group)}
               class:collapsed={collapsedGroups[group.key]}
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
@@ -899,6 +992,7 @@
               >
                 {@render cardLabel(group)}
                 <span class="dir-meta">
+                  {@render rollupChip(group)}
                   <span class="spawn-cluster">{@render spawnButtons(group.cwd)}</span>
                 </span>
               </div>
@@ -919,6 +1013,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="card"
+              class:active={hasFocused(group)}
               class:collapsed={collapsedGroups[group.key]}
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
@@ -958,6 +1053,7 @@
                   {@render cardLabel(group)}
                 {/if}
                 <span class="dir-meta">
+                  {@render rollupChip(group)}
                   <span class="spawn-cluster">
                     <button
                       class="spawn-btn"
@@ -1218,6 +1314,39 @@
   <!-- An on/off setting looks like an on/off setting. A checkbox glyph in a
        menu row read as "an item you can tick", which is what a menu does; a
        switch reads as state, which is what these are. -->
+  <!-- One settings row whose control is a segmented "pick one of these". Four
+       rows shared the same sixteen lines before this existed — the class:on /
+       role / aria-checked triple had to be kept in sync across every copy, and
+       any future keyboard handling would have had to land in all of them. The
+       option lists all carry `{ id, label }` so one snippet renders them; the
+       Theme row keeps its own block, its buttons carrying an icon as well.
+       `id` widens to `string | number` here (the wash steps are numbers), so
+       the call sites narrow on the way back out. -->
+  {#snippet segRow(
+    label: string,
+    aria: string,
+    options: { id: string | number; label: string }[],
+    selected: string | number,
+    pick: (id: never) => void
+  )}
+    <div class="set-row">
+      <span class="set-label">{label}</span>
+      <div class="segmented" role="radiogroup" aria-label={aria}>
+        {#each options as option (option.id)}
+          <button
+            class="seg"
+            class:on={selected === option.id}
+            role="radio"
+            aria-checked={selected === option.id}
+            onclick={() => pick(option.id as never)}
+          >
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/snippet}
+
   {#snippet switchBtn(label: string, on: boolean, toggle: () => void)}
     <button
       class="switch"
@@ -1303,15 +1432,24 @@
         }
       }}
     >
-      {#if collapsed && ui.statusDot}
-        {@const r = rollupDot(group)}
-        {#if r}<span class="rollup dot {r.status}" class:plain={r.plain} class:archived={r.archived}
-          ></span>{/if}
-      {/if}
       <span class="name-text">
         {group.kind === 'plain' ? dirLabel(group.cwd).base : group.repoName}
       </span>
     </span>
+  {/snippet}
+
+  <!-- The folded card's roll-up dot. It lives in the title's RIGHT track, the
+       stacked cell the worktree annotation and the spawn cluster share — and it
+       holds that cell outright, because the cluster doesn't come out while the
+       card is folded (see the CSS). Folded, the dot is the whole status report
+       for the card, so it wants the end of the line rather than a position in
+       front of the name that nothing occupies when the card is open. -->
+  {#snippet rollupChip(group: GroupView)}
+    {#if collapsedGroups[group.key] && ui.statusDot}
+      {@const r = rollupDot(group)}
+      {#if r}<span class="rollup dot {r.status}" class:plain={r.plain} class:archived={r.archived}
+        ></span>{/if}
+    {/if}
   {/snippet}
 
   <!-- The header hover cluster: new Claude / new Codex / new shell / Show in
@@ -1692,19 +1830,26 @@
   {/if}
 
   {#if settingsOpen}
-    <div
-      class="menu-backdrop modal-backdrop"
-      role="presentation"
-      onclick={() => (settingsOpen = false)}
-    ></div>
     <!-- A settings PANEL, not a menu (2026-09-10). The controls are unchanged;
          what changed is that they stopped being twenty-three identical rows in
          one column. Each control now has the shape of the choice it makes — a
          segmented control for "one of two or three", a switch for on/off, a
          picker for "one of five" — and they sit in a label-left / control-right
-         grid under three section headings. -->
-    <div class="settings-modal" role="dialog" aria-label="Settings" aria-modal="true">
-      <div class="settings-header">
+         grid under three section headings.
+         Non-modal since 2026-09-11: no backdrop, nothing dimmed, nothing
+         blocked — every control here changes the app BEHIND it, and a panel
+         that hides what it is changing is the wrong shape for that. Escape and
+         the close button close it; a click on the tower goes to the tower. -->
+    <div
+      class="settings-modal"
+      class:dragged={settingsPos !== null}
+      style:left={settingsPos ? `${settingsPos.x}px` : null}
+      style:top={settingsPos ? `${settingsPos.y}px` : null}
+      role="dialog"
+      aria-label="Settings"
+    >
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="settings-header" onpointerdown={dragSettings}>
         <span class="material-symbols-outlined">settings</span>
         <span class="settings-title">Settings</span>
         <button
@@ -1736,6 +1881,37 @@
               {/each}
             </div>
           </div>
+          {@render segRow(
+            'Selected card',
+            'Selected card wash',
+            CARD_WASHES,
+            ui.cardWash,
+            (id: (typeof CARD_WASHES)[number]['id']) => (ui.cardWash = id)
+          )}
+          {@render segRow(
+            'Unselected cards',
+            'Unselected card wash',
+            CARD_WASHES_REST,
+            ui.cardWashRest,
+            (id: (typeof CARD_WASHES_REST)[number]['id']) => (ui.cardWashRest = id)
+          )}
+          {@render segRow(
+            'Card edge',
+            'Card edge',
+            CARD_EDGES,
+            ui.cardEdge,
+            (id: (typeof CARD_EDGES)[number]['id']) => (ui.cardEdge = id)
+          )}
+          <!-- Light mode only, and the row stays put in dark rather than
+               appearing and disappearing as a `system` theme follows the OS. -->
+          <div class="set-row">
+            <span class="set-label">Dark selected card</span>
+            {@render switchBtn(
+              'Dark selected card',
+              ui.cardDark,
+              () => (ui.cardDark = !ui.cardDark)
+            )}
+          </div>
           <div class="set-row">
             <span class="set-label">Color title glyph</span>
             {@render switchBtn(
@@ -1756,22 +1932,13 @@
             <span class="set-label">Status RGB</span>
             {@render switchBtn('Status RGB', ui.statusRgb, () => (ui.statusRgb = !ui.statusRgb))}
           </div>
-          <div class="set-row">
-            <span class="set-label">Detection</span>
-            <div class="segmented" role="radiogroup" aria-label="Status detection">
-              {#each STATUS_SOURCES as source (source.id)}
-                <button
-                  class="seg"
-                  class:on={ui.statusSource === source.id}
-                  role="radio"
-                  aria-checked={ui.statusSource === source.id}
-                  onclick={() => (ui.statusSource = source.id)}
-                >
-                  {source.label}
-                </button>
-              {/each}
-            </div>
-          </div>
+          {@render segRow(
+            'Detection',
+            'Status detection',
+            STATUS_SOURCES,
+            ui.statusSource,
+            (id: (typeof STATUS_SOURCES)[number]['id']) => (ui.statusSource = id)
+          )}
           <!-- The hint the old rows hid in a title attribute. It changes with
                the choice, so it explains what is selected rather than making
                you hover both to find out. -->
@@ -1840,15 +2007,58 @@
     font-family: var(--ui-font);
     background: var(--bg);
     color: var(--fg);
-    /* Scrollbars from the palette, not Chromium's light default — which paints
-       them white, and on the dark theme that is the brightest thing on screen.
-       `scrollbar-color` is inherited, so this one declaration reaches every
-       scroll container: the tower, the Preview and Session tabs, the menus,
-       and xterm's own viewport (all of them live inside .shell, which is also
-       where the palette vars are set). The thumb is the same line color every
-       divider in the app already uses; the track stays transparent so it takes
-       whichever surface it happens to sit on. */
-    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Scrollbars from the palette, not Chromium's light default — which paints
+     them white, and on the dark theme that is the brightest thing on screen.
+     This was one inherited `scrollbar-color` on .shell; it moved onto the
+     ::-webkit-scrollbar pseudo-elements to get rid of the arrow buttons.
+     Two things measured in this Electron (43.1.0) settle the shape:
+     `scrollbar-width: thin` does NOT drop the Fluent arrows (it only narrows
+     15px → 10px), and Chromium IGNORES every ::-webkit-scrollbar-* rule on an
+     element that also has `scrollbar-color` — so the two cannot be combined
+     and the standard property had to go entirely.
+     The pseudo-elements don't inherit the way `scrollbar-color` did, so this
+     one :global descendant rule stands in for it: it reaches every scroll
+     container inside .shell (the tower, the Preview/Session/Notes tabs, the
+     menus, xterm's viewport), which is also where the palette vars resolve.
+     The thumb is the same line colour every divider in the app already uses;
+     the track stays transparent so it takes whichever surface it sits on. */
+  :global(.shell ::-webkit-scrollbar) {
+    width: 8px;
+    height: 8px;
+  }
+
+  /* The point of the exercise. */
+  :global(.shell ::-webkit-scrollbar-button) {
+    display: none;
+  }
+
+  :global(.shell ::-webkit-scrollbar-track),
+  :global(.shell ::-webkit-scrollbar-corner) {
+    background: transparent;
+  }
+
+  /* Chromium drew a 15px track with a 9px pill thumb; this was a 10px track
+     with a 6px thumb, and is now an 8px track carrying a **1px** one — the
+     weight of the card's own title rule and archive divider, so the bar reads
+     as another hairline in a chrome made of hairlines rather than as a piece of
+     furniture. The transparent border does the inset and background-clip keeps
+     the fill off it; 8 − 4 − 3 = 1 in both axes, the odd half-pixel spent as an
+     asymmetric border because a fractional border-width would snap to the
+     device pixel grid and land on 0 or 2. The thumb is a hairline to LOOK at,
+     not to hit: Chromium hit-tests its whole border box, so all 8px stay
+     grabbable. The track width is also the tower's scrollbar gutter, which is
+     why it is 8 — the cards' own inset (see .tower-body). ONE bar everywhere:
+     the tower briefly had a narrower exception, and two scrollbar looks in one
+     window is one more than the app needs. */
+  :global(.shell ::-webkit-scrollbar-thumb) {
+    background: var(--border);
+    background-clip: padding-box;
+    border: 4px solid transparent;
+    border-right-width: 3px;
+    border-bottom-width: 3px;
+    border-radius: 1px;
   }
 
   .tower {
@@ -1859,13 +2069,22 @@
   }
 
   .splitter {
-    /* 5px hit area; visible line is the content-box (width minus padding) */
+    /* 5px hit area; visible line is the content-box (width minus padding) —
+       which needs border-box to actually be 1px. Without it `width` was the
+       CONTENT box, so the sash measured 9px and painted a 5px bar; harmless
+       while it rested transparent, fat as soon as it rested on a line.
+       1px now, the same hairline every other divider in the app draws. */
+    box-sizing: border-box;
     width: 5px;
     flex-shrink: 0;
     cursor: col-resize;
-    /* VS Code sash: invisible at rest — the tower/pane background change
-       marks the boundary; the accent line appears on hover/drag. */
-    background: transparent;
+    /* A VS Code sash, but NOT the invisible-at-rest kind. It used to be
+       transparent and let the tower/pane background change mark the boundary
+       — which dark no longer has (bg and bgSubtle are both #000000, one
+       surface), so the sash IS the boundary now and rests at 1px of `border`,
+       the same line every other divider in the app draws. Accent on
+       hover/drag as before. */
+    background: var(--border);
     background-clip: content-box;
     padding: 0 2px;
     touch-action: none;
@@ -1884,9 +2103,15 @@
   .tower-body {
     flex: 1;
     overflow-y: auto;
-    /* right pad matches the filter bar's 8px so row/header boxes and the
-       spawn cluster end flush with the search box */
-    padding: 0 8px 0 4px;
+    /* The cards line up with the filter bar above them, on both edges and at
+       every card count. Left is the filter bar's own 8px. Right is the
+       SCROLLBAR GUTTER, reserved at the same 8px whether the tower scrolls or
+       not (`stable`), with no padding of its own — so the card box is the
+       search box's box, and it does not resize the moment a session pushes the
+       list past the fold. The two numbers are one number: the gutter is the
+       scrollbar's track width. */
+    padding: 0 0 0 8px;
+    scrollbar-gutter: stable;
   }
 
   /* Repo/folder cards (issue #5): each group is a card — a faint wash of its
@@ -1901,7 +2126,23 @@
     /* left padding clears the 2px edge tab (2 + 11) */
     padding: 4px 8px 10px 13px;
     border-radius: 2px;
-    background: color-mix(in srgb, var(--dir-color) 8%, var(--bg-subtle));
+    /* The card wash: the group's colour mixed over the tower ground. Was a
+       constant (8% over Primer's #161b22, then 16% once the canvas went
+       black — at 8% the colour IS the whole card there); it is now the
+       `--card-wash-rest` setting, since how much colour a resting card wants
+       depends on the monitor and on how many cards are on it. The selected
+       card overrides it below. */
+    background: color-mix(in srgb, var(--dir-color) var(--card-wash-rest), var(--bg-subtle));
+    /* The card RE-DECLARES the text colour it would otherwise inherit from
+       .shell, which changes nothing here and is what makes the borrowed-palette
+       card below possible: `color` is resolved where it is declared, so text
+       that merely inherits from .shell has already been computed against the
+       light `--fg` by the time it reaches the card, and no token override on
+       the card can reach it. Session names were the visible half of that — the
+       card title and the branch rows set their own colour and went white, the
+       rows inherited and stayed dark. Declaring it once here makes the card the
+       colour boundary, so anything inside it that just inherits follows. */
+    color: var(--fg);
     /* the whole card is the group's drag handle (session rows override to
        pointer) — grab anywhere on it to reorder the group */
     cursor: grab;
@@ -1913,6 +2154,68 @@
      instead. The title also stops being a heading over anything — nothing is
      under it — so it drops to the body weight and reads as the list item it
      now is, leaving 600 to mean "this card is open". */
+  /* Selected card: the same wash at its own number — `--card-wash` for the card
+     that owns the focused session, `--card-wash-rest` for every other. Same
+     hue, same recipe, one setting apart, so the selected card reads as this
+     card lit rather than as a different surface. */
+  .card.active {
+    background: color-mix(in srgb, var(--dir-color) var(--card-wash), var(--bg-subtle));
+  }
+
+  /* "Dark selected card" (Settings), light mode only: the selected card borrows
+     the DARK palette — every chrome token its contents read is re-pointed at
+     the `--dark-*` set on .shell, so the card is what it would be in dark mode
+     and not a light card with pale text. The list is exhaustive on purpose:
+     grounds and inks, plus the accent (spawn hover, drop hints, the rename
+     field), danger/success (the close hover, the coloured title glyph) and the
+     four status-dot fills — leave one out and it is the one tone in the card
+     still speaking light. No rule below changes: they all still say `var(--fg)`
+     and the wash recipe above is untouched, it just mixes over a dark ground
+     now. That ground is the point — the wash controls say how much colour a
+     card carries, this says what it is carried over, which is the other half of
+     whether a strong colour reads. Redeclaring `--bg-subtle` on the card itself
+     is enough to move the background the same selector paints: a custom
+     property resolves to the winning value on the element where it is USED.
+     Dark mode never sets the attribute — the borrowed palette is already the
+     live one there. */
+  .shell[data-card-dark='on'] .card.active {
+    --bg: var(--dark-bg);
+    --bg-subtle: var(--dark-bg-subtle);
+    --fg: var(--dark-fg);
+    --fg-muted: var(--dark-fg-muted);
+    --border: var(--dark-border);
+    --accent: var(--dark-accent);
+    --danger: var(--dark-danger);
+    --success: var(--dark-success);
+    --dot-running: var(--dark-dot-running);
+    --dot-waiting: var(--dark-dot-waiting);
+    --dot-idle: var(--dark-dot-idle);
+    --dot-todo: var(--dark-dot-todo);
+  }
+
+  /* Card edge (Settings), the card's colour EDGE and nothing else — it never
+     touches the background, which belongs entirely to the two wash controls.
+     `tab` is the default 2px tab drawn by .card::before above; `outline` trades
+     it for a 1px line around the whole card; `none` draws neither, leaving the
+     wash alone to say whose card this is. The edge applies to every card,
+     selected or not: the selected one is already marked by its stronger wash,
+     and a second edge idiom on top would say the same thing twice. */
+  /* Unselected background = "None": no fill at all, so the card is whatever the
+     edge and the rows make it. Scoped off .active, which keeps its own wash —
+     the two wash controls stay independent, as with the edge. */
+  .shell[data-fill='none'] .card:not(.active) {
+    background: none;
+  }
+
+  .shell[data-edge='outline'] .card {
+    outline: 1px solid var(--dir-color);
+    outline-offset: -1px;
+  }
+
+  .shell:not([data-edge='tab']) .card::before {
+    display: none;
+  }
+
   .card.collapsed {
     padding-bottom: 4px;
   }
@@ -1995,9 +2298,26 @@
      (its parent) is the drag handle. */
   .card-title {
     padding: 3px 0 4px;
-    color: var(--fg);
     font-weight: 600;
     user-select: none;
+    /* The rule under the title, the same span as the archive divider's at the
+       other end of the card, so an open card is a bracketed list rather than a
+       stack of loose lines. It carries the card's own colour, and `--card-rule`
+       is what the selected card re-points (below) — the wash difference between
+       selected and not is deliberately slight, and is nothing at all at
+       `--card-wash-rest: 0`, so the header line says which card you are in when
+       the fill doesn't. A FOLDED card keeps it: there it is the card's bottom
+       edge rather than a divider, and a tower of folded cards that each end on
+       their own colour is what makes them read as cards. */
+    border-bottom: 1px solid var(--card-rule, var(--dir-color));
+  }
+
+  /* Selected, the card says so in one place: the rule under its title goes to
+     the foreground. The colour is a token on the CARD, not a second selector on
+     the title, so anything else that comes to mark a selected card reads the
+     same declaration instead of restating the condition. */
+  .card.active {
+    --card-rule: var(--fg);
   }
 
   .folder-name {
@@ -2024,8 +2344,11 @@
   }
 
   /* Collapsed roll-up dot: reuses the .dot status palette (incl. the plain
-     shell tint and the waiting pulse). Decorative — clicks and hover fall
-     through to the folder-name toggle. */
+     shell tint and the waiting pulse). Decorative — it takes no pointer events,
+     so hover and clicks go to the title underneath it. It sits in the title's
+     right cell, which on a folded card is its alone: the spawn cluster that
+     shares that cell doesn't come out while the card is folded (see below), so
+     the dot never yields it and never flickers on hover. */
   .rollup {
     pointer-events: none;
   }
@@ -2060,9 +2383,11 @@
   }
 
   /* Only branch rows carry a .dir-path (the worktree annotation); the repo/
-     folder title has none, so this swap is branch-only. */
+     folder title has none, so this swap is branch-only. The condition has to be
+     the exact one that shows the cluster below, `:focus-visible` included —
+     they trade one cell, and a mismatch leaves it empty. */
   .branch-row:hover .dir-path,
-  .branch-row:focus-within .dir-path {
+  .branch-row:has(:focus-visible) .dir-path {
     visibility: hidden;
     opacity: 0;
   }
@@ -2080,10 +2405,22 @@
       visibility 0.12s;
   }
 
-  .card-title:hover .spawn-cluster,
-  .card-title:focus-within .spawn-cluster,
+  /* Only an OPEN card's title hands its cell to the cluster. Folded, the card
+     is one line that says which repo it is and how it is doing, and the buttons
+     would be answering a question nobody asked of a card that has been put
+     away — the roll-up dot keeps that cell instead. Branch rows are unscoped
+     because they only exist inside an open card.
+     The keyboard half is `:has(:focus-visible)`, NOT `:focus-within`: the
+     cluster starts `visibility: hidden`, which takes its buttons out of the tab
+     order entirely, so the way in is to focus the title (the name carries
+     tabindex) and have the buttons appear — which `:focus-within` did. What it
+     also did was leave them showing after a MOUSE click, since the button it
+     opened a menu from keeps focus and the mouse is long gone. `:focus-visible`
+     splits exactly there: a keyboard focus matches, a click does not. */
+  .card:not(.collapsed) .card-title:hover .spawn-cluster,
+  .card:not(.collapsed) .card-title:has(:focus-visible) .spawn-cluster,
   .branch-row:hover .spawn-cluster,
-  .branch-row:focus-within .spawn-cluster {
+  .branch-row:has(:focus-visible) .spawn-cluster {
     visibility: visible;
     opacity: 1;
   }
@@ -2222,11 +2559,19 @@
     user-select: none;
   }
 
+  /* The rule is muted INK, not a border: it belongs to the count and the glyph
+     sitting on it, which are `--fg-muted` too, so the divider reads as one
+     object rather than a line with a label parked on it — at two thirds that
+     ink, because a hairline carries a tone further than text does and the label
+     is what should be read first. Thinned as a colour (`color-mix` toward
+     transparent, so the token's 50% ink lands at 33%) rather than as `opacity`
+     on the pseudo-elements, which would also fade the drop state's accent line
+     below — that one has to stay full strength. */
   .archive-sep::before,
   .archive-sep::after {
     content: '';
     height: 1px;
-    background: var(--border);
+    background: color-mix(in srgb, var(--fg-muted) 66%, transparent);
   }
 
   .archive-sep::before {
@@ -2297,6 +2642,20 @@
     padding: 0;
     appearance: none;
     cursor: pointer;
+    /* A 2px ring of the page ground, so the traffic light reads as its own
+       colour instead of as a colour mixed into whatever card wash it is
+       sitting on. A box-shadow rather than a border: it draws OUTSIDE the
+       10px disc, follows the radius, and costs no layout, so the dot's track
+       and the hover ring's 4px offset are untouched. It fades with the dot
+       under the waiting pulse and the exited fade, both of which are opacity
+       on the whole element — which is right, the ring belongs to the dot.
+       `--dot-inner` is the same indirection --dot-fill uses: box-shadow is one
+       non-additive shorthand, so a state that wants its own ring (archived,
+       below) contributes it as a variable instead of replacing this one and
+       silently dropping the ground ring with it. */
+    box-shadow:
+      0 0 0 2px var(--bg),
+      var(--dot-inner, 0 0 transparent);
   }
 
   /* Hover affordance: an instant ring around the dot (no tween). The outline
@@ -2415,7 +2774,7 @@
      not a border: a border would eat into the 10px box and shrink the disc. */
   .dot.archived {
     background: transparent;
-    box-shadow: inset 0 0 0 1.5px var(--dot-fill);
+    --dot-inner: inset 0 0 0 1.5px var(--dot-fill);
   }
 
   /* The pulse animates element opacity, which drags the hover outline with it.
@@ -2456,7 +2815,22 @@
     display: flex;
     gap: 6px;
     padding: 8px;
-    border-bottom: 1px solid var(--border);
+  }
+
+  /* Every control in the bar is ONE outer height, stated as the outer height.
+     They drifted because `height` was measuring different boxes: a <div> is
+     content-box, so the search box's 26px became 28 once its 1px border was
+     added, while a <button> is border-box in the UA sheet and the settings
+     button's identical 26px stayed 26. Pinning box-sizing here means the number
+     below is what you see, whatever the element is and whether or not it wears
+     a border — the spawn group's buttons are the exception that proves it, at
+     `auto` so they stretch to fill the group's box rather than carrying a
+     height of their own inside it. */
+  .search,
+  .icon-btn,
+  .spawn-group {
+    box-sizing: border-box;
+    height: 28px;
   }
 
   .search {
@@ -2465,7 +2839,6 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    height: 26px;
     padding: 0 6px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -2552,7 +2925,6 @@
     display: grid;
     place-items: center;
     width: 28px;
-    height: 26px;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -2573,6 +2945,10 @@
   }
 
   .spawn-group .icon-btn {
+    /* stretch to the group's inner height instead of setting one — the group
+       already owns the outer 28px, and a fixed height inside it would be the
+       group's height minus its border, restated */
+    height: auto;
     border: none;
     border-radius: 0;
   }
@@ -2666,12 +3042,6 @@
     z-index: 10;
   }
 
-  /* Only the settings dialog dims behind it — the transient context menus
-     stay a plain click-catcher so they don't read as blocking the tower. */
-  .modal-backdrop {
-    background: rgba(0, 0, 0, 0.75);
-  }
-
   .menu {
     position: fixed;
     z-index: 11;
@@ -2702,8 +3072,11 @@
     cursor: pointer;
   }
 
+  /* Hover fills paint with `border`, not `bg-subtle` — the same idiom as
+     .row/.icon-btn/.spawn-btn above. Load-bearing since dark's bgSubtle IS
+     its bg (#000000): a subtle fill is invisible there. */
   .menu-item:hover {
-    background: var(--bg-subtle);
+    background: var(--border);
   }
 
   .menu-item .material-symbols-outlined,
@@ -2749,6 +3122,9 @@
   .settings-modal {
     position: fixed;
     z-index: 11;
+    /* Centred until it is dragged, at which point the inline left/top take
+       over and the centring transform has to stop pulling it half its own
+       size up and left. */
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
@@ -2763,6 +3139,13 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
 
+  .settings-modal.dragged {
+    transform: none;
+  }
+
+  /* Also the drag handle (see dragSettings): the title bar of a small window,
+     which is where anyone would reach for it. No text selection, or a drag
+     across the title highlights the word instead of moving the panel. */
   .settings-header {
     display: flex;
     align-items: center;
@@ -2770,6 +3153,8 @@
     flex-shrink: 0;
     padding: 9px 9px 9px 14px;
     border-bottom: 1px solid var(--border);
+    cursor: move;
+    user-select: none;
   }
 
   .settings-header .material-symbols-outlined:first-child {
@@ -2783,8 +3168,8 @@
     font-weight: 600;
   }
 
-  /* Escape and a backdrop click already close the panel; this gives the
-     gesture something to aim at, which a dimmed modal is expected to have. */
+  /* With the backdrop gone this is the only pointer way out (Escape is the
+     other), so it is no longer decoration. */
   .settings-close {
     display: flex;
     flex: none;
@@ -2797,7 +3182,7 @@
   }
 
   .settings-close:hover {
-    background: var(--bg-subtle);
+    background: var(--border);
     color: var(--fg);
   }
 
