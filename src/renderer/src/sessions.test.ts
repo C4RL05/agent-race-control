@@ -579,6 +579,18 @@ describe('worktreeSpawnName', () => {
     expect(worktreeSpawnName('D:\\repo', 'D:\\repo\\.claude\\worktrees\\Feat')).toBe('Feat')
   })
 
+  // Pinning behaviour that already works, because it looks like it should not:
+  // the normalisation folds `/` INTO `\`, which reads as Windows-only. It is
+  // symmetric — both the prefix and the path get the same treatment — so a
+  // POSIX path is compared against a POSIX-derived prefix and matches. Worth a
+  // test rather than a second look every time.
+  it('extracts the name from a POSIX path', () => {
+    expect(worktreeSpawnName('/Users/me/repo', '/Users/me/repo/.claude/worktrees/feat')).toBe(
+      'feat'
+    )
+    expect(worktreeSpawnName('/home/me/repo', '/home/me/repo/.claude/worktrees/Feat')).toBe('Feat')
+  })
+
   it('returns null for the repo root, siblings, and nested non-name paths', () => {
     expect(worktreeSpawnName('D:/repo', 'D:/repo')).toBe(null)
     expect(worktreeSpawnName('D:/repo', 'D:/repo-sibling')).toBe(null)
@@ -587,6 +599,13 @@ describe('worktreeSpawnName', () => {
     // same worktrees structure on a different drive must not match this repo —
     // the prefix guard is the only thing standing between it and a false 'feat'
     expect(worktreeSpawnName('D:/repo', 'X:/repo/.claude/worktrees/feat')).toBe(null)
+  })
+
+  it('applies the same guards on POSIX', () => {
+    expect(worktreeSpawnName('/Users/me/repo', '/Users/me/repo')).toBe(null)
+    expect(worktreeSpawnName('/Users/me/repo', '/Users/me/repo-sibling')).toBe(null)
+    expect(worktreeSpawnName('/Users/me/repo', '/Users/me/repo/.claude/worktrees/a/b')).toBe(null)
+    expect(worktreeSpawnName('/Users/me/repo', '/Users/you/repo/.claude/worktrees/feat')).toBe(null)
   })
 })
 

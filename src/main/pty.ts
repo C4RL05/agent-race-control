@@ -5,7 +5,7 @@ import type { IPty } from 'node-pty'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { findGitBash } from './bash'
+import { resolveShell } from './shell'
 import { writeSessionHooks } from './status'
 import { transcriptPath } from './transcript'
 import { adapterFor, type SessionType } from './cli'
@@ -66,12 +66,10 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         worktree?: string
       }
     ): SpawnResult => {
-      const bash = findGitBash()
-      if (!bash) {
-        return {
-          error: 'Git Bash not found. Install Git for Windows and restart Agent Race Control.'
-        }
-      }
+      // Git Bash on Windows, the user's login shell on POSIX — shell.ts owns
+      // the choice, and carries the reason it is not a fixed binary.
+      const shell = resolveShell()
+      if (!shell.ok) return { error: shell.message }
 
       // Full environment passthrough — fidelity requires the shell to see
       // exactly what a regular terminal would. COLORTERM is truthful: xterm.js
@@ -114,9 +112,11 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
       }
 
       // Agent sessions: the login shell sources the user's profile (so the CLI
-      // resolves from the user's real PATH), then exec makes bash *become* it —
-      // the PTY's lifetime IS the agent process's lifetime. What each CLI is
-      // handed on that line lives in cli/index.ts; everything below is shared.
+      // resolves from the user's real PATH), then exec makes the shell *become*
+      // it — the PTY's lifetime IS the agent process's lifetime. What each CLI
+      // is handed on that line lives in cli/index.ts; everything below is
+      // shared. `exec <cli> …` is POSIX-portable, so the same string serves
+      // Git Bash and zsh.
       const cwd = opts.cwd ?? homedir()
       const adapter = adapterFor(opts.type)
 
@@ -148,12 +148,12 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
           hookSettings
         })
         if (adapter.identity === 'pinned') claudeSessionId = resumeId
-        args = ['--login', '-i', '-c', cmd]
+        args = [...shell.shell.args, '-c', cmd]
       } else {
-        args = ['--login', '-i']
+        args = [...shell.shell.args]
       }
 
-      const pty = spawn(bash, args, {
+      const pty = spawn(shell.shell.command, args, {
         name: 'xterm-256color',
         cols: Math.max(1, Math.floor(opts.cols)),
         rows: Math.max(1, Math.floor(opts.rows)),

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron'
 import { join } from 'node:path'
 import { registerPtyHandlers, killAllPtys, hasClaudeSessions } from './pty'
+import { applyLoginPath } from './login-path'
 import { startAgentPolling, stopAgentPolling } from './agents'
 import { startStatusServer } from './status'
 import { registerTranscriptHandlers, disposeAllTails } from './transcript'
@@ -196,25 +197,49 @@ if (!gotLock) {
     saveState({ ...state, lastPickedDir, zoomLevel })
   })
 
-  app.whenReady().then(async () => {
-    // Two channels, deliberately unequal (see the kickoff doc): hooks carry the
-    // TURN boundaries — instant and precise — while the poll is only a floor,
-    // because `claude agents --json` reports `busy` for a finished turn that
-    // still owns a background shell and so can never colour the dot red.
-    await startStatusServer((hookToken, claudeSessionId, event, cwd) => {
-      win?.webContents.send('session:status', hookToken, claudeSessionId, event, cwd)
+  app
+    .whenReady()
+    .then(async () => {
+      // FIRST, and awaited: repair this process's PATH before anything can spawn.
+      // A Finder-launched macOS app has launchd's PATH and a Windows app can have
+      // a stale environment block — login-path.ts carries both measurements. One
+      // repair here covers every later caller (git.ts, and the absolute `claude`
+      // agents.ts resolves), and it can only ever add entries, so a failure costs
+      // nothing.
+      const path = await applyLoginPath()
+      console.log(
+        path.applied
+          ? `[arc] PATH repaired: ${path.path}`
+          : `[arc] PATH left as inherited: ${path.reason}`
+      )
+
+      // Two channels, deliberately unequal (see the kickoff doc): hooks carry the
+      // TURN boundaries — instant and precise — while the poll is only a floor,
+      // because `claude agents --json` reports `busy` for a finished turn that
+      // still owns a background shell and so can never colour the dot red.
+      await startStatusServer((hookToken, claudeSessionId, event, cwd) => {
+        win?.webContents.send('session:status', hookToken, claudeSessionId, event, cwd)
+      })
+      registerPtyHandlers(() => win?.webContents ?? null)
+      registerTranscriptHandlers(() => win?.webContents ?? null)
+      // Pull-only, and only while the Session tab is open (see sessioninfo.ts).
+      registerSessionInfoHandlers()
+      // One `claude agents --json` per tick for the whole tower, and only while a
+      // Claude PTY is alive (see agents.ts).
+      startAgentPolling(hasClaudeSessions, (entries) => {
+        win?.webContents.send('session:agents', entries)
+      })
+      createWindow()
     })
-    registerPtyHandlers(() => win?.webContents ?? null)
-    registerTranscriptHandlers(() => win?.webContents ?? null)
-    // Pull-only, and only while the Session tab is open (see sessioninfo.ts).
-    registerSessionInfoHandlers()
-    // One `claude agents --json` per tick for the whole tower, and only while a
-    // Claude PTY is alive (see agents.ts).
-    startAgentPolling(hasClaudeSessions, (entries) => {
-      win?.webContents.send('session:agents', entries)
+    // Startup is now an async chain with an await at the top of it, so a throw
+    // anywhere in it would leave the app running with no window and nothing
+    // printed. Nothing above currently rejects — applyLoginPath catches
+    // everything by design — but "the first thing that runs is awaited" is
+    // exactly the shape where a later edit makes that untrue silently.
+    .catch((err: unknown) => {
+      console.error('[arc] startup failed', err)
+      app.quit()
     })
-    createWindow()
-  })
 
   app.on('will-quit', () => {
     flushState()
