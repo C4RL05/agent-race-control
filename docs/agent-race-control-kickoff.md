@@ -352,7 +352,7 @@ Settings was a **menu that had grown into a dialog**: one 260px column of twenty
 
 **The stance, settled today.** Agent Race Control is **Windows first, macOS in progress**. Windows is what it is developed on, tested on, packaged for and screenshotted on; macOS is a second host the code no longer *refuses*, but that ships no artifact yet. "Native Windows" is retired as a **scope** claim and kept as a **priority** one: a macOS change that costs Windows anything is not taken. The fidelity rule reads the same on either host — if it works in the user's own terminal (Windows Terminal there, Terminal.app/iTerm here) and not in Agent Race Control, it's our bug.
 
-**Where it came from.** Issue #8: a sibling Electron + node-pty app at LEGO Digital Play (Brick Developer Hub) lifted this repo's terminal module — `bash.ts` essentially verbatim, the pty registry and xterm component as copies — then grew macOS as a second first-class host and sent the port back as measured notes. PR #9 merged **the mechanical half** on 2026-09-12: four hard blockers, plus the first CI this repo has ever had. The measuring machine is **darwin 25.6.0 arm64, `$SHELL = /bin/zsh`, Electron 42.5.2**; every claim in the issue states whether it is measured there or marked inference, and nothing was adopted from documentation alone. The honest limit up front: **nobody has yet run Agent Race Control on a Mac.** The macOS *behaviours* are measured; their *mapping onto this code* is not.
+**Where it came from.** Issue #8: a sibling Electron + node-pty app at LEGO Digital Play (Brick Developer Hub) lifted this repo's terminal module — `bash.ts` essentially verbatim, the pty registry and xterm component as copies — then grew macOS as a second first-class host and sent the port back as measured notes. PR #9 merged **the mechanical half** on 2026-09-12: four hard blockers, plus the first CI this repo has ever had. The measuring machine is **darwin 25.6.0 arm64, `$SHELL = /bin/zsh`, Electron 42.5.2**; every claim in the issue states whether it is measured there or marked inference, and nothing was adopted from documentation alone. The honest limit **at merge time** was that nobody had run Agent Race Control on a Mac — the macOS behaviours were measured, their mapping onto this code was not. That held for about three hours; see *First run on a Mac* below.
 
 ### What landed (PR #9)
 
@@ -373,6 +373,16 @@ An independent adversarial review of the branch found **three Windows regression
 
 One smaller fix rode along: a stray `%` in a Windows directory name could pair with the next `%VAR%` and swallow the expansion. Mild, since the union keeps the process's real entry either way, but it put a junk directory in PATH.
 
+### First run on a Mac (2026-09-12, same day)
+
+Reported on #8 by a second pair of hands on **macOS 26.5.1 arm64, Electron 43.1.0, Node 26, `$SHELL = /bin/zsh`**, against `836ea02`. **It works.** A shell row comes up as `zsh -l -i` in the repo with its prompt; a Claude row comes up as the real Claude Code TUI sitting on its trust prompt, with the row's dot correctly **amber**; the repo card grouped the cwd under `agent-race-control` on `main`, so `git.ts` needed nothing at all; `[arc] PATH repaired: …` logged at startup; no renderer errors. B1 and the login-PATH work are now measured on a **second** machine rather than mapped onto this code from a sibling app.
+
+**The gap the notes could not have caught: `npm run dev` never ran the chmod.** Keeping it an explicit script called from `dist` is right, and it is what merged — but **dev is how a Mac first meets this app**, and a fresh `npm install` there leaves `prebuilds/darwin-arm64/spawn-helper` at `-rw-r--r--`. So `git clone && npm install && npm run dev` reproduced **B2 in full**: blank pane, no error, nothing to search for. Fixed by chaining `fix-pty-perms` into **every script that starts Electron** — `dev`, `preview`, `screenshots`, and the two `dist` scripts that already had it — rather than into `dev` alone, because the failure has the same shape through any of those doors and the script is a no-op on Windows by construction. Still **not a postinstall**, for the reason already recorded: `--ignore-scripts` is this repo's own rule for node-pty and CI uses it, so an install hook is the one place the chmod could silently not run.
+
+**`TERM_SESSION_ID` now joins the env scrub.** Terminal.app and iTerm set it per tab, and `/etc/zshrc_Apple_Terminal` keys zsh's session save/restore on it — so when `pty.ts`'s deliberate full-env passthrough carries the *launching* terminal's id into every pane, each one "restores" a session it does not own and then fails to delete the file: `Restored session: …` followed by `rm: ~/.zsh_sessions/<uuid>.session: No such file or directory`, on every pane. Cosmetic and dev-only (a `.app` from Finder inherits no terminal's id), and exactly the same shape as the `CLAUDECODE` scrub that is already there: **fidelity is a fresh terminal, not a child of whatever launched the app.** Unverified from Windows, where the variable does not exist and the delete is a no-op — it wants a confirming run on the Mac.
+
+**Still untested there:** Codex rows (not installed on that machine), and the whole of the macOS chrome below.
+
 ### Deliberately not done yet
 
 The other half of #8, all still open:
@@ -383,7 +393,7 @@ The other half of #8, all still open:
 - **Zoom is Ctrl-only and clipboard is Ctrl+Shift+C/V**, both explicitly rejecting `metaKey`.
 - **The font stacks are Windows-native** and the default terminal font id names a Windows face; `ui-monospace, "SF Mono", Menlo` and `-apple-system, system-ui` are the portable fallbacks.
 
-Each is small on its own, and none is worth doing blind. **The next real step is running the app on a Mac** — that is what turns all of the above from mapped to measured.
+Each is small on its own, and none is worth doing blind — but the Mac run has now happened, so they are no longer blind. **The chrome pass is the next real step**, and it is one pass: the lifecycle handlers, a darwin-only menu, and `metaKey` alongside `ctrlKey` in the zoom and clipboard guards. Packaging comes after it, because there is no point shipping a `.app` that cannot paste. A Codex row on a Mac is still unmeasured.
 
 ## Packaging (post-v1, settled 2026-07-13)
 

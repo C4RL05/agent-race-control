@@ -9,7 +9,7 @@ Minimal Electron + Svelte terminal cockpit for coding agents on native Windows �
 
 ## Commands
 
-- `npm run dev` — electron-vite dev with HMR (main/preload changes need an app restart; renderer is hot)
+- `npm run dev` — `fix-pty-perms` + electron-vite dev with HMR (main/preload changes need an app restart; renderer is hot). **Every script that starts Electron runs the chmod first** (`dev`, `preview`, `screenshots`, `dist`): a fresh clone on a Mac otherwise opens blank panes with no error, measured 2026-09-12 on the first Mac run
 - `npm run build` / `npm run preview` — production build / run it
 - `npm run dist` — `fix-pty-perms` (chmods node-pty’s darwin `spawn-helper`, a no-op on win32) + build + NSIS installer into `dist/` (`npm run dist:dir` for the unpacked smoke-test build; `npx electron scripts/make-icon.mjs` regenerates `build/icon.ico` from the same pixel-art PNG the app scales (`src/renderer/src/assets/arc.png`))
 - `npm run typecheck` — `tsc` (main/preload) + `svelte-check` (renderer)
@@ -34,7 +34,7 @@ Minimal Electron + Svelte terminal cockpit for coding agents on native Windows �
 - **Transcript dir encoding dashes EVERY non-alphanumeric** in the cwd — dots, spaces, underscores (verified empirically; a `[\\/:]`-only regex silently broke preview *and* resume for dotted paths). `transcriptPath()` in `transcript.ts` is the single owner of the encoding and honors `CLAUDE_CONFIG_DIR`.
 - **Version pins are load-bearing:** `@sveltejs/vite-plugin-svelte` 6.x + Vite 7 (electron-vite 5 rejects Vite 8); TypeScript 5.9 (svelte-check crashes on TS 7); Electron pinned exact.
 - **Dev restarts: kill the whole `npm run dev` tree, not just `electron.exe`.** Orphaned vite/electron-vite servers accumulate and can leave the next window invisibly alive (GPU-cache contention; there's a `did-finish-load` show-fallback in main, but don't rely on it).
-- **macOS is mapped, not measured.** The four blockers are fixed (shell dispatch, the darwin `spawn-helper` chmod before packaging, the startup PATH repair, the MSYS-only `cygpath`), and CI typechecks + tests on both hosts. Still missing: the `activate` handler, a Mac app menu (Cmd shadows nothing a TUI reads, so the zero-shadow rule allows one), a packaging target, Cmd zoom/clipboard, POSIX font stacks. Every macOS change is reviewed for its **Windows** form first — the last round introduced three Windows regressions by asserting it instead of measuring it (kickoff doc, macOS section).
+- **macOS runs, and is not finished (first Mac run 2026-09-12).** The four blockers are fixed (shell dispatch, the darwin `spawn-helper` chmod before *anything* that starts Electron, the startup PATH repair, the MSYS-only `cygpath`), CI typechecks + tests on both hosts, and both row types have come up in a real PTY on a Mac. Still missing: the `activate` handler, a Mac app menu (Cmd shadows nothing a TUI reads, so the zero-shadow rule allows one), a packaging target, Cmd zoom/clipboard, POSIX font stacks. Every macOS change is reviewed for its **Windows** form first — the last round introduced three Windows regressions by asserting it instead of measuring it (kickoff doc, macOS section).
 - Keyboard: the app must not shadow terminal keystrokes. The default Electron menu is removed for this reason — don't reintroduce it.
 
 ## Workflow with Carlos

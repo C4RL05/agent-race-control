@@ -98,7 +98,18 @@ export function registerPtyHandlers(getWebContents: () => WebContents | null): v
         'CLAUDE_ENV_FILE',
         'CLAUDE_PROJECT_DIR',
         'CLAUDE_PLUGIN_ROOT',
-        'CLAUDE_PLUGIN_DATA'
+        'CLAUDE_PLUGIN_DATA',
+        // Same rule, Apple's machinery. Terminal.app and iTerm set
+        // TERM_SESSION_ID per tab, and /etc/zshrc_Apple_Terminal keys zsh's
+        // session save/restore on it. Inherited, every pane we open "restores"
+        // the LAUNCHING terminal's session and then fails to delete a file it
+        // does not own — "Restored session: …" followed by "rm:
+        // ~/.zsh_sessions/<uuid>.session: No such file or directory", on every
+        // single pane. Measured on a Mac (issue #8, 2026-09-12); dev-only,
+        // since a .app launched from Finder inherits no terminal's id. Dropping
+        // it is exactly the fresh-terminal state this loop exists for. Absent
+        // on Windows, so the delete costs nothing there.
+        'TERM_SESSION_ID'
       ]) {
         delete env[key]
       }
