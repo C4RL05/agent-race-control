@@ -353,7 +353,7 @@ export const ui = $state<{
   statusDot: boolean
   // Settings toggle: paint the leading glyph of a row's title by which glyph
   // it is (see glyphLead) — nothing to do with the dot's status colors.
-  // Off by default.
+  // On by default.
   glyphColor: boolean
   // WHICH TECHNIQUE COLOURS THE DOT. 'screen' is the default: the screen scan
   // (screen.ts), the same technique Codex rows have no choice but to use.
@@ -395,7 +395,7 @@ export const ui = $state<{
   towerWidth: 240,
   statusRgb: true,
   statusDot: true,
-  glyphColor: false,
+  glyphColor: true,
   statusSource: 'screen',
   cardWash: 1,
   cardWashRest: 0,
@@ -1089,7 +1089,7 @@ export async function restoreState(): Promise<void> {
   ui.statusRgb = saved.statusRgb ?? true
   // Absent → the default, which for the dot is ON (unlike the other two).
   ui.statusDot = saved.statusDot ?? true
-  ui.glyphColor = saved.glyphColor ?? false
+  ui.glyphColor = saved.glyphColor ?? true
   ui.statusSource = saved.statusSource ?? 'screen'
   // Clamped to the offered steps, not trusted: the state file is external data
   // and an arbitrary number would reach color-mix as-is. Each line names the

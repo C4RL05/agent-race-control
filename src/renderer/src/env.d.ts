@@ -12,7 +12,7 @@ interface PersistedState {
   statusRgb?: boolean
   // Draw the status dot at all. Absent → true (see restoreState).
   statusDot?: boolean
-  // Paint a row title's leading glyph by which glyph it is.
+  // Paint a row title's leading glyph by which glyph it is. Absent → true.
   glyphColor?: boolean
   // Which technique colours the status dot. Absent → 'screen', the default.
   statusSource?: 'hooks' | 'screen'

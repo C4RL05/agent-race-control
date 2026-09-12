@@ -26,7 +26,7 @@ export interface AppState {
   // Draw the status dot at all. Absent → true. The defaults live in one place,
   // the renderer's `ui` and restoreState — main only stores what it is sent.
   statusDot?: boolean
-  // Paint a row title's leading glyph by which glyph it is.
+  // Paint a row title's leading glyph by which glyph it is. Absent → true.
   glyphColor?: boolean
   // Selected font ids (see the renderer's FONTS/UI_FONTS). Absent → the default.
   font?: string
