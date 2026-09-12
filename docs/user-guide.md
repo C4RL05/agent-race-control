@@ -4,6 +4,8 @@ The complete tour of the app. Every screenshot below follows your reading theme 
 
 > New here? The [README](../README.md) is the short pitch; [`agent-race-control-kickoff.md`](agent-race-control-kickoff.md) is the design record. This page is the manual.
 
+> **Platform:** everything below describes Windows, the primary platform. It all works on a Mac too — run from source, since there is no build to download — except the Mac *chrome*, which is unfinished: no application menu, and the keyboard table near the end is still the Windows chords. Each spot says so where it matters.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../images/arc-hero-dark.png">
   <img alt="The app: timing tower on the left, terminal on the right" src="../images/arc-hero-light.png">
@@ -63,9 +65,9 @@ The bar above the tower filters as you type — matching session names, conversa
 
 ### Three types
 
-- **Claude sessions** — the unmodified `claude` CLI in a real ConPTY (spawned as `bash --login -i -c 'exec claude'`). Everything the terminal has works by construction: rewind, `/btw`, agent view, plan mode, MCP, resume, hooks.
+- **Claude sessions** — the unmodified `claude` CLI in a real ConPTY (spawned as `bash --login -i -c 'exec claude'`; on a Mac the same `exec` line runs under your own login shell, which is the one difference). Everything the terminal has works by construction: rewind, `/btw`, agent view, plan mode, MCP, resume, hooks.
 - **Codex sessions** — the unmodified `codex` CLI, in the same tower, the same folders, with the same dots, drag-and-drop and TODO flags. Its spawn line is shorter than Claude's, not longer: plain `codex`, or `codex resume <id>` when the app restores it, and nothing else. What it doesn't get is listed under [Where Codex differs](#where-codex-differs).
-- **Shell sessions** — first-class Git Bash shells for dev servers, builds, git. Same tower, same rows, white dot.
+- **Shell sessions** — first-class shells for dev servers, builds, git: Git Bash on Windows, your login shell (`$SHELL`) on a Mac. Same tower, same rows, white dot.
 
 ### Where Codex differs
 
@@ -249,6 +251,8 @@ The app deliberately adds *no* muscle memory on top of Windows Terminal, and sha
 | Click an archive separator | fold / unfold that card's archive |
 | Drag a row across the separator | archive / unarchive it |
 
+On a Mac these are still the Windows chords. `Cmd+C`, `Cmd+V`, `Cmd+=` and `Cmd+Q` are not wired yet and there is no application menu, so copy, paste and zoom want `Ctrl`. That is the next macOS pass, and it is the one place the app currently asks a Mac user to change habits.
+
 ## State
 
-Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json` — sessions, groups, colors, theme, fonts, zoom, tower width. No database, no cloud. Delete it to start fresh. The app writes nothing else outside its own data directory: your `~/.claude/settings.json` is never touched (per-session hook settings are passed at spawn), and no git command is ever run against your repos — reading branch state excepted, worktree creation and cleanup are Claude Code's own doing.
+Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json`, or `~/Library/Application Support/Agent Race Control/state.json` on a Mac — sessions, groups, colors, theme, fonts, zoom, tower width. No database, no cloud. Delete it to start fresh. The app writes nothing else outside its own data directory: your `~/.claude/settings.json` is never touched (per-session hook settings are passed at spawn), and no git command is ever run against your repos — reading branch state excepted, worktree creation and cleanup are Claude Code's own doing.

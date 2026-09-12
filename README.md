@@ -5,7 +5,7 @@
   <img alt="agent race control" src="images/arc-logo-light.svg" width="540">
 </picture>
 
-A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows: **one window, one taskbar icon**, every coding-agent session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
+A minimal terminal cockpit for [Claude Code](https://code.claude.com) on native Windows, **macOS in progress**: **one window, one taskbar icon**, every coding-agent session and every plain shell you run alongside them — in a single timing tower you can glance at and a terminal you can drive.
 
 Inspired by the **F1 timing tower**: a column of colored entries, each with a name and a live status, telling you the state of the whole race at a glance — then you click one to go on board.
 
@@ -16,12 +16,12 @@ Inspired by the **F1 timing tower**: a column of colored entries, each with a na
 
 **[The user guide](docs/user-guide.md)** walks every feature with screenshots (which, like the ones here, follow your light/dark theme).
 
-Built on a hard rule: the **unmodified CLI in a real pseudo-terminal** (ConPTY via node-pty). No SDK, no wrapper, no reimplementation — so everything the terminal has works by construction: rewind, `/btw`, agent view, remote control, resume, plan mode, MCP, hooks. If it works in Windows Terminal, it works here. [Codex](https://developers.openai.com/codex/cli) runs on the same rule and an even shorter spawn line.
+Built on a hard rule: the **unmodified CLI in a real pseudo-terminal** (node-pty — ConPTY on Windows, a real pty on a Mac). No SDK, no wrapper, no reimplementation — so everything the terminal has works by construction: rewind, `/btw`, agent view, remote control, resume, plan mode, MCP, hooks. If it works in your terminal — Windows Terminal, or Terminal.app on a Mac — it works here. [Codex](https://developers.openai.com/codex/cli) runs on the same rule and an even shorter spawn line.
 
 ## Features
 
 - **Timing tower** — every session with an editable name, live conversation title, and status
-- **Three session types** — Claude (`bash --login -i -c 'exec claude'`), **Codex**, and first-class Git Bash shells for dev servers, builds, git
+- **Three session types** — Claude (`bash --login -i -c 'exec claude'`), **Codex**, and first-class shells for dev servers, builds, git (Git Bash on Windows, your login shell on a Mac)
 - **Live status** from the agent itself — traffic lights from *your* point of view: 🔴 running (agent busy) · 🟠 waiting for you (pulses) · 🟠 delegating, subagents still working (steady) · 🟢 idle at the prompt, your turn · ⚪ live shell · exited fades out. Claude rows run on its own hook events with an agent-poll green floor; Codex rows read the screen, whose title reports all three states.
 - **Four pane tabs on an agent row** — Terminal, a **conversation Preview**, a **Session** instrument panel (the numbers behind the dot, copyable into a bug report), and a plain-text **Notes** scratchpad that lives and dies with the row
 - **The archive** — file a session out of the way instead of closing it: still running, still reporting, dot drawn as a ring; drag rows across the divider either way
@@ -62,11 +62,17 @@ Grab the [latest release](https://github.com/C4RL05/agent-race-control/releases/
 
 Both are unsigned — expect a SmartScreen warning on first run (More info → Run anyway).
 
+There is **no macOS download**. It runs on a Mac from source — see [Requirements](#requirements) for what is and is not finished there.
+
 ## Requirements
 
-- Windows 10 1809+ (ConPTY). **Windows first, macOS in progress:** the mechanical blockers are fixed and CI runs on both hosts, but nobody has run it on a Mac yet and there is no Mac build to download.
+**Windows** is the primary platform and the only one with a download:
+
+- Windows 10 1809+ (ConPTY)
 - [Git for Windows](https://gitforwindows.org/) (Git Bash — auto-discovered)
 - [Claude Code](https://code.claude.com/docs/en/quickstart) on your PATH — and [Codex](https://developers.openai.com/codex/cli) too if you want Codex rows
+
+**macOS runs, and is not finished.** Both session types come up in a real PTY (measured on macOS 26 arm64), your login shell `$SHELL` is used as-is instead of Git Bash, the tower and repo cards work, and CI typechecks and tests on both hosts. What is missing is Mac *chrome*: there is no application menu, so no `Cmd+Q`; copy, paste and zoom are still the Windows `Ctrl` chords; and there is no packaged `.app`, so [build from source](#build-from-source). Codex rows on a Mac are untested.
 
 ## Build from source
 
@@ -80,6 +86,7 @@ npm run build
 npm run preview    # production build
 
 npm run dist       # Windows installer + portable exe (NSIS, per-user) into dist/
+                   # Windows only — there is no macOS packaging target yet
 ```
 
 ## Worktree workflow
@@ -107,7 +114,7 @@ Worth setting up per repo:
 
 ## State
 
-Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json` (sessions, directory groups, appearance, zoom, tower width). No database. Delete it to start fresh.
+Everything lives in one human-readable JSON: `%APPDATA%\Agent Race Control\state.json`, or `~/Library/Application Support/Agent Race Control/state.json` on a Mac (sessions, directory groups, appearance, zoom, tower width). No database. Delete it to start fresh.
 
 ## Design notes
 
