@@ -2515,10 +2515,15 @@
     margin-left: 2px;
   }
 
+  /* 2px of air after the type icon, spent on the name rather than on the icon:
+     the two are in separate fixed tracks, so a margin-right on the icon would
+     push nothing. The rename field takes it too, so the text doesn't jump 1px
+     when a row goes into edit. */
   .row .name,
   .row .rename {
     grid-column: 4 / 5;
     justify-self: stretch;
+    margin-left: 2px;
   }
 
   .row .close {
@@ -2645,9 +2650,12 @@
     background: var(--border);
   }
 
+  /* The focused row is its FILL and nothing else. The 1px outline it used to
+     wear drew a second box inside the card's own edge — two borders a few px
+     apart, saying the same thing; the ground change alone is enough to find
+     the row you are typing into. */
   .row.focused {
     background: var(--bg);
-    outline: 1px solid var(--border);
   }
 
   /* A clickable control now (toggles the TODO flag) — reset the button chrome
@@ -2846,12 +2854,19 @@
      below is what you see, whatever the element is and whether or not it wears
      a border — the spawn group's buttons are the exception that proves it, at
      `auto` so they stretch to fill the group's box rather than carrying a
-     height of their own inside it. */
+     height of their own inside it.
+
+     They also share the CARD's 2px radius, stated once here rather than three
+     times: the bar sits directly above the cards, and at 6px its controls were
+     the roundest boxes in a chrome that corners everything else at 2px or
+     less. The spawn group's inner buttons still square off to 0 below — the
+     group's own box is what carries the corner. */
   .search,
   .icon-btn,
   .spawn-group {
     box-sizing: border-box;
     height: 28px;
+    border-radius: 2px;
   }
 
   .search {
@@ -2862,7 +2877,6 @@
     gap: 4px;
     padding: 0 6px;
     border: 1px solid var(--border);
-    border-radius: 6px;
     background: var(--bg);
   }
 
@@ -2908,7 +2922,9 @@
     height: 20px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    /* the bar's 2px, the same corner the cards and the controls around it
+       wear — it sits inside the search box, not beside it */
+    border-radius: 2px;
     background: none;
     color: var(--fg-muted);
     cursor: pointer;
@@ -2948,7 +2964,6 @@
     width: 28px;
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: 6px;
     background: var(--bg);
     color: var(--fg-muted);
     cursor: pointer;
@@ -2960,7 +2975,6 @@
     flex: 0 0 auto;
     display: flex;
     border: 1px solid var(--border);
-    border-radius: 6px;
     background: var(--bg);
     overflow: hidden;
   }
