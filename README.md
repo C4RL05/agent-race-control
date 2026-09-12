@@ -64,7 +64,7 @@ Both are unsigned — expect a SmartScreen warning on first run (More info → R
 
 ## Requirements
 
-- Windows 10 1809+ (ConPTY)
+- Windows 10 1809+ (ConPTY). **Windows first, macOS in progress:** the mechanical blockers are fixed and CI runs on both hosts, but nobody has run it on a Mac yet and there is no Mac build to download.
 - [Git for Windows](https://gitforwindows.org/) (Git Bash — auto-discovered)
 - [Claude Code](https://code.claude.com/docs/en/quickstart) on your PATH — and [Codex](https://developers.openai.com/codex/cli) too if you want Codex rows
 

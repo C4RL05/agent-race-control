@@ -2,7 +2,7 @@
   "name": "agent-race-control",
   "productName": "Agent Race Control",
   "version": "0.1.3",
-  "description": "Agent Race Control — a session-aware terminal cockpit for Claude Code on native Windows",
+  "description": "Agent Race Control — a session-aware terminal cockpit for Claude Code on native Windows, with macOS in progress",
   "author": "HelloEnjoy <carlos@helloenjoy.com>",
   "license": "MIT",
   "private": true,
