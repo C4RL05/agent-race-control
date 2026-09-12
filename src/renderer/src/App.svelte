@@ -2641,7 +2641,9 @@
      more height and separates the rows. */
   .row {
     padding: 5px 0;
-    border-radius: 4px;
+    /* the card's corner — the row box sits inside one, and anything rounder
+       than its container reads as a pill laid on top of it */
+    border-radius: 2px;
     cursor: pointer;
     user-select: none;
   }
@@ -2716,7 +2718,7 @@
     font-size: 12px;
   }
 
-  /* "Color title glyph" (settings, off by default): the title's leading glyph
+  /* "Color title glyph" (settings, on by default): the title's leading glyph
      painted by which glyph it is — star family green, circle family red. The
      Primer semantic tones, deliberately NOT the --dot-* palette: this axis
      reads the glyph, not the session's status, so Status RGB doesn't reach it. */
@@ -2735,7 +2737,7 @@
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--accent);
-    border-radius: 4px;
+    border-radius: 2px;
     padding: 1px 4px;
     outline: none;
   }
