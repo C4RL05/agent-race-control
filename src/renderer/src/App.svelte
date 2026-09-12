@@ -2132,6 +2132,32 @@
        inherited from the tower's own gutter, which made every card's contents
        sit visibly off-centre in their own box. */
     padding: 4px 13px 10px;
+    /* The air around a card's two rules: 11px on both sides of the archive
+       divider, 12px on both sides of the title's rule. Even, per rule, and the
+       title's is the pair that wanted one pixel more — a heading needs the room
+       that a divider between two lists of rows does not. They stay four tokens
+       rather than one because they have been asked for separately before
+       (12/11/9/8, then a flat 11) and will be again. Each
+       is the gap you SEE — rule to text — and each site below subtracts what it
+       already contributes, measured in
+       the running app (playwright over the real DOM) because the box model lies
+       here: a line box is taller than its glyphs, and a grid row centres its
+       content in a box taller again. The slack, measured:
+         5.5px  a session row's 5px padding plus its line-box slack
+         7.25px a branch heading's 3px padding plus its taller centring slack
+         3px    the title text's own line-box slack
+         14px   the divider's 2px padding plus half its 15px label box plus the
+                5.5px above — which is its FLOOR, so both of its numbers land
+                under it and both margins go negative (-3px, both sides).
+                The rule borrows that much of the neighbouring row's padding.
+                Nothing is drawn there; the cost is that each neighbouring row
+                yields those pixels of its edge as a click target to the
+                divider, which is what you are aiming at down there anyway.
+       Re-measure in the real DOM before changing any of them. */
+    --air-archive-above: 11px;
+    --air-archive-below: 11px;
+    --air-title-below: 12px;
+    --air-title-above: 12px;
     border-radius: 2px;
     /* The card wash: the group's colour mixed over the tower ground. Was a
        constant (8% over Primer's #161b22, then 16% once the canvas went
@@ -2227,8 +2253,11 @@
     padding-bottom: 4px;
   }
 
+  /* Folded, the rule is the card's bottom EDGE rather than a divider with a
+     list under it, so the air below it would just be dead wash. */
   .card.collapsed .card-title {
     font-weight: 400;
+    margin-bottom: 0;
   }
 
   /* While a drag is in flight, collapse each drop target to a single hit
@@ -2304,7 +2333,12 @@
      col 1 (no icon). The title carries the group's colour menu; the whole card
      (its parent) is the drag handle. */
   .card-title {
-    padding: 3px 0 4px;
+    /* Bottom padding is the air ABOVE the rule; the margin below is the air
+       under it, less the 5px the first row already pads itself by. Was 4px and
+       nothing — the rule sat tight under the name while the divider at the
+       card's other end breathed, which is the mismatch this fixes. */
+    padding: 3px 0 calc(var(--air-title-above) - 3px);
+    margin-bottom: calc(var(--air-title-below) - 5.5px);
     font-weight: 600;
     user-select: none;
     /* The rule under the title, the same span as the archive divider's at the
@@ -2325,6 +2359,13 @@
      same declaration instead of restating the condition. */
   .card.active {
     --card-rule: var(--fg);
+  }
+
+  /* A repo card's first item under the rule is a branch heading, and it pads
+     itself by 3px where a session row pads by 5 — so the margin hands back the
+     difference and the air under the rule is the same on both card shapes. */
+  .card-title:has(+ .branch-row) {
+    margin-bottom: calc(var(--air-title-below) - 7.25px);
   }
 
   .folder-name {
@@ -2576,7 +2617,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    margin: 6px 0 1px;
+    /* Both margins are negative, and the two numbers differ by design: see the
+       token block on .card for what each one is and what it subtracts. */
+    margin: calc(var(--air-archive-above) - 14px) 0 calc(var(--air-archive-below) - 14px);
     padding: 2px 0;
     color: var(--fg-muted);
     font-size: 11px;
