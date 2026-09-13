@@ -395,6 +395,16 @@ The other half of #8, all still open:
 
 Each is small on its own, and none is worth doing blind — but the Mac run has now happened, so they are no longer blind. **The chrome pass is the next real step**, and it is one pass: the lifecycle handlers, a darwin-only menu, and `metaKey` alongside `ctrlKey` in the zoom and clipboard guards. Packaging comes after it, because there is no point shipping a `.app` that cannot paste. A Codex row on a Mac is still unmeasured.
 
+## A card's two rules get their air from four tokens (2026-09-12)
+
+The title's rule sat tight under the name — 4px of padding and nothing below it — while the archive divider at the other end of the same card breathed. **Both rules now take their spacing from four named tokens on `.card`:** 11px either side of the archive divider, 12px either side of the title's. Nothing else about either rule changed.
+
+- **Four tokens rather than one, on purpose.** These numbers have been asked for separately twice already (12/11/9/8, then a flat 11) and will be again. A divider between two lists of rows and a heading over one want different air — the heading is the pair that wanted the extra pixel — and a single token would collapse that back into a value that has to be re-argued every time one side of it moves.
+- **Each token is the gap you SEE, rule to text, so every use site subtracts what it already contributes.** Measured in the running app (playwright over the real DOM) because the box model lies here: a line box is taller than its glyphs, and a grid row centres its content in a box taller again. The slack, measured: **5.5px** a session row's 5px padding plus its line-box slack; **7.25px** a branch heading's 3px padding plus its taller centring; **3px** the title text's own line box; **14px** under the archive divider (its 2px padding, half its 15px label box, and the 5.5px above). Re-measure in the real DOM before changing any of them.
+- **The divider's 14px is a FLOOR, so both of its margins go negative.** Both of its tokens land under it, and the rule borrows that much of the neighbouring row's padding. Nothing is drawn there; the cost is that each neighbouring row yields those pixels of its edge as a click target to the divider — which is what you are aiming at down there anyway.
+- **A repo card's first item under the title rule is a branch heading, not a session row**, and it pads itself by 3px where a row pads by 5. `.card-title:has(+ .branch-row)` hands the difference back, so the air under the rule is the same on both card shapes.
+- **Folded, the title's bottom margin goes to zero.** The rule is then the card's bottom edge rather than a divider with a list under it (*Two chrome fixes that came with the above*), and the air below it would just be dead wash.
+
 ## Packaging (post-v1, settled 2026-07-13)
 
 Ship a real Windows app without growing the stack (**Windows only** — there is no macOS target yet, see the macOS section): **electron-builder** (26.15.3, devDep, verified against the registry) packaging the electron-vite `out/` build into `dist/` (gitignored).
