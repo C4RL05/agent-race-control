@@ -154,11 +154,155 @@
     return { base: parts.pop() ?? dir, parent: parts.join('\\') }
   }
 
-  let draggingTower = $state(false)
+  // The tower's scrollbar IS the splitter. The native bar is hidden and a
+  // segment of the boundary hairline brightens to --fg to say where the list
+  // sits, so the boundary and the position read-out are one 1px line instead of
+  // two parallel ones 5px apart.
+  //
+  // Everything below is kept as FRACTIONS of the scroll range rather than as px
+  // of the tower, because the tower carries a CSS `zoom` and the splitter does
+  // not: scrollTop/scrollHeight/clientHeight are in the tower's own (zoomed) px
+  // while the splitter's geometry is in real screen px, and the ratio of two
+  // zoomed numbers is the one quantity that means the same on both sides.
+  // getBoundingClientRect is the bridge — it reports VISUAL coordinates (the
+  // same fact the per-pane zoom relies on for menu positioning).
+  let towerBodyEl = $state<HTMLDivElement>()
+  let splitterEl = $state<HTMLDivElement>()
+  let sashThumbEl = $state<HTMLDivElement>()
+  let towerScroll = $state({ top: 0, height: 0, client: 0, trackHeight: 0 })
 
-  function towerDrag(event: PointerEvent): void {
-    if (!draggingTower) return
-    ui.towerWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
+  // The shortest a thumb may get and still read as a segment of the line rather
+  // than a dot sitting on it.
+  const THUMB_MIN = 24
+
+  const towerThumb = $derived.by(() => {
+    const { top, height, client, trackHeight } = towerScroll
+    const range = height - client
+    // Sub-pixel overflow is rounding, not a scrollable list.
+    if (range < 1 || trackHeight <= 0) return null
+    const size = Math.max(THUMB_MIN, Math.round(trackHeight * (client / height)))
+    const travel = trackHeight - size
+    return { top: travel > 0 ? (top / range) * travel : 0, size, travel, range }
+  })
+
+  // The track is the WHOLE splitter, not the tower body's extent — so scrolled
+  // fully up the thumb reaches the top of the line, level with the filter bar it
+  // is beside rather than with the first card. Knowingly a small lie: the thumb
+  // now spans a track taller than the content it reports on, and its top edge
+  // sits above where the list begins. The truthful version leaves a dead length
+  // of line at the top that looks like track and cannot be dragged into, and a
+  // gap you can see beats an offset you cannot. The bottom needed nothing: the
+  // body is the last child of the tower, so its bottom edge was already the
+  // splitter's.
+  function measureTower(): void {
+    const body = towerBodyEl
+    const sash = splitterEl
+    if (!body || !sash) return
+    towerScroll = {
+      top: body.scrollTop,
+      height: body.scrollHeight,
+      client: body.clientHeight,
+      trackHeight: sash.getBoundingClientRect().height
+    }
+  }
+
+  let measureQueued = false
+
+  function queueMeasure(): void {
+    if (measureQueued) return
+    measureQueued = true
+    requestAnimationFrame(() => {
+      measureQueued = false
+      measureTower()
+    })
+  }
+
+  // Observers rather than a dependency list. The list's height moves on every
+  // session spawned or closed, every card folded, every archive opened, every
+  // filter keystroke — and a dep missed off that list is a thumb that quietly
+  // lies. The MutationObserver catches all of them (attributes included: a drag
+  // in flight collapses rows to hit lines with CSS alone, no DOM change), the
+  // ResizeObserver catches the body's own box (window, splitter, pane zoom), and
+  // both coalesce into at most one measure a frame.
+  $effect(() => {
+    const body = towerBodyEl
+    if (!body) return
+    const resize = new ResizeObserver(queueMeasure)
+    resize.observe(body)
+    const mutate = new MutationObserver(queueMeasure)
+    mutate.observe(body, { childList: true, subtree: true, attributes: true })
+    measureTower()
+    return () => {
+      resize.disconnect()
+      mutate.disconnect()
+    }
+  })
+
+  // Two zones, not one. A press ON the thumb can mean either gesture and the
+  // first few px of travel pick which; a press anywhere else on the line only
+  // ever resizes. 3px is far enough that a click's own jitter can never choose
+  // an axis, and short enough that neither drag feels like it started late.
+  //
+  // This reverses the axis-lock-anywhere rule the line shipped with. That rule
+  // read well — if the line is the scrollbar, all of it is — and felt wrong in
+  // the hand: most of the line is not the scrollbar, and a vertical wobble while
+  // reaching for a resize scrolled a list the pointer was nowhere near.
+  const AXIS_LOCK = 3
+
+  type SashDrag = {
+    id: number
+    x: number
+    y: number
+    axis: 'x' | 'y' | null
+    from: number
+    onThumb: boolean
+  }
+
+  let sashDrag = $state<SashDrag | null>(null)
+
+  function sashDown(event: PointerEvent): void {
+    ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+    sashDrag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      axis: null,
+      from: towerBodyEl?.scrollTop ?? 0,
+      // The target, not the coordinate: the thumb is a real element and its own
+      // hit box is the answer, so nothing here has to re-derive where it was
+      // drawn. It is read at press time because pointer capture sends every
+      // later move to the splitter regardless of what is under the pointer.
+      onThumb: event.target === sashThumbEl
+    }
+  }
+
+  function sashMove(event: PointerEvent): void {
+    const drag = sashDrag
+    if (!drag || event.pointerId !== drag.id) return
+    const dx = event.clientX - drag.x
+    const dy = event.clientY - drag.y
+    if (!drag.axis) {
+      if (Math.abs(dx) < AXIS_LOCK && Math.abs(dy) < AXIS_LOCK) return
+      // Vertical wins only from the thumb, and only on a tower that can
+      // actually scroll; everywhere else every drag is a resize, exactly as it
+      // was before the bar moved onto this line.
+      drag.axis = drag.onThumb && Math.abs(dy) > Math.abs(dx) && towerThumb ? 'y' : 'x'
+    }
+    if (drag.axis === 'x') {
+      ui.towerWidth = Math.min(480, Math.max(160, Math.round(event.clientX)))
+      return
+    }
+    const body = towerBodyEl
+    const thumb = towerThumb
+    if (!body || !thumb || thumb.travel <= 0) return
+    // 1:1 with the thumb: the pointer's travel down the track maps onto the
+    // scroll range the way the thumb's own travel does, so the line stays under
+    // the finger instead of drifting away from it.
+    body.scrollTop = drag.from + (dy / thumb.travel) * thumb.range
+  }
+
+  function sashUp(): void {
+    sashDrag = null
   }
 
   // Ctrl+wheel sizes the ONE pane under the pointer (paneZoom in the store).
@@ -957,7 +1101,12 @@
       </button>
     </div>
 
-    <div class="tower-body" data-dragging={dragging?.kind}>
+    <div
+      class="tower-body"
+      data-dragging={dragging?.kind}
+      bind:this={towerBodyEl}
+      onscroll={queueMeasure}
+    >
       {#each tower as group (group.key)}
         {#if group.kind === 'plain'}
           <!-- The card survives on its archive alone: a folder whose every
@@ -1126,19 +1275,27 @@
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={splitterEl}
     class="splitter"
-    class:dragging={draggingTower}
+    class:dragging={sashDrag !== null}
+    class:scrolling={sashDrag?.axis === 'y'}
     role="separator"
     aria-orientation="vertical"
     aria-label="Resize timing tower"
-    onpointerdown={(e) => {
-      draggingTower = true
-      e.currentTarget.setPointerCapture(e.pointerId)
-    }}
-    onpointermove={towerDrag}
-    onpointerup={() => (draggingTower = false)}
-    onpointercancel={() => (draggingTower = false)}
-  ></div>
+    onpointerdown={sashDown}
+    onpointermove={sashMove}
+    onpointerup={sashUp}
+    onpointercancel={sashUp}
+  >
+    {#if towerThumb}
+      <div
+        bind:this={sashThumbEl}
+        class="sash-thumb"
+        style:top={`${towerThumb.top}px`}
+        style:height={`${towerThumb.size}px`}
+      ></div>
+    {/if}
+  </div>
 
   <main class="pane">
     {#each sessions as session (session.key)}
@@ -2053,9 +2210,12 @@
      device pixel grid and land on 0 or 2. The thumb is a hairline to LOOK at,
      not to hit: Chromium hit-tests its whole border box, so all 8px stay
      grabbable. The track width is also the tower's scrollbar gutter, which is
-     why it is 8 — the cards' own inset (see .tower-body). ONE bar everywhere:
-     the tower briefly had a narrower exception, and two scrollbar looks in one
-     window is one more than the app needs. */
+     why it is 8 — the cards' own inset (see .tower-body). ONE bar everywhere
+     BUT the tower: it briefly had a narrower exception, which was rightly
+     dropped because two scrollbar looks in one window is one more than the app
+     needs — and the tower now has no bar of this kind at all. Its scrollbar was
+     merged into the splitter (see .sash-thumb), so it is not a second look at
+     the same furniture; it is the boundary line doing both jobs. */
   :global(.shell ::-webkit-scrollbar-thumb) {
     background: var(--border);
     background-clip: padding-box;
@@ -2077,11 +2237,23 @@
        which needs border-box to actually be 1px. Without it `width` was the
        CONTENT box, so the sash measured 9px and painted a 5px bar; harmless
        while it rested transparent, fat as soon as it rested on a line.
-       1px now, the same hairline every other divider in the app draws. */
+       1px now, the same hairline every other divider in the app draws.
+       Relative so the scroll thumb can sit in the PADDING box: absolute
+       positioning resolves against it, so left: 2px lands the thumb exactly on
+       the content box — which is the line itself. */
     box-sizing: border-box;
+    position: relative;
     width: 5px;
     flex-shrink: 0;
-    cursor: col-resize;
+    /* The line's own cursor, and the one the whole line wears on a tower that
+       fits. The thumb overrides it for its own length (see .sash-thumb), which
+       is the only stretch that does anything but resize — so the pointer says
+       which of the two zones it is in before the press rather than after it.
+       `ew-resize`, the plain left/right arrow (IDC_SIZEWE), NOT `col-resize`:
+       Chromium draws that one as a split bar with an arrow either side, which is
+       a table-column glyph and reads as furniture next to a 1px hairline. The
+       pair wanted here is one arrow against one cross, and both are plain. */
+    cursor: ew-resize;
     /* A VS Code sash, but NOT the invisible-at-rest kind. It used to be
        transparent and let the tower/pane background change mark the boundary
        — which dark no longer has (bg and bgSubtle are both #000000, one
@@ -2104,18 +2276,64 @@
     transition-delay: 0s;
   }
 
+  /* Pointer capture takes the cursor from the CAPTURING element, which is the
+     splitter — so without this a vertical drag would flip to ew-resize the
+     moment it started, breaking the promise the thumb's own cursor just made. A
+     horizontal drag wants ew-resize and already has it. */
+  .splitter.scrolling {
+    cursor: move;
+  }
+
+  /* The tower's scrollbar, drawn ON the boundary rather than beside it: the same
+     1px the splitter rests at, lit to --fg so the segment reads as the brightest
+     thing on the line instead of another hairline among hairlines. It is pure
+     read-out to LOOK at and a target to HIT: it is the app's own scrollbar
+     trick (see ::-webkit-scrollbar-thumb), a 1px painted line inside a 5px box,
+     so the grab area is the full width of the sash and not the hairline. Presses
+     still reach the splitter by bubbling — it owns every handler — and
+     `event.target` is then the one thing that says which zone the press was in.
+     It has no hover and no accent state: the line underneath already answers the
+     pointer, and a thumb that also lit up would be two controls again.
+     --fg rather than a literal #ffffff. The user's word for it was white, and in
+     dark that is #ececec, one notch under pure — but a hardcoded white is
+     invisible on the light theme, and the palette is the app's source for this
+     (exact Primer hexes, never tweaked by eye). */
+  .sash-thumb {
+    box-sizing: border-box;
+    position: absolute;
+    left: 0;
+    width: 5px;
+    padding: 0 2px;
+    background: var(--fg);
+    background-clip: content-box;
+    /* `move`, which Windows draws as IDC_SIZEALL — the plain four-arrow cross,
+       up/down/left/right, and the app's existing word for a grab-and-drag handle
+       (the Settings header uses it). `all-scroll` is the closer name for half of
+       what this does and renders identically here, but it is the PANNING cursor,
+       and panning is not what a vertical drag on this line does. */
+    cursor: move;
+  }
+
   .tower-body {
     flex: 1;
     overflow-y: auto;
     /* The cards line up with the filter bar above them, on both edges and at
-       every card count. Left is the filter bar's own 8px. Right is the
-       SCROLLBAR GUTTER, reserved at the same 8px whether the tower scrolls or
-       not (`stable`), with no padding of its own — so the card box is the
-       search box's box, and it does not resize the moment a session pushes the
-       list past the fold. The two numbers are one number: the gutter is the
-       scrollbar's track width. */
-    padding: 0 0 0 8px;
-    scrollbar-gutter: stable;
+       every card count. Left is the filter bar's own 8px. Right WAS the
+       scrollbar gutter, reserved at the same 8px by `scrollbar-gutter: stable`
+       so the card box was the search box's box and did not resize the moment a
+       session pushed the list past the fold. With the bar moved onto the
+       splitter there is no gutter left to reserve, so the same 8px is plain
+       padding: identical card box, identical at every card count, only its
+       source changed. */
+    padding: 0 8px;
+  }
+
+  /* The native bar is gone, not restyled — .sash-thumb draws it on the boundary
+     now, and a tower with both would be saying the same thing twice 5px apart.
+     display: none only hides the furniture; the body still scrolls by wheel,
+     keyboard and the splitter's own vertical drag. */
+  .tower-body::-webkit-scrollbar {
+    display: none;
   }
 
   /* Repo/folder cards (issue #5): each group is a card — a faint wash of its
