@@ -423,6 +423,14 @@ The tower drew two vertical lines 5px apart: the splitter's hairline boundary, a
 - **Observers, not a dependency list.** The list's height moves on every session spawned or closed, every card folded, every archive opened, every filter keystroke — and a dep missed off a hand-written list is a thumb that quietly lies. A `MutationObserver` over the body catches all of them (attributes included: a drag in flight collapses rows to hit lines with CSS alone, no DOM change), a `ResizeObserver` catches the body's own box (window, splitter, pane zoom), and both coalesce into at most one measure a frame.
 - **Deliberately not built:** track-click paging (a click on a boundary should not teleport the list), a wheel handler on the splitter, a widening or accenting thumb on hover, and the same treatment for the Preview/Session/Notes bars — none of those sit on a splitter, so there is nothing there to merge.
 
+## The preview's prose sits back from its headings (2026-09-13)
+
+Every word in the preview was one colour, and a heading was distinguishable only by size and weight. **Body prose now runs at half the text colour** — `--preview-body`, a `color-mix` of `--fg` at 50% — so the heading is the full-strength thing on the page and the paragraphs under it sit back from it.
+
+- **Half of `--fg`, not `--fg-muted`, and not `opacity`.** `--fg-muted` is flat white or black at 50% and throws away the hue `--fg` actually carries; `opacity: 0.5` would fade every background under the text with it — the inline-code chip, the diff tints, the file tab. A `color-mix` against transparent touches the text colour and nothing else. Considered and rejected: giving headings `--accent`, which is a real hue difference but spends the app's one accent colour on prose.
+- **One token, because this is a number that gets dialled.** 75% was the first proposal and 50% the one that shipped, inside a minute of each other. The next opinion about it should cost one edit, not a hunt through the rules.
+- **Headings and CODE take themselves back out of it.** `h1`–`h6` and `code` return to full `--fg`: code is read precisely, and half strength is the wrong place to read a path or a diff from. The user's own prompt block keeps full strength too, which makes the question the brightest prose on the page — correct, it is the thing every answer under it is answering.
+
 ## Packaging (post-v1, settled 2026-07-13)
 
 Ship a real Windows app without growing the stack (**Windows only** — there is no macOS target yet, see the macOS section): **electron-builder** (26.15.3, devDep, verified against the registry) packaging the electron-vite `out/` build into `dist/` (gitignored).

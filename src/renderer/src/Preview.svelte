@@ -173,6 +173,15 @@
 
 <style>
   .preview {
+    /* Body prose runs at HALF the text colour, so a heading is the full-strength
+       thing on the page and the paragraphs under it sit back. One token because
+       this is a number that gets dialled: 75% was the first proposal and 50% the
+       one that shipped, and the next opinion about it should cost one edit.
+       `color-mix` against transparent rather than `opacity: 0.5`, which would
+       also fade every background under the text — the inline-code chip, the
+       diff tints, the file tab — and rather than --fg-muted, which is flat white
+       or black at 50% and drops the hue --fg actually has. */
+    --preview-body: color-mix(in srgb, var(--fg) 50%, transparent);
     height: 100%;
     overflow-y: auto;
     padding: 12px 16px;
@@ -198,8 +207,13 @@
     margin-top: 0;
   }
 
+  /* The soften applies to the whole rendered message and the exceptions below
+     take themselves back out of it: headings, and anything that is CODE rather
+     than prose — code is read precisely, and half-strength is the wrong place to
+     read a path or a diff from. */
   .assistant {
     margin: 10px 0;
+    color: var(--preview-body);
   }
 
   /* Markdown body — minimal GitHub-flavored styling off the chrome vars. */
@@ -214,6 +228,7 @@
   .assistant :global(h5),
   .assistant :global(h6) {
     margin: 14px 0 6px;
+    color: var(--fg);
     font-size: 1em;
     font-weight: 700;
   }
@@ -227,6 +242,7 @@
   }
 
   .assistant :global(code) {
+    color: var(--fg);
     font-family: var(--mono);
     font-size: 11.5px;
     background: var(--bg-subtle);
