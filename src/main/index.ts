@@ -25,6 +25,10 @@ if (!gotLock) {
 } else {
   let win: BrowserWindow | null = null
 
+  // Windows first, macOS in progress: every host difference in this file reads
+  // off this one flag, and each is a Cmd-vs-Ctrl or a lifecycle rule.
+  const isMac = process.platform === 'darwin'
+
   // Everything a renderer page owns in this process — one list, shared by
   // both teardown hooks (page reload and quit), so a future per-page
   // resource can't be released in one and leaked in the other.
@@ -49,11 +53,61 @@ if (!gotLock) {
     if (lastState) saveState({ ...lastState, zoomLevel })
   }
 
-  // No application menu: Electron's default menu accelerators (Ctrl+R reload,
-  // Ctrl+W close, Ctrl+Shift+I, ...) fire even with the menu bar hidden —
-  // they shadow terminal keystrokes (zero-shadow rule) and an accidental
-  // reload duplicates restored sessions and orphans PTYs.
-  Menu.setApplicationMenu(null)
+  // The application menu — the one piece of chrome that differs by host.
+  //
+  // Windows keeps NO menu: Electron's default menu accelerators (Ctrl+R
+  // reload, Ctrl+W close, Ctrl+Shift+I, ...) fire even with the menu bar
+  // hidden — they shadow terminal keystrokes (zero-shadow rule) and an
+  // accidental reload duplicates restored sessions and orphans PTYs.
+  //
+  // macOS gets one, and it costs the zero-shadow rule nothing: every Mac
+  // accelerator is Cmd-based, and Cmd is not a modifier any TUI reads. Without
+  // a menu a Mac has no Cmd+Q and — the one that actually hurts — no clipboard
+  // anywhere in the app, because on that platform Cut/Copy/Paste ARE menu
+  // roles: the Notes tab, the rename field and the filter box all lose Cmd+V.
+  // Deliberately absent, each for a reason that outlives the platform:
+  //   - Close (Cmd+W). The window IS every session in the tower, and closing
+  //     it kills them all (see the `closed` handler). The red button and Cmd+Q
+  //     already do that deliberately; a menu item one key away from Cmd+E does
+  //     not deserve to.
+  //   - Reload. The same orphaning reason Windows has no menu at all.
+  //   - View > Zoom. The zoom keys are owned by before-input-event below, on
+  //     both hosts — a menu role as a second owner zooms twice on one press.
+  function applyApplicationMenu(): void {
+    if (!isMac) {
+      Menu.setApplicationMenu(null)
+      return
+    }
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: app.name,
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' }
+          ]
+        },
+        {
+          label: 'Edit',
+          submenu: [
+            { role: 'undo' },
+            { role: 'redo' },
+            { type: 'separator' },
+            { role: 'cut' },
+            { role: 'copy' },
+            { role: 'paste' },
+            { role: 'selectAll' }
+          ]
+        },
+        { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }] }
+      ])
+    )
+  }
 
   function createWindow(): void {
     win = new BrowserWindow({
@@ -77,6 +131,15 @@ if (!gotLock) {
     })
     win.on('closed', () => {
       win = null
+      // The page IS the running tower: xterm's buffers live there, and nothing
+      // can re-attach a PTY to a new page (see did-start-navigation). On
+      // Windows the quit that follows would do this anyway; on macOS the app
+      // stays in the Dock, so without it every agent keeps running with no
+      // window left to reach it from. Re-opening restores from the state JSON
+      // exactly as a launch does — Claude rows resume their transcripts, codex
+      // rows `codex resume`, shells come up fresh.
+      flushState()
+      releasePageResources()
     })
 
     // The renderer never opens new windows — http(s) targets (links in the
@@ -102,10 +165,14 @@ if (!gotLock) {
       if (event.isMainFrame && !event.isSameDocument) releasePageResources()
     })
 
-    // Chrome-level keys. Zoom follows Windows Terminal / VS Code convention
-    // (Ctrl+= / Ctrl+- / Ctrl+0) — the one deliberate set of shadowed keys.
+    // Chrome-level keys. Zoom follows the host's own convention — Ctrl+= /
+    // Ctrl+- / Ctrl+0 on Windows (Windows Terminal, VS Code), Cmd+= / Cmd+- /
+    // Cmd+0 on macOS — the one deliberate set of shadowed keys. Only ever the
+    // host's own: the other modifier must be absent, so Ctrl+- on a Mac stays
+    // a keystroke the TUI is entitled to.
     win.webContents.on('before-input-event', (event, input) => {
-      if (input.type !== 'keyDown' || !input.control || input.alt || input.meta) return
+      if (input.type !== 'keyDown' || input.alt) return
+      if (isMac ? !input.meta || input.control : !input.control || input.meta) return
       if (input.key === '+' || input.key === '=') {
         event.preventDefault()
         applyZoom(1)
@@ -118,10 +185,14 @@ if (!gotLock) {
       }
     })
 
-    // Dev-only devtools access (no menu = no default accelerator).
+    // Dev-only devtools access (the menu carries no View item on either host).
+    // Cmd+Alt+I alongside F12 on macOS, where a laptop's F12 needs Fn and is
+    // usually the system's volume key: matched on `code`, since Alt on that
+    // host rewrites `key` to the character the option layer produces.
     if (!app.isPackaged) {
       win.webContents.on('before-input-event', (_event, input) => {
-        if (input.type === 'keyDown' && input.key === 'F12') {
+        if (input.type !== 'keyDown') return
+        if (input.key === 'F12' || (isMac && input.meta && input.alt && input.code === 'KeyI')) {
           win?.webContents.toggleDevTools()
         }
       })
@@ -229,7 +300,15 @@ if (!gotLock) {
       startAgentPolling(hasClaudeSessions, (entries) => {
         win?.webContents.send('session:agents', entries)
       })
+      applyApplicationMenu()
       createWindow()
+
+      // macOS: clicking the Dock icon with no window open brings the tower
+      // back. Registered inside whenReady, after the IPC handlers the restored
+      // page calls the moment it loads — an activate can never race them.
+      app.on('activate', () => {
+        if (!win) createWindow()
+      })
     })
     // Startup is now an async chain with an await at the top of it, so a throw
     // anywhere in it would leave the app running with no window and nothing
@@ -247,8 +326,11 @@ if (!gotLock) {
     releasePageResources()
   })
 
-  // Windows-only app: closing the window quits.
+  // Closing the window quits — except on macOS, where an app with no window is
+  // a normal resting state and quitting is Cmd+Q's job. The sessions are gone
+  // either way (the `closed` handler releases them); what survives here is the
+  // Dock icon that brings them back.
   app.on('window-all-closed', () => {
-    app.quit()
+    if (!isMac) app.quit()
   })
 }

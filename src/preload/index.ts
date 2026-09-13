@@ -10,6 +10,9 @@ import type { SessionInfo } from '../main/sessioninfo'
 // Minimal, explicit API surface — the only bridge between renderer and main.
 contextBridge.exposeInMainWorld('arc', {
   electronVersion: process.versions.electron,
+  // The host, read once: the renderer needs it for the clipboard chord, which
+  // is the terminal's own on each platform (Ctrl+Shift+C/V vs Cmd+C/V).
+  platform: process.platform,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
   openInExplorer: (path: string): void => {
     ipcRenderer.send('shell:openPath', path)

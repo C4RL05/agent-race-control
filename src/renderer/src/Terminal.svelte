@@ -69,6 +69,10 @@
   // Matches the standalone Git Bash (mintty default 9pt = 12px) at zoom 0.
   const BASE_FONT_SIZE = 12
 
+  // The host, from main via the preload bridge — the clipboard chord below is
+  // the one thing in this component that isn't the same on both.
+  const isMac = window.arc.platform === 'darwin'
+
   // The screen-scan technique (screen.ts). The buffer is read here because
   // this is the only place that owns the xterm instance — the classifier
   // itself is pure and lives in its own module.
@@ -198,22 +202,33 @@
     let ptyId: string | null = null
     let disposed = false
 
-    // Zero new muscle memory: Windows Terminal conventions only.
-    // Ctrl+Shift+C/V for copy/paste; everything else passes through untouched
-    // (Ctrl+C stays Claude's interrupt).
+    // Zero new muscle memory: the host terminal's own chord, and ONLY its own.
+    // Windows Terminal's Ctrl+Shift+C/V on Windows; Cmd+C/V on macOS, where
+    // Ctrl+Shift+C stays out of our hands — no Mac terminal binds it, so the
+    // TUI is entitled to the interrupt it sends. Everything else passes through
+    // untouched (Ctrl+C is Claude's interrupt on both).
     // preventDefault is load-bearing, not decoration: returning false only tells
     // xterm to skip the key — it bails BEFORE its own cancel(), so the browser
     // default still runs. Ctrl+Shift+V is Chromium's own "paste as plain text",
     // which pastes into xterm's focused helper textarea and fires the paste
-    // event xterm forwards to the PTY, so the text landed twice.
+    // event xterm forwards to the PTY, so the text landed twice. The same
+    // preventDefault is what keeps the darwin menu's Cmd+V role (main/index.ts
+    // — the roles the app's own inputs need) from pasting a second copy:
+    // Chromium offers a key equivalent to the page first and only falls back to
+    // the menu when the page doesn't consume it. UNVERIFIED on a Mac; a double
+    // paste in the terminal is the symptom, and dropping meta here is the fix.
+    const clipboardChord = (event: KeyboardEvent): boolean =>
+      isMac
+        ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+        : event.ctrlKey && event.shiftKey
     t.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown') return true
-      if (event.ctrlKey && event.shiftKey && event.code === 'KeyC' && t.hasSelection()) {
+      if (event.type !== 'keydown' || !clipboardChord(event)) return true
+      if (event.code === 'KeyC' && t.hasSelection()) {
         event.preventDefault()
         void navigator.clipboard.writeText(t.getSelection())
         return false
       }
-      if (event.ctrlKey && event.shiftKey && event.code === 'KeyV') {
+      if (event.code === 'KeyV') {
         event.preventDefault()
         void navigator.clipboard.readText().then((text) => t.paste(text))
         return false

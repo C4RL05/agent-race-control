@@ -160,6 +160,8 @@ type SessionInfo = {
 interface Window {
   arc: {
     electronVersion: string
+    // process.platform in main ('win32' | 'darwin' | ...).
+    platform: string
     pickFolder: () => Promise<string | null>
     openInExplorer: (path: string) => void
     getPathForFile: (file: File) => string
