@@ -276,3 +276,68 @@ export const DOT_COLORS: { name: string; hex: string }[] = [
   { name: 'yellow', hex: '#fcf305' },
   { name: 'red', hex: '#dd0806' }
 ]
+
+// A card's background is its group colour MIXED over the surface under it, at
+// whatever the wash controls say (App.svelte's `.card` rules). At the low
+// washes that is a tint of the app's own ground and the app's own ink reads on
+// it. At 100% the card IS the raw palette entry above, and half of them are
+// lighter than the canvas they sit on: white ink on `yellow` (#fcf305) is
+// 1.01:1, which is not text — reported from the running app, and the reason
+// this exists. So the ink is chosen PER CARD, from the ground that card
+// actually paints, and the same arithmetic covers the mirror case nobody had
+// hit yet (dark ink on a 100% `blue` card in light mode, 1.47:1).
+//
+// Nothing is thresholded by eye: the two candidates are the two palettes' own
+// `fg`, and the winner is the one with more contrast on that ground (WCAG
+// relative luminance). The crossover between #ececec and #1f2328 lands at
+// L≈0.19 — where both are a poor 3.5:1 and neither choice is the wrong one.
+function channels(hex: string): [number, number, number] {
+  const h = hex.slice(1)
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number]
+}
+
+// The sRGB channel mix `color-mix(in srgb, a <share>, b)` performs, so what is
+// measured here is what the card paints. `share` is a fraction, as the wash
+// settings store it.
+export function mixSrgb(a: string, b: string, share: number): string {
+  const [ar, ag, ab] = channels(a)
+  const [br, bg, bb] = channels(b)
+  return (
+    '#' +
+    [
+      [ar, br],
+      [ag, bg],
+      [ab, bb]
+    ]
+      .map(([x, y]) => Math.round(x * share + y * (1 - share)))
+      .map((c) => c.toString(16).padStart(2, '0'))
+      .join('')
+  )
+}
+
+export function relativeLuminance(hex: string): number {
+  const [r, g, b] = channels(hex).map((c) => {
+    const s = c / 255
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrast(a: number, b: number): number {
+  return a > b ? (a + 0.05) / (b + 0.05) : (b + 0.05) / (a + 0.05)
+}
+
+// Which palette's ink a card wears. `wash` is the fraction of `dirColor` in the
+// card's background, `ground` the surface it is mixed over — the live palette's
+// `bgSubtle`, or the dark one where a card has borrowed it.
+export function cardInk(
+  dirColor: string | undefined,
+  wash: number,
+  ground: string
+): 'light' | 'dark' {
+  const hex = dirColor && /^#[0-9a-f]{6}$/i.test(dirColor) ? dirColor : ground
+  const l = relativeLuminance(mixSrgb(hex, ground, wash))
+  const light = contrast(l, relativeLuminance(palettes.light.chrome.fg))
+  const dark = contrast(l, relativeLuminance(palettes.dark.chrome.fg))
+  return light > dark ? 'light' : 'dark'
+}

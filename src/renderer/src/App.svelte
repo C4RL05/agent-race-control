@@ -123,7 +123,7 @@
     zoomFactor
   } from './sessions.svelte'
   import type { Session, WorktreeEntry, ZoomPane } from './sessions.svelte'
-  import { DOT_COLORS, FONTS, UI_FONTS, chromeVars, fontStack } from './theme'
+  import { DOT_COLORS, FONTS, UI_FONTS, cardInk, chromeVars, fontStack } from './theme'
   import arcIconPng from './assets/arc.png?inline'
 
   // One menu at a time, one scaffold (backdrop + positioned panel + Escape)
@@ -550,17 +550,34 @@
 
   const dots = $derived(dotsFor(palette.chrome))
 
-  // Every chrome token the shell owns, from the one serialiser in theme.ts.
-  // The live palette always; the DARK palette beside it under a `dark-` prefix
-  // only while "Dark selected card" can actually apply, since that is the only
-  // thing that reads it (the selected card re-points its own tokens at the
-  // second set — see the .card.active override in the CSS) and in dark mode the
-  // two sets are the same palette twice.
+  // Every chrome token the shell owns, from the one serialiser in theme.ts —
+  // the live palette, plus BOTH palettes beside it under `light-`/`dark-`
+  // prefixes. Two cards can want different inks at once (a card whose ground
+  // came out light borrows the light ink even in dark mode, and the reverse in
+  // light mode — see `cardInkAttr`), so which set is needed is a per-card
+  // question the shell can't answer; "Dark selected card" reads the same
+  // `--dark-*` set it always did. Cheap: two dozen extra custom properties on
+  // one element, serialised by the same function.
   const shellVars = $derived(
-    ui.cardDark && effective === 'light'
-      ? `${chromeVars(palette.chrome, dots)};${chromeVars(palettes.dark.chrome, dotsFor(palettes.dark.chrome), 'dark-')}`
-      : chromeVars(palette.chrome, dots)
+    [
+      chromeVars(palette.chrome, dots),
+      chromeVars(palettes.light.chrome, dotsFor(palettes.light.chrome), 'light-'),
+      chromeVars(palettes.dark.chrome, dotsFor(palettes.dark.chrome), 'dark-')
+    ].join(';')
   )
+
+  // Which palette's ink a card wears, as the `data-ink` attribute its CSS rule
+  // keys off — null when that is the live palette's own ink, so the attribute
+  // marks only the cards that differ. The ground is the card's OWN: its wash
+  // (the selected card has its own setting), over the surface under it, which
+  // is the dark one where "Dark selected card" has borrowed it.
+  function cardInkAttr(group: GroupView): 'light' | 'dark' | null {
+    const active = hasFocused(group)
+    const borrowed = ui.cardDark && effective === 'light' && active
+    const ground = borrowed ? palettes.dark.chrome.bgSubtle : palette.chrome.bgSubtle
+    const ink = cardInk(dirColors[group.repCwd], active ? ui.cardWash : ui.cardWashRest, ground)
+    return ink === (borrowed ? 'dark' : effective) ? null : ink
+  }
 
   let renaming = $state<number | null>(null)
 
@@ -1122,6 +1139,7 @@
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
               data-group-key={group.key}
+              data-ink={cardInkAttr(group)}
               style:--dir-color={dirColors[group.repCwd]}
               draggable="true"
               ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
@@ -1167,6 +1185,7 @@
               class:drop-before={dropHint === `group-before-${group.key}`}
               class:drop-after={dropHint === `group-after-${group.key}`}
               data-group-key={group.key}
+              data-ink={cardInkAttr(group)}
               style:--dir-color={dirColors[group.repCwd]}
               draggable="true"
               ondragstart={() => (dragging = { kind: 'group', groupKey: group.key })}
@@ -2432,6 +2451,50 @@
   .shell[data-card-dark='on'] .card.active {
     --bg: var(--dark-bg);
     --bg-subtle: var(--dark-bg-subtle);
+    --fg: var(--dark-fg);
+    --fg-muted: var(--dark-fg-muted);
+    --border: var(--dark-border);
+    --accent: var(--dark-accent);
+    --danger: var(--dark-danger);
+    --success: var(--dark-success);
+    --dot-running: var(--dark-dot-running);
+    --dot-waiting: var(--dark-dot-waiting);
+    --dot-idle: var(--dark-dot-idle);
+    --dot-todo: var(--dark-dot-todo);
+  }
+
+  /* The card's ink follows the card's OWN ground, which at the high washes has
+     stopped being the app's: at 100% the card IS the raw palette entry, and
+     white on `yellow` (#fcf305) is 1.01:1 — not text. So a card whose ground
+     came out light wears the LIGHT palette's ink and one whose ground came out
+     dark wears the DARK one, in either mode; `cardInkAttr` picks by contrast on
+     the mixed colour (theme.ts's `cardInk`) and marks only the cards that
+     differ from the live palette, so at the default washes this selector never
+     matches. Same idiom and the same exhaustive list as the borrowed palette
+     above, minus ONE token: `--bg-subtle` is what the wash is mixed OVER, so
+     re-pointing it here would move the ground the ink was chosen for.
+     The two rules DO overlap — a "dark selected card" whose colour came out
+     light is the same bug in the other mode — and the borrowed palette wins on
+     specificity, so each block claims that case explicitly in a first selector
+     rather than leaving it to a tie and document order. */
+  .shell[data-card-dark='on'] .card.active[data-ink='light'],
+  .card[data-ink='light'] {
+    --bg: var(--light-bg);
+    --fg: var(--light-fg);
+    --fg-muted: var(--light-fg-muted);
+    --border: var(--light-border);
+    --accent: var(--light-accent);
+    --danger: var(--light-danger);
+    --success: var(--light-success);
+    --dot-running: var(--light-dot-running);
+    --dot-waiting: var(--light-dot-waiting);
+    --dot-idle: var(--light-dot-idle);
+    --dot-todo: var(--light-dot-todo);
+  }
+
+  .shell[data-card-dark='on'] .card.active[data-ink='dark'],
+  .card[data-ink='dark'] {
+    --bg: var(--dark-bg);
     --fg: var(--dark-fg);
     --fg-muted: var(--dark-fg-muted);
     --border: var(--dark-border);
