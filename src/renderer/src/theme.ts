@@ -280,17 +280,25 @@ export const DOT_COLORS: { name: string; hex: string }[] = [
 // A card's background is its group colour MIXED over the surface under it, at
 // whatever the wash controls say (App.svelte's `.card` rules). At the low
 // washes that is a tint of the app's own ground and the app's own ink reads on
-// it. At 100% the card IS the raw palette entry above, and half of them are
-// lighter than the canvas they sit on: white ink on `yellow` (#fcf305) is
-// 1.01:1, which is not text — reported from the running app, and the reason
-// this exists. So the ink is chosen PER CARD, from the ground that card
-// actually paints, and the same arithmetic covers the mirror case nobody had
-// hit yet (dark ink on a 100% `blue` card in light mode, 1.47:1).
+// it. At 100% the card IS the raw palette entry above, and on `yellow`
+// (#fcf305) the dark palette's #ececec ink comes out 1.01:1, which is not text
+// — reported from the running app, and the reason this exists.
 //
-// Nothing is thresholded by eye: the two candidates are the two palettes' own
-// `fg`, and the winner is the one with more contrast on that ground (WCAG
-// relative luminance). The crossover between #ececec and #1f2328 lands at
-// L≈0.19 — where both are a poor 3.5:1 and neither choice is the wrong one.
+// The rule is deliberately narrow: a card KEEPS the app's ink and borrows the
+// other palette's only where its own has VANISHED. It is NOT "whichever of the
+// two has more contrast" — that was the first cut, and it is true of five of
+// the eight at 100% on the dark ground, so `green`, `pink`, `orange` and
+// `cyan` cards went black too. Reported from the running app (2026-09-21):
+// white still reads on all four (2.22:1 on `cyan`, 2.27 `green`, 2.51
+// `orange`, 3.46 `pink`) and the ink flipping per card is louder than the
+// contrast it buys. Only yellow is unreadable, so only yellow flips.
+//
+// The floor is 2:1, and nothing is thresholded by eye: over every colour at
+// every wash on either ground, the worst ink a card is allowed to keep is that
+// 2.22 on a 100% `cyan`, and the best one it must give up is the 1.47 of the
+// light palette's #1f2328 on a 100% `blue` card in light mode (the mirror case
+// — `purple`, 1.36, is the other). Nothing reachable lands in the gap between
+// them, so any number in it draws the same line; 2:1 is the round one.
 function channels(hex: string): [number, number, number] {
   const h = hex.slice(1)
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number]
@@ -327,17 +335,29 @@ function contrast(a: number, b: number): number {
   return a > b ? (a + 0.05) / (b + 0.05) : (b + 0.05) / (a + 0.05)
 }
 
+// The contrast under which an ink counts as vanished rather than merely low,
+// and the card is allowed to borrow the other palette's. See the note above
+// the arithmetic for why it sits at 2 and not where the two inks cross.
+const INK_FLOOR = 2
+
 // Which palette's ink a card wears. `wash` is the fraction of `dirColor` in the
 // card's background, `ground` the surface it is mixed over — the live palette's
-// `bgSubtle`, or the dark one where a card has borrowed it.
+// `bgSubtle`, or the dark one where a card has borrowed it — and `ink` the
+// palette the card would wear if nothing were wrong, which is that ground's own.
 export function cardInk(
   dirColor: string | undefined,
   wash: number,
-  ground: string
+  ground: string,
+  ink: 'light' | 'dark'
 ): 'light' | 'dark' {
   const hex = dirColor && /^#[0-9a-f]{6}$/i.test(dirColor) ? dirColor : ground
   const l = relativeLuminance(mixSrgb(hex, ground, wash))
-  const light = contrast(l, relativeLuminance(palettes.light.chrome.fg))
-  const dark = contrast(l, relativeLuminance(palettes.dark.chrome.fg))
-  return light > dark ? 'light' : 'dark'
+  const own = contrast(l, relativeLuminance(palettes[ink].chrome.fg))
+  const other = ink === 'light' ? 'dark' : 'light'
+  // The second half never fires on a reachable card — an ink only falls under
+  // the floor on a ground at its own end of the scale, where the other ink is
+  // at the far end — but it keeps the swap from ever being the worse of the two.
+  return own < INK_FLOOR && contrast(l, relativeLuminance(palettes[other].chrome.fg)) > own
+    ? other
+    : ink
 }

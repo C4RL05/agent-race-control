@@ -575,8 +575,14 @@
     const active = hasFocused(group)
     const borrowed = ui.cardDark && effective === 'light' && active
     const ground = borrowed ? palettes.dark.chrome.bgSubtle : palette.chrome.bgSubtle
-    const ink = cardInk(dirColors[group.repCwd], active ? ui.cardWash : ui.cardWashRest, ground)
-    return ink === (borrowed ? 'dark' : effective) ? null : ink
+    const own = borrowed ? 'dark' : effective
+    const ink = cardInk(
+      dirColors[group.repCwd],
+      active ? ui.cardWash : ui.cardWashRest,
+      ground,
+      own
+    )
+    return ink === own ? null : ink
   }
 
   let renaming = $state<number | null>(null)
@@ -2463,16 +2469,17 @@
     --dot-todo: var(--dark-dot-todo);
   }
 
-  /* The card's ink follows the card's OWN ground, which at the high washes has
+  /* A card keeps the app's ink, and borrows the other palette's only where its
+     own has vanished on the card's OWN ground — which at the high washes has
      stopped being the app's: at 100% the card IS the raw palette entry, and
-     white on `yellow` (#fcf305) is 1.01:1 — not text. So a card whose ground
-     came out light wears the LIGHT palette's ink and one whose ground came out
-     dark wears the DARK one, in either mode; `cardInkAttr` picks by contrast on
-     the mixed colour (theme.ts's `cardInk`) and marks only the cards that
-     differ from the live palette, so at the default washes this selector never
-     matches. Same idiom and the same exhaustive list as the borrowed palette
-     above, minus ONE token: `--bg-subtle` is what the wash is mixed OVER, so
-     re-pointing it here would move the ground the ink was chosen for.
+     white on `yellow` (#fcf305) is 1.01:1, not text. Only yellow (and, in light
+     mode, the mirror case: black on a 100% `blue` or `purple`) is that far
+     gone; `cardInkAttr` measures it on the mixed colour (theme.ts's `cardInk`,
+     which carries the floor and why it is where it is) and marks only the cards
+     that differ from the live palette, so at the default washes this selector
+     never matches. Same idiom and the same exhaustive list as the borrowed
+     palette above, minus ONE token: `--bg-subtle` is what the wash is mixed
+     OVER, so re-pointing it here would move the ground the ink was chosen for.
      The two rules DO overlap — a "dark selected card" whose colour came out
      light is the same bug in the other mode — and the borrowed palette wins on
      specificity, so each block claims that case explicitly in a first selector
