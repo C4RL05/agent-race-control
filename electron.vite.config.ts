@@ -34,6 +34,9 @@ export default defineConfig({
   preload: {},
   renderer: {
     plugins: [svelte()],
-    server: { fs: { allow: [projectRoot, depsRoot] } }
+    // Off Vite's 5173 so other projects keep the default band. No strictPort:
+    // a second checkout running dev alongside (worktree + ARC_USERDATA) just
+    // walks up to 5291, which is the side-by-side workflow working.
+    server: { port: 5290, fs: { allow: [projectRoot, depsRoot] } }
   }
 })
