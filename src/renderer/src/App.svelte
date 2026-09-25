@@ -2301,12 +2301,19 @@
     transition-delay: 0s;
   }
 
-  /* Pointer capture takes the cursor from the CAPTURING element, which is the
-     splitter — so without this a vertical drag would flip to ew-resize the
-     moment it started, breaking the promise the thumb's own cursor just made. A
-     horizontal drag wants ew-resize and already has it. */
+  /* A vertical drag IS a scroll, so it says so on the one axis it moves on:
+     `ns-resize`, the plain up/down arrow (IDC_SIZENS). The thumb's cross is the
+     cursor for a zone where BOTH gestures are still available; once the first
+     3px have picked one, the other is no longer on offer and the cursor stops
+     claiming it. NOT `row-resize`, for the same reason `ew-resize` is not
+     `col-resize` above — Chromium draws that one as a split bar with an arrow
+     either side, a table-row glyph beside a 1px hairline. It has to be asserted
+     here at all because pointer capture takes the cursor from the CAPTURING
+     element, which is the splitter: with no rule of its own the drag would flip
+     to ew-resize the moment it started. A horizontal drag wants ew-resize and
+     already has it. */
   .splitter.scrolling {
-    cursor: move;
+    cursor: ns-resize;
   }
 
   /* The tower's scrollbar, drawn ON the boundary rather than beside it: the same
@@ -2335,7 +2342,9 @@
        up/down/left/right, and the app's existing word for a grab-and-drag handle
        (the Settings header uses it). `all-scroll` is the closer name for half of
        what this does and renders identically here, but it is the PANNING cursor,
-       and panning is not what a vertical drag on this line does. */
+       and panning is not what a vertical drag on this line does. The cross is
+       the cursor for the PRESS, where either axis is still available; the drag
+       itself narrows to the axis it picked (see `.splitter.scrolling`). */
     cursor: move;
   }
 
