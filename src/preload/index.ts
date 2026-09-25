@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('arc', {
   setAppIcon: (representations: Array<{ scaleFactor: number; dataURL: string }>): void => {
     ipcRenderer.send('app:setIcon', representations)
   },
+  // Keep awake on/off (main/awake.ts) — main holds the power request.
+  setKeepAwake: (on: boolean): void => {
+    ipcRenderer.send('power:keepAwake', on)
+  },
   state: {
     load: (): Promise<unknown> => ipcRenderer.invoke('state:load'),
     save: (state: unknown): void => {

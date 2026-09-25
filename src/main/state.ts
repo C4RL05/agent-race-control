@@ -28,6 +28,8 @@ export interface AppState {
   statusDot?: boolean
   // Paint a row title's leading glyph by which glyph it is. Absent → true.
   glyphColor?: boolean
+  // Hold the machine out of idle sleep while the app runs (awake.ts). Absent → true.
+  keepAwake?: boolean
   // Selected font ids (see the renderer's FONTS/UI_FONTS). Absent → the default.
   font?: string
   uiFont?: string

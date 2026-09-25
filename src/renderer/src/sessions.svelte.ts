@@ -355,6 +355,9 @@ export const ui = $state<{
   // it is (see glyphLead) — nothing to do with the dot's status colors.
   // On by default.
   glyphColor: boolean
+  // Settings toggle: keep the machine out of IDLE sleep while the app runs, so
+  // agents left working are still working later (main/awake.ts). On by default.
+  keepAwake: boolean
   // WHICH TECHNIQUE COLOURS THE DOT. 'screen' is the default: the screen scan
   // (screen.ts), the same technique Codex rows have no choice but to use.
   // 'hooks' is the other one — turn-boundary hooks with the agent poll as a
@@ -396,6 +399,7 @@ export const ui = $state<{
   statusRgb: true,
   statusDot: true,
   glyphColor: true,
+  keepAwake: true,
   statusSource: 'screen',
   cardWash: 1,
   cardWashRest: 0,
@@ -1090,6 +1094,7 @@ export async function restoreState(): Promise<void> {
   // Absent → the default, which for the dot is ON (unlike the other two).
   ui.statusDot = saved.statusDot ?? true
   ui.glyphColor = saved.glyphColor ?? true
+  ui.keepAwake = saved.keepAwake ?? true
   ui.statusSource = saved.statusSource ?? 'screen'
   // Clamped to the offered steps, not trusted: the state file is external data
   // and an arbitrary number would reach color-mix as-is. Each line names the
@@ -1167,6 +1172,7 @@ export function snapshotState(): PersistedState {
     statusRgb: ui.statusRgb,
     statusDot: ui.statusDot,
     glyphColor: ui.glyphColor,
+    keepAwake: ui.keepAwake,
     statusSource: ui.statusSource,
     cardWash: ui.cardWash,
     cardWashRest: ui.cardWashRest,

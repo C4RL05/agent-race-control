@@ -520,6 +520,13 @@
     if (restored) window.arc.state.save(snapshot)
   })
 
+  // Keep awake: main holds the power request (awake.ts). Sent only after
+  // restore, so a saved OFF never briefly takes the hold at boot.
+  $effect(() => {
+    const on = ui.keepAwake
+    if (restored) window.arc.setKeepAwake(on)
+  })
+
   const effective = $derived(ui.mode === 'system' ? (systemDark ? 'dark' : 'light') : ui.mode)
   const palette = $derived(palettes[effective])
 
@@ -2127,6 +2134,18 @@
           <p class="set-hint">
             {STATUS_SOURCES.find((s) => s.id === ui.statusSource)?.hint} Claude rows only — a Codex row
             always reads its screen.
+          </p>
+        </section>
+
+        <section class="set-group">
+          <h2>Power</h2>
+          <div class="set-row">
+            <span class="set-label">Keep awake</span>
+            {@render switchBtn('Keep awake', ui.keepAwake, () => (ui.keepAwake = !ui.keepAwake))}
+          </div>
+          <p class="set-hint">
+            While the app is open the machine won't idle-sleep, so agents keep working. The screen
+            still turns off, and sleeping it yourself still works.
           </p>
         </section>
 

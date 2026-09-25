@@ -14,6 +14,8 @@ interface PersistedState {
   statusDot?: boolean
   // Paint a row title's leading glyph by which glyph it is. Absent → true.
   glyphColor?: boolean
+  // Hold the machine out of idle sleep while the app runs. Absent → true.
+  keepAwake?: boolean
   // Which technique colours the status dot. Absent → 'screen', the default.
   statusSource?: 'hooks' | 'screen'
   // How the tower's cards paint: how much colour the selected card's wash
@@ -166,6 +168,7 @@ interface Window {
     openInExplorer: (path: string) => void
     getPathForFile: (file: File) => string
     setAppIcon: (representations: Array<{ scaleFactor: number; dataURL: string }>) => void
+    setKeepAwake: (on: boolean) => void
     state: {
       load: () => Promise<PersistedState | null>
       save: (state: PersistedState) => void

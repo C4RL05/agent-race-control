@@ -9,6 +9,7 @@ import { registerSessionInfoHandlers } from './sessioninfo'
 import { loadState, saveState, flushState } from './state'
 import type { AppState } from './state'
 import { getGitInfo, listWorktrees } from './git'
+import { setKeepAwake } from './awake'
 
 // Blessed dev-only deviation (screenshot harness, see the kickoff doc): a
 // scratch profile so staged runs never touch the real tower. Must be set
@@ -252,6 +253,10 @@ if (!gotLock) {
       win?.setIcon(icon)
     }
   )
+
+  // The Keep awake setting (see awake.ts). The renderer owns the default and
+  // sends it once its state is restored, then on every change.
+  ipcMain.on('power:keepAwake', (_event, on: boolean) => setKeepAwake(on === true))
 
   ipcMain.handle('state:load', () => {
     const state = loadState()
